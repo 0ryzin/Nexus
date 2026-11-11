@@ -241,8 +241,10 @@ jobs:
           $deps = dumpbin /dependents (Join-Path $n 'Engine/nexus_engine.dll') | Select-String '^\s+(\S+\.dll)$' | ForEach-Object { $_.Matches[0].Groups[1].Value.ToLower() }
           foreach ($d in $deps) {
             $inPkg = $libs -contains $d
-            $inSys = Test-Path (Join-Path $env:WINDIR "System32/$d")
-            $crt = $d -in 'vcruntime140.dll','vcruntime140_1.dll','msvcp140.dll'
+            # api-ms-win-* / ext-ms-* are Windows API sets, resolved by the loader itself
+            $inSys = ($d -like 'api-ms-win-*') -or ($d -like 'ext-ms-*') -or (Test-Path (Join-Path $env:WINDIR "System32/$d"))
+            # the VC++ runtime must come with NEXUS: users may not have the Redistributable
+            $crt = ($d -like 'vcruntime140*') -or ($d -like 'msvcp140*') -or ($d -like 'concrt140*')'
             Write-Host "$d  package=$inPkg system=$inSys"
             if ($crt -and !$inPkg) { throw "$d (VC++ runtime) is not bundled" }
             if (!$inPkg -and !$inSys) { throw "$d is needed by the engine but not in the package" }
