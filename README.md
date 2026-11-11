@@ -1,25 +1,31 @@
 # NEXUS
 
-**A console-style game library and integrated emulation environment for Windows.**
+**A console-style game library and integrated emulation environment.**
 
-NEXUS is an independent Windows application designed to make a PC feel more like a dedicated gaming console. It brings your game library, user profiles, play statistics, controller navigation, themes and emulation settings together in one interface.
+NEXUS is an independent, console-inspired gaming environment being developed for desktop platforms. It brings your game library, user profiles, play statistics, controller navigation, themes and emulation settings together in one interface.
 
 NEXUS is being developed around an integrated emulation engine. The intended experience is to launch and manage games from NEXUS itself, rather than asking users to choose and launch a separate emulator application.
 
-> **Development status:** NEXUS is still experimental. The uploaded development package does not include a compiled NEXUS Engine build, so game launching is not yet ready for normal use. The engine source and integration are present in the supplied source package, but the engine must be built and tested on a suitable Windows machine before games can run. See [Engine status](docs/ENGINE_STATUS.md).
+> **Development status:** NEXUS is still experimental. The supplied development package does not include a compiled NEXUS Engine build, so game launching is not yet ready for normal use. The engine source and integration are present in the supplied source package, but the engine must be built and tested before games can run. See [Engine status](docs/ENGINE_STATUS.md).
+
+## Platform support
+
+The initial release is planned for **Windows, macOS and Linux**. Windows is the platform covered by the current development package. macOS and Linux support are planned targets and should not be considered available until builds and platform-specific functionality have been completed and tested.
+
+Android is a possible future platform. iOS support is not currently planned or promised.
 
 ## Project goals
 
-- A console-like Windows experience with a startup sequence and controller-friendly interface.
+- A console-like experience with a startup sequence and controller-friendly interface.
 - One library for games, with search, sorting, artwork and per-game settings.
 - Multiple user profiles, separate saves, play-time statistics and compatibility notes.
 - Customisable themes, colours, wallpapers and startup options.
 - An integrated engine that NEXUS controls directly, with engine builds verified before installation and the ability to roll back.
-- A portable application folder, with user data stored separately by default.
+- A portable application folder, with user data stored separately by default where supported.
 
 ## Current features
 
-The development build supplied for review includes:
+The current Windows development build supplied for review includes:
 
 - A startup animation, home screen and game library.
 - User profiles, profile icons and per-user play statistics.
@@ -34,7 +40,9 @@ Features in the interface do not necessarily mean the full emulation path has be
 
 ## Emulation engine
 
-The planned NEXUS Engine is an in-process C++ library based on the Lichii build-130 source, within the Eden/yuzu lineage. NEXUS is designed to load this engine directly; it is not intended to launch Lichii.exe, Ryujinx.exe or another standalone emulator when a game is selected.
+The NEXUS emulation project draws on the work and codebases of **Lichii, Eden, yuzu and Ryujinx**, including related forks and components such as Ryubing. These projects have contributed to the wider foundation and development of NEXUS's emulation capabilities. Their original names, licences and notices remain acknowledged; see [Third-party notices and acknowledgements](THIRD_PARTY_NOTICES.md).
+
+NEXUS is designed to load its emulation engine directly. It is not intended to launch a separate Lichii, Ryujinx or other emulator application when a game is selected.
 
 **Current limitation:** no compiled nexus_engine.dll is included in the supplied package. Until a compatible engine build is produced and installed, selecting Play will report that the engine is unavailable and will not start a game.
 
@@ -52,13 +60,15 @@ The current development package is intended for:
 - A graphics driver supporting Vulkan 1.3 (recommended) or OpenGL 4.6.
 - Your own legally obtained game dumps, console keys and firmware. These are not included.
 
+Requirements for macOS and Linux builds will be documented when those platform builds are available.
+
 NEXUS does not provide games, console keys or firmware.
 
 ## Getting started
 
-1. Obtain a NEXUS development or release package when one is published.
-2. Extract the complete NEXUS folder somewhere your Windows account can write to.
-3. Run NEXUS.exe.
+1. Obtain a NEXUS development or release package when one is published for your platform.
+2. Extract or install the NEXUS package using the instructions supplied with that build.
+3. Run NEXUS.
 4. Create a user profile and add your game-library folders in System Settings.
 5. Install only system files and game dumps that you are legally entitled to use.
 6. Install a compatible NEXUS Engine build when one is available.
@@ -67,13 +77,13 @@ The supplied package currently has no compiled engine build, so steps involving 
 
 ## Data and portability
 
-By default, NEXUS stores user data under:
+On the current Windows development build, NEXUS stores user data under:
 
     %APPDATA%\NEXUS\
 
 This includes profiles, settings, artwork, statistics, logs, saves and engine data. The program and engine-build folders remain alongside NEXUS.exe.
 
-An empty portable.txt beside NEXUS.exe enables portable mode, keeping application data inside the NEXUS folder.
+An empty portable.txt beside NEXUS.exe enables portable mode, keeping application data inside the NEXUS folder. Data locations on other platforms will be documented with their respective builds.
 
 ## Versioning
 
@@ -85,13 +95,13 @@ NEXUS application versions and NEXUS Engine build versions are tracked separatel
 
 This repository is currently being set up for NEXUS project documentation and releases. Its main branch does not yet contain the complete application and engine source trees or a downloadable release package.
 
-The supplied development package contains a NEXUS application source archive and the Lichii-based engine source plus NEXUS patches. When distributing a compiled build, the corresponding source and all required licence notices must be made available in accordance with the applicable licences. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+The supplied development package contains a NEXUS application source archive and emulation-engine source and integration work. When distributing a compiled build, the corresponding source and all required licence notices must be made available in accordance with the applicable licences. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Licensing and acknowledgements
 
-The NEXUS application and its integrated GPL-licensed engine are distributed under **GNU GPL version 3 or, at your option, any later version**, subject to the separate licences that apply to third-party components and assets. The full licence is in [LICENSE](LICENSE).
+The NEXUS project and its GPL-licensed components are distributed under **GNU GPL version 3 or, at your option, any later version**, subject to the separate licences that apply to third-party components and assets. The full licence is in [LICENSE](LICENSE).
 
-NEXUS's engine is based on Lichii build-130 and the Eden/yuzu lineage. Other bundled libraries, fonts and engine dependencies have their own licences. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the current attribution summary.
+NEXUS draws on Lichii, Eden, yuzu and Ryujinx, including related forks and components such as Ryubing. Other bundled libraries, fonts and engine dependencies have their own licences and attribution requirements. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for licensing information, notices and acknowledgements.
 
 Some artwork in the supplied personal development package is Nintendo-derived material supplied for personal use. It is not licensed by this repository for redistribution. Replace or remove those assets before sharing a build unless you have the necessary rights.
 
