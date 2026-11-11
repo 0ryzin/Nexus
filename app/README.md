@@ -23,7 +23,7 @@ NEXUS is a console-style game system for Windows. It starts with a power-on anim
 - New startup wordmark typeface (Outfit) — same animation.
 - Faster library: tiles use cached, downscaled artwork.
 
-> **About this particular package — please read.** A release ZIP is produced by the release workflow (`.github/workflows/release.yml`). It builds the engine, runs its tests, builds NEXUS, runs NEXUS's tests, and packs both into one ZIP. The engine library (`nexus_engine.dll`) **could not be compiled in the environment where this package was made** (no Windows compiler, SDK or GPU). This package is therefore the *developer* package without `Engine\nexus_engine.dll`; its file name says so. With it, NEXUS starts and explains that the engine is missing instead of failing silently. Details: `NEXUS_ENGINE.md`.
+> **About this package.** This ZIP was produced by the project's Windows build (GitHub Actions, `.github/workflows/nexus-build.yml`): it compiles the NEXUS engine from upstream Lichii build-130 plus the NEXUS patches in `engine/patches`, runs the engine's test suite (1,156 test cases), loads the DLL and checks its interface, runs NEXUS's own tests on Windows, builds `NEXUS.exe`, packs both into this ZIP, then extracts the ZIP into a fresh folder and has `NEXUS.exe --engine-check` find, verify and load the engine there. The build machine has no GPU and no games, so **running real games has not been tested yet** (see *Known limitations*).
 
 NEXUS is an independent project. It is not affiliated with or endorsed by Nintendo. It contains **no games, keys or firmware**.
 
@@ -388,9 +388,8 @@ NEXUS never downloads or swaps an emulator executable. The engine is built from 
 
 ## 7. Known limitations
 
-- **This package has no compiled engine** (see the note at the top). Play explains that the engine is missing until a release package (or an engine build) is used.
 - Hardware detection on Windows (DXGI, Vulkan, display settings, registry) was written against the Windows APIs. It compiles, but it has not been run on a Windows PC yet. The optimiser itself was tested with saved hardware profiles of three different PCs.
-- Nothing about running games has been verified yet. That includes window ownership and focus, a second game in one NEXUS session, audio volume on real output, and controller auto-map. All of it needs the first engine build, a PC with a GPU, and games. These are the first checks.
+- **No real game has been run yet.** The engine is built and loads, but window ownership and focus, a second game in one NEXUS session, audio volume on real output, the controller layouts inside a game and the Joy-Con presets need a PC with a GPU and games. These are the first checks to do with this ZIP.
 - **Switch 2:** the engine contains experimental upstream code; NEXUS has not run any Switch 2 game and makes no claim. Results appear per game under Compatibility.
 - The quit shortcut needs an XInput controller.
 - NEXUS has no self-updater.
@@ -399,7 +398,7 @@ NEXUS never downloads or swaps an emulator executable. The engine is built from 
 
 | Problem | What to do |
 |---|---|
-| "The NEXUS engine is not installed" | *System Settings › NEXUS Engine › Install an engine build*. |
+| "The NEXUS engine cannot be used" | The message says why (missing or damaged files). Extract the complete ZIP again. `NEXUS.exe --engine-check result.json` writes the details to a file. |
 | An engine build is refused | It is damaged or for a different NEXUS version; the message says which file. Nothing was changed. |
 | A game stops with an error | The message shows the engine's last error lines; full log in `%APPDATA%\NEXUS\Engine\log\eden_log.txt`. Usually keys or firmware are missing or too old. |
 | A new engine build behaves worse | *NEXUS Engine › Go back to the previous build*. |
@@ -407,7 +406,16 @@ NEXUS never downloads or swaps an emulator executable. The engine is built from 
 
 ## 9. How this build was verified
 
-**Tested here, in Go tests and a browser walkthrough.** NEXUS ran against a stand-in engine with the same states and audio path:
+**On Windows, by the build (every ZIP):**
+- the engine compiles and links (`nexus_engine.dll`), all 1,156 upstream engine test cases pass;
+- the engine's C interface is called directly (version, build information, status, volume, suspend, refusing a bad request);
+- every DLL the engine imports is either in the package (including the complete VC++ runtime) or part of Windows;
+- NEXUS's Go test suite passes on Windows (and on Linux);
+- after a fresh extract of the ZIP, `NEXUS.exe --engine-check` finds the engine next to it, verifies every file against `engine.json`, loads it into NEXUS and reads its build information.
+
+**In a browser against the stand-in engine (2.2 checks):** first-time setup on an empty data folder (name → picture → colour → review, empty and duplicate names refused); the picture and colour saved and shown (colour ring in the top bar); 8 users allowed, a 9th refused and *Add user* hidden; users, colours, pictures and both kinds of controller layout kept after a restart and after replacing the NEXUS folder (data folder kept); the Controllers and game Controls pages and the button editor in dark and light; the play-time list in both themes; an automated contrast check of 20 screens in both themes.
+
+**Earlier (2.1) checks, in Go tests and a browser walkthrough:** NEXUS ran against a stand-in engine with the same states and audio path:
 - **Bundled engine:** found relative to the NEXUS folder after the folder was moved; damaged library files detected; added builds and rollback to the included engine.
 - **Release script:** run with a stand-in engine. It produced one ZIP with `Engine\` inside, and its self-checks passed.
 - **Optimiser:**
@@ -434,12 +442,12 @@ NEXUS never downloads or swaps an emulator executable. The engine is built from 
   - paused time isn't counted;
   - transitions can be switched off.
 
-**Not tested here:** a compiled engine and real games; the Windows-only parts (hardware detection through DXGI/Vulkan/registry, the Guide button, hiding the game window) on a real Windows PC.
+**Not tested yet:** running real games (needs a PC with a GPU, your keys/firmware and games); the game window, controller input in a game and audio output with the real engine; hardware detection was exercised on the Windows build machine (CPU, memory, display, Vulkan loader; it has no GPU).
 
 ## 10. Licensing
 
-- **NEXUS 2.0 is free software under the GNU GPL v3.0 or later** (`Licences\NEXUS-GPL-3.0.txt`), because it loads the GPL engine in-process. Full source: `Source\NEXUS-source.zip`.
-- **The NEXUS engine** is GPL-3.0-or-later, built on Lichii (github.com/zortos293/Lichii), Eden, yuzu and other projects. Corresponding source: `Source\engine\lichii-build-130-source.tar.xz` plus every NEXUS change as patches in `Source\engine\nexus-engine-patches\` (see `Source\README.txt`). Component licences: `Licences\engine-third-party\`.
+- **NEXUS is free software under the GNU GPL v3.0 or later** (`Licences\NEXUS-GPL-3.0.txt`), because it loads the GPL engine in-process. Full source: `Source\NEXUS-source.zip`.
+- **The NEXUS engine** is GPL-3.0-or-later, built on Lichii (github.com/zortos293/Lichii), Eden, yuzu and other projects. Corresponding source: `Source\engine\nexus-engine-source.tar.gz` (the exact tree that was compiled: Lichii build-130 with the NEXUS patches applied); the patches themselves are in the NEXUS source (`engine/patches`). Component licences: `Licences\engine-third-party\`.
 - **Ryujinx** (MIT) is used only as a technical reference; no Ryujinx code is included. Its licence is kept in `Licences\` for any fix ported in future.
 - Libraries in NEXUS.exe: go-webview2 (MIT, with Microsoft's WebView2Loader), go-winloader (ISC), golang.org/x/sys and the Go standard library (BSD). Fonts: Inter and Outfit (both SIL Open Font License 1.1).
 - "Switch" and "Nintendo Switch" are trademarks of Nintendo. **Personal build:** the NEXUS SWITCH emblem, `Resources\ProfileIcons` and the Ocarina of Time artwork are artwork you supplied (Nintendo designs); replace/remove them before sharing (see the NOTICE files).
@@ -447,9 +455,8 @@ NEXUS never downloads or swaps an emulator executable. The engine is built from 
 
 ## 11. Building from source
 
-**Release (one ZIP):** `.github/workflows/release.yml` builds the engine commit pinned in `engine.lock` (set the `NEXUS_ENGINE_REPO` repository variable to the engine fork), runs the engine tests and interface smoke test, runs NEXUS's tests, builds `NEXUS.exe`, and calls `tools/release/make_release.py`. That script packs NEXUS, the verified engine and the sources into `NEXUS-<version>-Windows-x64.zip`. It refuses to make a release if the engine is missing, damaged, uses another interface version or is not the pinned commit. A fresh-extract check then loads the engine from the extracted folder.
+**Release (one ZIP):** the GitHub repository's `.github/workflows/nexus-build.yml` (Windows runner) checks out upstream Lichii at the commit in `app/engine.lock`, applies `engine/patches/*.patch` in order, builds `nexus_engine` and the engine tests with clang-cl (as upstream's Windows builds do), runs the tests and the interface smoke test, packages the engine (`tools/nexus/package_engine.py`, recording the upstream base and the SHA-256 of the patch series), runs NEXUS's tests, builds `NEXUS.exe`, calls `tools/release/make_release.py` (which refuses an engine that is damaged, of another interface version, or not built from this patch series) and finally checks a fresh extract with `NEXUS.exe --engine-check`. The ZIP is the run's artifact; a `v*` tag publishes it as a release.
 
+NEXUS: Go 1.24+; `GOOS=windows GOARCH=amd64 go build -ldflags "-H windowsgui -s -w -X main.AppVersion=2.2.0" -o NEXUS.exe .`; `go test .` (the tests use the stand-in engine; `NEXUS_FAKE_ENGINE=1 go run .` starts the UI for development on Linux).
 
-NEXUS: Go 1.24+; `GOOS=windows GOARCH=amd64 go build -ldflags "-H windowsgui -s -w -X main.AppVersion=2.1.0" -o NEXUS.exe .`; `go test ./...` (on Linux the tests use the stand-in engine; `NEXUS_FAKE_ENGINE=1 go run .` starts the UI for development).
-
-Engine: apply the patches to the Lichii build-130 source (or clone the fork) and build on Windows with MSVC: `cmake -B build -G Ninja -DENABLE_QT=OFF -DYUZU_CMD=OFF -DNEXUS_ENGINE=ON -DYUZU_TESTS=ON`, then `cmake --build build --target nexus_engine tests`. `.github/workflows/nexus-engine.yml` does exactly this, runs the tests, packages `nexus-engine-<version>-win64.zip` with its manifest, and publishes it on an `engine-v*` tag.
+Engine by hand: apply the patches to Lichii build-130 and build on Windows (Visual Studio 2022 + LLVM clang-cl + Vulkan SDK): `cmake -B build -G Ninja -DNEXUS_ENGINE=ON -DYUZU_TESTS=ON -DENABLE_QT=OFF -DYUZU_CMD=OFF -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl`, then `cmake --build build --target nexus_engine tests`.

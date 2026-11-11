@@ -1,6 +1,24 @@
 # The NEXUS engine: investigation, architecture, status and plan
 
-## 0. Changes in 2.1
+## 0. Changes in 2.2
+
+* **The engine is compiled, tested and shipped.** The NEXUS repository holds the engine as a patch
+  series on upstream Lichii build-130 (`engine/patches`, 10 patches). Its Windows build
+  (`.github/workflows/nexus-build.yml`) applies them, compiles with clang-cl, runs the full engine
+  test suite (1,156 test cases), calls the DLL's C interface, packages it with the complete app-local
+  VC++ runtime, builds NEXUS and the ZIP, and checks a fresh extract with `NEXUS.exe --engine-check`.
+* Fixes found by the first Windows builds: the engine library now provides the Vulkan Memory
+  Allocator implementation (patch 0009, link error); the package bundles every VC++ runtime DLL the
+  engine imports, including `msvcp140_atomic_wait.dll` and `msvcp140_codecvt_ids.dll` (patch 0010).
+* `engine.json` records `upstreamBase` and `patchset` (SHA-256 of the series); the release script
+  refuses an engine that was not built from the repository's patch series.
+* NEXUS verifies and loads the engine in the background at start (`checking` in the status), so the
+  interface never waits for it.
+* Controller layouts: `buttonMap` / `controllerType` in the start request (patch 0007) carry the
+  user's or game's layout; see README, Controller support.
+* **Still untested:** a real game (needs a GPU, keys/firmware and games).
+
+## 0.1 Changes in 2.1
 
 * **Packaging:** the engine ships inside the NEXUS folder (`Engine\nexus_engine.dll`, `Engine\engine.json`, `Engine\Libraries\`).
   * NEXUS finds it relative to `NEXUS.exe` and loads it with `LoadLibraryExW`. Dependencies are searched only in the engine folder, `Engine\Libraries` and System32.
