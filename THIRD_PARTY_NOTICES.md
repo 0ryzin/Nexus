@@ -1,18 +1,22 @@
-# Third-party notices and acknowledgements
+# Third-party notices, licences and acknowledgements
 
-This document summarises the third-party projects, libraries, fonts and licence families identified in the supplied NEXUS development package. It is an attribution guide, not a replacement for the licence text or notices that must accompany the corresponding source and binaries.
+NEXUS builds on the work of established open-source emulation projects and uses third-party libraries, fonts and other components. This document records the upstream projects and licence families identified in the supplied development package. It is an attribution guide, not a replacement for the original licence texts or notices that must accompany source code and binaries.
 
-## Integrated emulation engine
+## Emulation projects and upstream acknowledgements
 
-NEXUS's planned in-process engine is based on **Lichii, build-130**, under GNU GPL-3.0-or-later:
+NEXUS's emulation development draws on the following projects and their wider upstream lineages:
 
-- Lichii: https://github.com/zortos293/Lichii
-- Eden: https://github.com/eden-emulator/mirror
-- yuzu: upstream project lineage used by Eden and related forks.
+- **Lichii** — https://github.com/zortos293/Lichii
+- **Eden** — https://github.com/eden-emulator/mirror
+- **yuzu** — upstream project and code lineage associated with later Switch emulator projects.
+- **Ryujinx** — https://github.com/Ryujinx
+- **Ryubing** — a fork of Ryujinx, also part of the related emulation work referenced by NEXUS.
 
-The supplied package identifies the NEXUS engine as a fork of Lichii build-130, itself within the Eden/yuzu lineage. Preserve upstream copyright notices and the complete corresponding source, including NEXUS engine patches, when distributing covered binaries.
+These projects are acknowledged as part of the NEXUS emulation foundation and development. Their code, contributions and individual components remain subject to their respective upstream licences and copyright notices. The exact origin and applicable licence of each source file or component must be preserved and checked before redistribution; this summary does not replace those notices.
 
-The engine source package also carries third-party component licence texts for dependencies and components including:
+## Third-party engine components
+
+The supplied engine source package contains licence texts for third-party components and dependencies, including these licence families:
 
 - Apache-2.0
 - Boost Software License 1.0
@@ -44,11 +48,7 @@ The supplied application package identifies these dependencies:
 | Inter font | SIL Open Font License 1.1 |
 | Outfit font | SIL Open Font License 1.1 |
 
-The supplied ZIP contains the corresponding licence text files under NEXUS/Licences/. Those individual third-party licence text files have not yet been copied into this GitHub repository. Before publishing a binary release, add the applicable texts and preserve the upstream notices alongside the source and release package. The root LICENSE file currently contains the project's GPL-3.0-or-later text.
-
-## Other emulator projects
-
-**Ryujinx** is listed in the supplied project documentation as a technical reference only. The package states that no Ryujinx code or executable is included or launched. Its MIT notice is retained for attribution if a specific fix is ported in the future. Do not describe Ryujinx as an integrated NEXUS engine or as a current code dependency.
+The supplied ZIP contains corresponding licence text files under NEXUS/Licences/. Those individual third-party licence text files have not yet been copied into this GitHub repository. Before publishing a binary release, add the applicable texts and preserve the upstream notices alongside the source and release package. The root LICENSE file currently contains the project's GPL-3.0-or-later text.
 
 ## Artwork and trademarks
 
@@ -67,5 +67,5 @@ When source code or a release package is added to this repository:
 1. Preserve each upstream project's copyright and licence notices.
 2. Include the exact licence texts required by each bundled component.
 3. Keep the complete corresponding source available for GPL-covered binaries, including NEXUS modifications and build scripts as required by the GPL.
-4. Update this file whenever a dependency, upstream base, font, library or redistributed asset changes.
+4. Update this file whenever an upstream source, dependency, font, library or redistributed asset changes.
 5. Do not add a blanket NEXUS licence to third-party files that carry their own licence.
