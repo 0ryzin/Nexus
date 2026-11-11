@@ -1,0 +1,138 @@
+From 1ec19d3a06bbc4ffe6738139ada8a3cd26baf118 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 11 Nov 2026 08:57:57 +0000
+Subject: [PATCH 7/8] nexus_engine: NEXUS controller layouts (button map +
+ controller type) on top of the automatic mapping
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
+---
+ src/nexus_engine/include/nexus_engine.h |  3 +-
+ src/nexus_engine/nexus_engine.cpp       | 63 +++++++++++++++++++++++--
+ 2 files changed, 62 insertions(+), 4 deletions(-)
+
+diff --git a/src/nexus_engine/include/nexus_engine.h b/src/nexus_engine/include/nexus_engine.h
+index c37c544ad..2d6178563 100644
+--- a/src/nexus_engine/include/nexus_engine.h
++++ b/src/nexus_engine/include/nexus_engine.h
+@@ -37,7 +37,8 @@ NEXUS_API const char* nexus_engine_info(void);
+ /// Starts a game session. request_json:
+ /// {"game":path,"dataDir":path,"configFile":path,"logDir":path,"title":text,
+ ///  "fullscreen":bool,"volume":0..200,"ownerWindow":hwnd-as-number,
+-///  "contents":["update or DLC container", …],"autoMapController":bool}
++///  "contents":["update or DLC container", …],"autoMapController":bool,
++///  "buttonMap":{"a":"east","b":"south",…},"controllerType":"pro"|"dual_joycon"|"handheld"}
+ /// Returns 0 when the session thread started, -1 if a session is already running, -2 for a bad
+ /// request. Load errors are reported asynchronously through nexus_engine_status.
+ NEXUS_API int32_t nexus_engine_start(const char* request_json);
+diff --git a/src/nexus_engine/nexus_engine.cpp b/src/nexus_engine/nexus_engine.cpp
+index 3d41a2569..5bb77ffb2 100644
+--- a/src/nexus_engine/nexus_engine.cpp
++++ b/src/nexus_engine/nexus_engine.cpp
+@@ -35,6 +35,8 @@
+ #include "hid_core/hid_core.h"
+ #include "common/param_package.h"
+ #include "common/settings_input.h"
++#include <array>
++#include <map>
+ #include <optional>
+ #include <vector>
+ #include "core/hle/service/am/applet_manager.h"
+@@ -91,6 +93,10 @@ struct Request {
+     std::uintptr_t owner_window{};
+     std::vector<std::string> contents; // update / DLC containers from the user's game folders
+     bool auto_map_controller{false};   // map player 1 to the first connected controller
++    // NEXUS controller layout: Switch button -> physical gamepad position (east, south, ...),
++    // applied on top of the automatic mapping. Empty = the default positional layout.
++    std::map<std::string, std::string> button_map;
++    std::string controller_type; // pro | dual_joycon | handheld ("" = keep)
+ };
+ 
+ struct Engine {
+@@ -196,7 +202,28 @@ void AttachToOwner(SDL_Window* window, std::uintptr_t owner) {
+ // Same as the upstream frontends' "auto-map": bind player 1 to the first game controller the
+ // input subsystem reports, using the driver's default mapping for that device. Only used when
+ // the NEXUS user has not chosen a saved controller profile.
+-void AutoMapController(InputCommon::InputSubsystem& input, Core::System& system) {
++// Default physical position of each remappable Switch button in the automatic mapping
++// (input_common/drivers/sdl_driver.cpp GetDefaultButtonBinding: positional "Nintendo" layout).
++constexpr std::array<std::pair<const char*, Settings::NativeButton::Values>, 12> kNexusButtons{{
++    {"a", Settings::NativeButton::A},           {"b", Settings::NativeButton::B},
++    {"x", Settings::NativeButton::X},           {"y", Settings::NativeButton::Y},
++    {"l", Settings::NativeButton::L},           {"r", Settings::NativeButton::R},
++    {"zl", Settings::NativeButton::ZL},         {"zr", Settings::NativeButton::ZR},
++    {"plus", Settings::NativeButton::Plus},     {"minus", Settings::NativeButton::Minus},
++    {"lstick", Settings::NativeButton::LStick}, {"rstick", Settings::NativeButton::RStick},
++}};
++constexpr std::array<std::pair<const char*, Settings::NativeButton::Values>, 12> kDefaultPosition{{
++    {"east", Settings::NativeButton::A},          {"south", Settings::NativeButton::B},
++    {"north", Settings::NativeButton::X},         {"west", Settings::NativeButton::Y},
++    {"lshoulder", Settings::NativeButton::L},     {"rshoulder", Settings::NativeButton::R},
++    {"ltrigger", Settings::NativeButton::ZL},     {"rtrigger", Settings::NativeButton::ZR},
++    {"start", Settings::NativeButton::Plus},      {"back", Settings::NativeButton::Minus},
++    {"lstick", Settings::NativeButton::LStick},   {"rstick", Settings::NativeButton::RStick},
++}};
++
++void AutoMapController(InputCommon::InputSubsystem& input, Core::System& system,
++                       const std::map<std::string, std::string>& button_map,
++                       const std::string& controller_type) {
+     std::optional<Common::ParamPackage> pad;
+     for (int attempt = 0; attempt < 25 && !pad; ++attempt) { // SDL reports pads asynchronously
+         for (const auto& d : input.GetInputDevices()) {
+@@ -215,9 +242,31 @@ void AutoMapController(InputCommon::InputSubsystem& input, Core::System& system)
+         return;
+     }
+     auto& player = Settings::values.players.GetValue()[0];
+-    for (const auto& [id, param] : input.GetButtonMappingForDevice(*pad)) {
++    const auto defaults = input.GetButtonMappingForDevice(*pad);
++    for (const auto& [id, param] : defaults) {
+         player.buttons[id] = param.Serialize();
+     }
++    // NEXUS layout: give button T the binding that the default layout uses for position P
++    for (const auto& [name, target] : kNexusButtons) {
++        const auto want = button_map.find(name);
++        if (want == button_map.end()) {
++            continue;
++        }
++        for (const auto& [pos, source] : kDefaultPosition) {
++            if (want->second == pos) {
++                if (const auto it = defaults.find(source); it != defaults.end()) {
++                    player.buttons[target] = it->second.Serialize();
++                }
++            }
++        }
++    }
++    if (controller_type == "pro") {
++        player.controller_type = Settings::ControllerType::ProController;
++    } else if (controller_type == "dual_joycon") {
++        player.controller_type = Settings::ControllerType::DualJoyconDetached;
++    } else if (controller_type == "handheld") {
++        player.controller_type = Settings::ControllerType::Handheld;
++    }
+     for (const auto& [id, param] : input.GetAnalogMappingForDevice(*pad)) {
+         player.analogs[id] = param.Serialize();
+     }
+@@ -288,7 +337,7 @@ void RunSession(Request req) {
+         system.GetFileSystemController().CreateFactories(*system.GetFilesystem());
+         RegisterExternalContent(manual_provider, system, req.contents);
+         if (req.auto_map_controller) {
+-            AutoMapController(input, system);
++            AutoMapController(input, system, req.button_map, req.controller_type);
+         }
+         system.GetUserChannel().clear();
+ 
+@@ -442,6 +491,14 @@ NEXUS_API int32_t nexus_engine_start(const char* request_json) {
+         req.fullscreen = j.value("fullscreen", true);
+         req.volume = j.value("volume", 100);
+         req.auto_map_controller = j.value("autoMapController", false);
++        if (const auto it = j.find("buttonMap"); it != j.end() && it->is_object()) {
++            for (const auto& [k, v] : it->items()) {
++                if (v.is_string()) {
++                    req.button_map[k] = v.get<std::string>();
++                }
++            }
++        }
++        req.controller_type = j.value("controllerType", std::string{});
+         if (const auto it = j.find("contents"); it != j.end() && it->is_array()) {
+             for (const auto& c : *it) {
+                 if (c.is_string()) {

@@ -1,0 +1,34 @@
+From bd0dfcf14297b677688d4b28f7248251b17fe7ed Mon Sep 17 00:00:00 2001
+From: NEXUS <nexus@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 10:17:40 +0000
+Subject: [PATCH 8/8] package_engine: record the upstream base and NEXUS patch
+ series when built from patches
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
+---
+ tools/nexus/package_engine.py | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/tools/nexus/package_engine.py b/tools/nexus/package_engine.py
+index 65799affd..cfaf83047 100644
+--- a/tools/nexus/package_engine.py
++++ b/tools/nexus/package_engine.py
+@@ -40,10 +40,15 @@ for p in sorted(glob.glob(os.path.join(root, "LICENSES", "*.txt"))):
+     licences["Licences/" + os.path.basename(p)] = p
+ 
+ commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+-base = subprocess.run(["git", "describe", "--tags", "--match", "build-*", "--abbrev=0"],
+-                      capture_output=True, text=True).stdout.strip()
++base = os.environ.get("NEXUS_ENGINE_UPSTREAM_BASE") or subprocess.run(
++    ["git", "describe", "--tags", "--match", "build-*", "--abbrev=0"],
++    capture_output=True, text=True).stdout.strip()
+ manifest = {"name": "NEXUS Engine", "version": version, "api": 2, "commit": commit,
+             "upstreamBase": base, "files": {}}
++# When the engine is built from upstream + the NEXUS patch series (the NEXUS repository's CI),
++# the series' SHA-256 identifies the NEXUS changes independently of the rebuilt commit hashes.
++if os.environ.get("NEXUS_ENGINE_PATCHSET"):
++    manifest["patchset"] = os.environ["NEXUS_ENGINE_PATCHSET"]
+ for name, path in files.items():
+     with open(path, "rb") as fh:
+         manifest["files"][name] = hashlib.sha256(fh.read()).hexdigest()

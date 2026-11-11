@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "about": "NEXUS built-in artwork database. Each entry is applied only when the game is identified with certainty (see README, 'Game artwork').",
+  "entries": [
+    {
+      "id": "zelda-oot-remake-switch2",
+      "title": "The Legend of Zelda: Ocarina of Time (Nintendo Switch 2 remake, 2026)",
+      "file": "zelda-ocarina-of-time-remake.png",
+      "titleIds": [],
+      "names": [
+        "The Legend of Zelda: Ocarina of Time",
+        "The Legend of Zelda: Ocarina of Time Remake",
+        "Zelda: Ocarina of Time Remake"
+      ],
+      "exclude": ["3D", "Master Quest", "Majora", "Nintendo 64", "N64", "Ship of Harkinian", "Harkinian", "Randomizer", "Demo"],
+      "publisher": "Nintendo",
+      "filenameAll": ["Ocarina of Time", "Remake"],
+      "note": "Artwork supplied by the owner of this NEXUS build. The 2026 remake is a Nintendo Switch 2 game; the original Nintendo 64 game and Ocarina of Time 3D (Nintendo 3DS) were never released as standalone Switch titles, and fan ports are homebrew or carry other publishers, so they are not matched. No Title ID is listed because none has been officially published; add one here once confirmed from your own copy."
+    }
+  ]
+}
