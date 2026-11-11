@@ -60,7 +60,22 @@ function luminance(hex) {
   const n = parseInt(m[1], 16); const c = [n >> 16, (n >> 8) & 255, n & 255].map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; });
   return .2126 * c[0] + .7152 * c[1] + .0722 * c[2];
 }
-function inkFor(hex) { return luminance(hex) > .45 ? '#111' : '#fff'; }
+function contrast(a, b) { const x = luminance(a), y = luminance(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); }
+// text on an accent-coloured surface: whichever of near-black / white reads better
+function inkFor(hex) { return contrast(hex, '#111111') >= contrast(hex, '#ffffff') ? '#111' : '#fff'; }
+function mixHex(a, b, t) {
+  const p = x => parseInt(x.slice(1), 16), A = p(a), B = p(b);
+  const ch = s => Math.round(((A >> s) & 255) * (1 - t) + ((B >> s) & 255) * t);
+  return '#' + ((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, '0');
+}
+// the accent used as text (labels, values, selected items): the profile colour, moved towards
+// the theme's text colour just enough to stay readable on the theme's surfaces (4.5:1)
+function accentTextFor(hex, light) {
+  const surf = light ? '#ffffff' : '#2e3035', text = light ? '#1c1d20' : '#f4f5f7';
+  if (!/^#[0-9a-f]{6}$/i.test(hex || '')) return text;
+  for (let t = 0; t <= 1.0001; t += .05) { const c = mixHex(hex, text, t); if (contrast(c, surf) >= 4.5) return c; }
+  return text;
+}
 
 // ------------------------------------------------------------------ icons
 const I = {
@@ -548,6 +563,7 @@ function applyTheme() {
   S.anim = th.animations;
   document.documentElement.style.setProperty('--accent', th.accent || '#ff2a3a');
   document.documentElement.style.setProperty('--accent-ink', inkFor(th.accent || '#ff2a3a'));
+  document.documentElement.style.setProperty('--accent-text', accentTextFor(th.accent || '#ff2a3a', th.mode === 'light'));
   Wall.apply(th.wallpaper || {});
   const bg = th.mode === 'light' ? '#ececee' : '#1d1e21';
   document.querySelector('meta[name=theme-color]')?.setAttribute('content', bg);
@@ -1363,7 +1379,7 @@ function renderTopbar() {
   if (sys.battery?.present) {
     const pct = sys.battery.percent;
     const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 28 16');
-    s.innerHTML = `<rect x="1" y="2" width="23" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="25" y="5.5" width="2" height="5" rx="1" fill="currentColor"/><rect x="3" y="4" width="${19 * pct / 100}" height="8" rx="1.2" fill="${pct < 20 && !sys.battery.charging ? '#ff453a' : sys.battery.charging ? '#34c759' : 'currentColor'}"/>`;
+    s.innerHTML = `<rect x="1" y="2" width="23" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="25" y="5.5" width="2" height="5" rx="1" fill="currentColor"/><rect x="3" y="4" width="${19 * pct / 100}" height="8" rx="1.2" style="fill:${pct < 20 && !sys.battery.charging ? 'var(--danger)' : sys.battery.charging ? 'var(--ok)' : 'currentColor'}"/>`;
     s.style.width = '1.7em';
     bat.append(`${pct}%`, s);
   }

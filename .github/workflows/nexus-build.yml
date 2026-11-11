@@ -16,7 +16,8 @@ permissions:
 
 concurrency:
   group: nexus-build-${{ github.ref }}
-  cancel-in-progress: true
+  # a newer push waits for the running build (whose compiler cache the next one reuses)
+  cancel-in-progress: false
 
 env:
   NEXUS_VERSION: "2.2.0"
