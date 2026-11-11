@@ -19,9 +19,6 @@ concurrency:
   # a newer push waits for the running build (whose compiler cache the next one reuses)
   cancel-in-progress: false
 
-env:
-  NEXUS_VERSION: "2.2.0"
-
 jobs:
   app-tests:
     name: NEXUS tests (Linux, fast)
@@ -53,6 +50,20 @@ jobs:
 
       - name: Check out NEXUS
         uses: actions/checkout@v4
+
+      # the NEXUS version is app/VERSION; a release tag must match it (v<version>)
+      - name: NEXUS version
+        shell: bash
+        run: |
+          set -euo pipefail
+          v=$(tr -d ' \r\n' < app/VERSION)
+          if [[ "$GITHUB_REF" == refs/tags/v* && "${GITHUB_REF_NAME#v}" != "$v" ]]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match app/VERSION ($v)"; exit 1
+          fi
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            test -f "docs/releases/$GITHUB_REF_NAME.md" || { echo "::error::docs/releases/$GITHUB_REF_NAME.md (release notes) is missing"; exit 1; }
+          fi
+          echo "NEXUS_VERSION=$v" >> "$GITHUB_ENV"
 
       - uses: actions/setup-go@v5
         with:
@@ -262,8 +273,14 @@ jobs:
           path: out/*
           retention-days: 30
 
-      - name: Publish (version tags only)
+      - name: Publish the release (v* tags only, after every check above passed)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: out/*
+          name: NEXUS ${{ env.NEXUS_VERSION }} — Windows x64
+          body_path: docs/releases/${{ github.ref_name }}.md
+          prerelease: ${{ contains(env.NEXUS_VERSION, '-') }}
+          make_latest: ${{ !contains(env.NEXUS_VERSION, '-') }}
+          files: |
+            out/*.zip
+            out/*.sha256

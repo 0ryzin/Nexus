@@ -1,7 +1,8 @@
 # The NEXUS engine this NEXUS release ships with. CI builds it from the upstream base below plus
 # the NEXUS patch series in engine/patches (applied in order), tests it, and packs it into the
 # same ZIP as NEXUS.exe. The engine package records the base and the series' SHA-256.
+# The engine has its own version (engine-v namespace), separate from the NEXUS version in VERSION.
 upstream=zortos293/Lichii
-upstreamCommit=3dae119aeac255a9334386cdf10ca707ef96867d
-upstreamBase=build-130
-version=2.2.0
+upstreamCommit=17baed716da04fd743fbd8f9604bec96eab0a123
+upstreamBase=build-150
+version=0.1.0

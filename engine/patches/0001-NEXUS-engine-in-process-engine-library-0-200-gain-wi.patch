@@ -1,4 +1,4 @@
-From 8acbc62f275e19c531deb3c0c6ef1fe9e141323c Mon Sep 17 00:00:00 2001
+From 2db93dac4450c1d354810c19a5534df53454e186 Mon Sep 17 00:00:00 2001
 From: NEXUS <nexus@localhost>
 Date: Tue, 10 Nov 2026 23:27:30 +0000
 Subject: [PATCH 01/10] NEXUS engine: in-process engine library, 0-200% gain
@@ -6,6 +6,7 @@ Subject: [PATCH 01/10] NEXUS engine: in-process engine library, 0-200% gain
  sync tooling
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+(cherry picked from commit 8acbc62f275e19c531deb3c0c6ef1fe9e141323c)
 ---
  .github/workflows/nexus-engine.yml            |  50 ++
  CMakeLists.txt                                |   1 +
@@ -13,7 +14,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  src/CMakeLists.txt                            |   5 +
  src/audio_core/sink/nexus_gain.h              |  50 ++
  src/audio_core/sink/sink_stream.cpp           |  19 +-
- src/common/fs/path_util.cpp                   |  17 +-
+ src/common/fs/path_util.cpp                   |  21 +-
  src/nexus_engine/CMakeLists.txt               |  52 +++
  src/nexus_engine/include/nexus_engine.h       |  62 +++
  src/nexus_engine/nexus_engine.cpp             | 435 ++++++++++++++++++
@@ -26,7 +27,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  tools/nexus/abi_smoke.py                      |  21 +
  tools/nexus/package_engine.py                 |  24 +
  tools/nexus/upstream-sync.sh                  |  53 +++
- 19 files changed, 836 insertions(+), 20 deletions(-)
+ 19 files changed, 838 insertions(+), 22 deletions(-)
  create mode 100644 .github/workflows/nexus-engine.yml
  create mode 100644 dist/nexus.bmp
  create mode 100644 src/audio_core/sink/nexus_gain.h
@@ -215,10 +216,10 @@ literal 0
 HcmV?d00001
 
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index 92ea5b16c..cfa632a97 100644
+index c378b3fa9..8ee4e21d7 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
-@@ -288,6 +288,11 @@ add_subdirectory(input_common)
+@@ -307,6 +307,11 @@ add_subdirectory(input_common)
  add_subdirectory(frontend_common)
  add_subdirectory(shader_recompiler)
  
@@ -287,7 +288,7 @@ index 000000000..f0506621b
 +
 +} // namespace AudioCore::Nexus
 diff --git a/src/audio_core/sink/sink_stream.cpp b/src/audio_core/sink/sink_stream.cpp
-index 45c72dd44..89e9fa55b 100644
+index ac0ef0dae..e9b40abad 100644
 --- a/src/audio_core/sink/sink_stream.cpp
 +++ b/src/audio_core/sink/sink_stream.cpp
 @@ -20,6 +20,7 @@
@@ -344,10 +345,10 @@ index 45c72dd44..89e9fa55b 100644
  
          pushed = samples_buffer.Push(samples);
 diff --git a/src/common/fs/path_util.cpp b/src/common/fs/path_util.cpp
-index f77da2e30..c2723193e 100644
+index 55a8ccb4b..765ba3c36 100644
 --- a/src/common/fs/path_util.cpp
 +++ b/src/common/fs/path_util.cpp
-@@ -111,11 +111,16 @@ public:
+@@ -115,12 +115,17 @@ public:
      void Reinitialize(fs::path eden_path = {}) {
          fs::path eden_path_cache;
          fs::path eden_path_config;
@@ -357,26 +358,30 @@ index f77da2e30..c2723193e 100644
  #ifdef _WIN32
          // User directory takes priority over global %AppData% directory
 -        eden_path = GetExeDirectory() / PORTABLE_DIR;
+-        portable = IsDir(eden_path);
 -        if (!Exists(eden_path) || !IsDir(eden_path)) {
 -            eden_path = GetAppDataRoamingDirectory() / EDEN_DIR;
 +        if (!explicit_root) {
 +            eden_path = GetExeDirectory() / PORTABLE_DIR;
++            portable = IsDir(eden_path);
 +            if (!Exists(eden_path) || !IsDir(eden_path)) {
 +                eden_path = GetAppDataRoamingDirectory() / EDEN_DIR;
 +            }
          }
          eden_path_cache = eden_path / CACHE_DIR;
          eden_path_config = eden_path / CONFIG_DIR;
-@@ -132,8 +137,10 @@ public:
+@@ -139,9 +144,11 @@ public:
          eden_path_cache = eden_path / CACHE_DIR;
          eden_path_config = eden_path / CONFIG_DIR;
  #else
 -        eden_path = GetCurrentDir() / PORTABLE_DIR;
+-        portable = IsDir(eden_path);
 -        if (!Exists(eden_path) || !IsDir(eden_path)) {
 +        if (explicit_root) {
 +            eden_path_cache = eden_path / CACHE_DIR;
 +            eden_path_config = eden_path / CONFIG_DIR;
-+        } else if (eden_path = GetCurrentDir() / PORTABLE_DIR; !Exists(eden_path) || !IsDir(eden_path)) {
++        } else if (eden_path = GetCurrentDir() / PORTABLE_DIR, portable = IsDir(eden_path);
++                   !Exists(eden_path) || !IsDir(eden_path)) {
              eden_path = GetDataDirectory("XDG_DATA_HOME") / EDEN_DIR;
              eden_path_cache = GetDataDirectory("XDG_CACHE_HOME") / EDEN_DIR;
              eden_path_config = GetDataDirectory("XDG_CONFIG_HOME") / EDEN_DIR;
@@ -948,7 +953,7 @@ index 000000000..9d420e8d7
 +
 +} // extern "C"
 diff --git a/src/tests/CMakeLists.txt b/src/tests/CMakeLists.txt
-index cb22de1d1..25548c94d 100644
+index 8f59dde4d..7b0399063 100644
 --- a/src/tests/CMakeLists.txt
 +++ b/src/tests/CMakeLists.txt
 @@ -5,6 +5,7 @@

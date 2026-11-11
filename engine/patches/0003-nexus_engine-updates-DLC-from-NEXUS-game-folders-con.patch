@@ -1,4 +1,4 @@
-From 64b5e4b773dd06ca479d73d0b1a6d3ab4287f3a4 Mon Sep 17 00:00:00 2001
+From f859f20eafa4705c42f452b9abad75280381e06d Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Tue, 10 Nov 2026 23:41:36 +0000
 Subject: [PATCH 03/10] nexus_engine: updates/DLC from NEXUS game folders,
@@ -6,6 +6,7 @@ Subject: [PATCH 03/10] nexus_engine: updates/DLC from NEXUS game folders,
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
+(cherry picked from commit 64b5e4b773dd06ca479d73d0b1a6d3ab4287f3a4)
 ---
  src/nexus_engine/include/nexus_engine.h |  5 +-
  src/nexus_engine/nexus_engine.cpp       | 67 +++++++++++++++++++++++++

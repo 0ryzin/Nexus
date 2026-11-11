@@ -8,7 +8,13 @@ NEXUS is an independent, console-inspired gaming environment being developed for
 
 NEXUS is being developed around an integrated emulation engine. The intended experience is to launch and manage games from NEXUS itself, rather than asking users to choose and launch a separate emulator application.
 
-> **Development status:** NEXUS is still experimental. The supplied development package does not include a compiled NEXUS Engine build, so game launching is not yet ready for normal use. The engine source and integration are present in the supplied source package, but the engine must be built and tested before games can run. See [Engine status](docs/ENGINE_STATUS.md).
+## Download
+
+**[⬇ Download the latest NEXUS for Windows (Releases)](https://github.com/0ryzin/Nexus/releases/latest)**
+
+Every release lists what it brings. Download `NEXUS-<version>-Windows-x64.zip`, extract the whole folder anywhere, and run `NEXUS\NEXUS.exe`. Nothing else needs installing. All versions: [Releases](https://github.com/0ryzin/Nexus/releases).
+
+> **Development status:** NEXUS is a preview (0.x). The NEXUS Engine is built, tested and included in every release ZIP, and NEXUS loads it automatically. Running real games has **not** been tested by the project yet (the build machines have no GPU or games), so expect problems and please report them. See [Engine status](docs/ENGINE_STATUS.md).
 
 ## Project goals
 
@@ -21,7 +27,6 @@ NEXUS is being developed around an integrated emulation engine. The intended exp
 
 ## Current features
 
-The current Windows development build supplied for review includes:
 
 - A startup animation, home screen and game library.
 - User profiles, profile icons and per-user play statistics.
@@ -30,9 +35,13 @@ The current Windows development build supplied for review includes:
 - Themes, wallpapers and appearance settings.
 - Per-game settings and compatibility tracking.
 - Engine management screens, including verified engine-build installation and rollback support.
-- Import paths for relevant data from earlier NEXUS installations and the Eden data directory.
+- First-time setup (name, picture, profile colour), up to 8 users, separate saves per user.
+- Light and dark themes throughout.
+- Controller layouts for all games or per game (Nintendo or Xbox button positions, controller type, any button remapped).
+- Frame generation (AMD FSR 3, or Lossless Scaling with your own copy), NVIDIA DLSS in place of a game's DLSS on RTX cards, AMD FSR 4 on Radeon RX 9000 — offered only when your graphics card supports them.
+- Import paths for relevant data from the Eden data directory.
 
-Features in the interface do not necessarily mean the full emulation path has been verified. In particular, real-game launching has not yet been validated with a compiled engine build.
+Real-game launching has not yet been validated by the project; see *Development status*.
 
 ## Emulation engine
 
@@ -40,7 +49,7 @@ The NEXUS emulation project draws on the work and codebases of **Lichii, Eden, y
 
 NEXUS is designed to load its emulation engine directly. It is not intended to launch a separate Lichii, Ryujinx or other emulator application when a game is selected.
 
-**Current limitation:** no compiled nexus_engine.dll is included in the supplied package. Until a compatible engine build is produced and installed, selecting Play will report that the engine is unavailable and will not start a game.
+The engine ships inside the release ZIP (`NEXUS\Engine`) and is built from upstream Lichii (currently build-150) plus the NEXUS patches in [`engine/patches`](engine/patches).
 
 Switch 2 support is experimental upstream work and has **not** been verified by NEXUS. No Switch 2 compatibility claim is made.
 
@@ -48,11 +57,11 @@ More detail: [Engine architecture and status](docs/ENGINE_STATUS.md).
 
 ## Requirements
 
-The current Windows development package is intended for:
+NEXUS releases are for:
 
 - Windows 10 or Windows 11, 64-bit.
 - Microsoft Edge WebView2 Runtime.
-- Microsoft Visual C++ 2015–2022 x64 runtime for the engine.
+- (The Microsoft Visual C++ runtime the engine needs is included.)
 - A graphics driver supporting Vulkan 1.3 (recommended) or OpenGL 4.6.
 - Your own legally obtained game dumps, console keys and firmware. These are not included.
 
@@ -60,14 +69,13 @@ NEXUS does not provide games, console keys or firmware.
 
 ## Getting started
 
-1. Obtain a NEXUS Windows development or release package when one is published.
-2. Extract or install the NEXUS package using the instructions supplied with that build.
-3. Run NEXUS.
-4. Create a user profile and add your game-library folders in System Settings.
-5. Install only system files and game dumps that you are legally entitled to use.
-6. Install a compatible NEXUS Engine build when one is available.
+1. Download the latest ZIP from [Releases](https://github.com/0ryzin/Nexus/releases/latest).
+2. Extract the whole ZIP (keep the folders together) and run `NEXUS\NEXUS.exe`.
+3. Follow the first-time setup: name, picture, profile colour.
+4. Put your games in `NEXUS\Games` or add your game folders in System Settings.
+5. Install your own keys and firmware in *System Settings › System files*.
 
-The supplied package currently has no compiled engine build, so steps involving game launching cannot yet be completed.
+To update, download the new ZIP and replace the NEXUS folder; your users, saves and settings are kept in `%APPDATA%\NEXUS`.
 
 ## Data and portability
 
@@ -81,15 +89,17 @@ An empty portable.txt beside NEXUS.exe enables portable mode, keeping applicatio
 
 ## Versioning
 
-The first intended stable NEXUS release is **1.0.0**. The source in the supplied package currently defaults to 1.0.0-dev; that is a development identifier, not a published stable release.
+Releases are numbered from **0.0.0** (preview). The first intended stable release is **1.0.0**. Each release on the [Releases](https://github.com/0ryzin/Nexus/releases) page has its notes; the history is in [CHANGELOG.md](CHANGELOG.md).
 
 NEXUS application versions and NEXUS Engine build versions are tracked separately. See [VERSIONING.md](VERSIONING.md).
 
 ## Repository contents and source availability
 
-This repository is currently being set up for NEXUS project documentation and releases. Its main branch does not yet contain the complete application and engine source trees or a downloadable release package.
+- `app/` — the NEXUS application (Go + WebView2) and its release tooling.
+- `engine/patches/` — the NEXUS engine as patches on upstream Lichii; `app/engine.lock` names the upstream base.
+- `.github/workflows/nexus-build.yml` — the Windows build: engine, tests, NEXUS.exe, the ZIP, and the release for a `v*` tag.
 
-The supplied development package contains a NEXUS application source archive and emulation-engine source and integration work. When distributing a compiled build, the corresponding source and all required licence notices must be made available in accordance with the applicable licences. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Every release ZIP contains the corresponding source (`Source\`) and the licence notices. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Licensing and acknowledgements
 
@@ -97,13 +107,13 @@ The NEXUS project and its GPL-licensed components are distributed under **GNU GP
 
 NEXUS draws on Lichii, Eden, yuzu and Ryujinx, including related forks and components such as Ryubing. Other bundled libraries, fonts and engine dependencies have their own licences and attribution requirements. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for licensing information, notices and acknowledgements.
 
-Some artwork in the supplied personal development package is Nintendo-derived material supplied for personal use. It is not licensed by this repository for redistribution. Replace or remove those assets before sharing a build unless you have the necessary rights.
+The profile icon pack (`Resources\ProfileIcons`) is Nintendo-derived artwork. It is not licensed by this repository; see its NOTICE file.
 
 NEXUS is an independent project and is not affiliated with, endorsed by, or sponsored by Nintendo. Nintendo Switch is a trademark of Nintendo.
 
 ## Updates
 
-The current supplied build does **not** include a self-updater. This repository is intended to be the project's official location for future source updates, documentation and releases. Do not assume automatic in-app updates are available until that feature has been implemented and tested.
+NEXUS has no self-updater yet. New versions appear on the [Releases](https://github.com/0ryzin/Nexus/releases) page.
 
 ## Disclaimer
 

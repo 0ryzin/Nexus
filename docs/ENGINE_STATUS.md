@@ -22,14 +22,14 @@ See [Third-party notices, licences and acknowledgements](../THIRD_PARTY_NOTICES.
 ## Current implementation status (NEXUS 2.2)
 
 **The engine is compiled, tested and shipped in the NEXUS ZIP.** The repository's Windows build
-(`.github/workflows/nexus-build.yml`) checks out upstream Lichii build-130, applies the NEXUS patch
+(`.github/workflows/nexus-build.yml`) checks out upstream Lichii build-150, applies the NEXUS patch
 series in `engine/patches`, and builds `nexus_engine.dll` with clang-cl. Every build then:
 
-- runs the engine's test suite (1,156 test cases, all passing);
+- runs the engine's test suite (all passing);
 - calls the DLL's C interface (interface version 2, build info, status, volume, suspend, bad-request handling);
 - runs NEXUS's own test suite on Windows and Linux;
-- builds `NEXUS.exe` and packs it with the engine (and the complete app-local VC++ runtime) into `NEXUS-2.2.0-Windows-x64.zip`;
-- extracts that ZIP into a fresh folder, checks that every DLL the engine imports is in the package or part of Windows, and runs `NEXUS.exe --engine-check`, which finds, verifies and loads the engine exactly as on a user's PC (result: ready, NEXUS Engine 2.2.0, Switch core + Switch 2 experimental, Vulkan/OpenGL renderers).
+- builds `NEXUS.exe` and packs it with the engine (and the complete app-local VC++ runtime) into `NEXUS-<version>-Windows-x64.zip`;
+- extracts that ZIP into a fresh folder, checks that every DLL the engine imports is in the package or part of Windows, and runs `NEXUS.exe --engine-check`, which finds, verifies and loads the engine exactly as on a user's PC (result: ready, Switch core + Switch 2 experimental, Vulkan/OpenGL renderers).
 
 ## What has and has not been verified
 

@@ -1,4 +1,4 @@
-From bd0dfcf14297b677688d4b28f7248251b17fe7ed Mon Sep 17 00:00:00 2001
+From 77e2d4cea80befc769545df90e9fc85efb3037e3 Mon Sep 17 00:00:00 2001
 From: NEXUS <nexus@users.noreply.github.com>
 Date: Wed, 11 Nov 2026 10:17:40 +0000
 Subject: [PATCH 08/10] package_engine: record the upstream base and NEXUS
@@ -6,6 +6,7 @@ Subject: [PATCH 08/10] package_engine: record the upstream base and NEXUS
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
+(cherry picked from commit bd0dfcf14297b677688d4b28f7248251b17fe7ed)
 ---
  tools/nexus/package_engine.py | 9 +++++++--
  1 file changed, 7 insertions(+), 2 deletions(-)

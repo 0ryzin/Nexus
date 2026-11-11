@@ -1,4 +1,4 @@
-From e67bac0af2fab3178f4d8e1651bf2d31b0f5176a Mon Sep 17 00:00:00 2001
+From 632fb48d4725e74d3d89aa7936dba48ee864d95d Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Tue, 10 Nov 2026 23:33:55 +0000
 Subject: [PATCH 02/10] nexus_engine: report whether the loaded program is a
@@ -6,6 +6,7 @@ Subject: [PATCH 02/10] nexus_engine: report whether the loaded program is a
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
+(cherry picked from commit e67bac0af2fab3178f4d8e1651bf2d31b0f5176a)
 ---
  src/nexus_engine/nexus_engine.cpp | 9 +++++++++
  1 file changed, 9 insertions(+)

@@ -1,29 +1,26 @@
-# NEXUS 2.2
+# NEXUS 0.0.0 (preview)
 
 NEXUS is a console-style game system for Windows. It starts with a power-on animation, then opens a home screen with your game library, user profiles, themes and controller navigation.
 
-**New in 2.2:**
+**What NEXUS does:**
+- **Frame generation and DLSS:** frame generation (AMD FSR 3 built in, or Lossless Scaling with your own copy), NVIDIA DLSS in place of a game's own DLSS on GeForce RTX cards, and AMD FSR 4 on Radeon RX 9000 cards, in *Emulation settings › Frame generation & DLSS* and per game. NEXUS detects your graphics card and offers only what it supports.
 - **The engine is built and shipped with NEXUS.** The NEXUS engine is compiled on Windows by the project's build (GitHub Actions), its tests run, and it is packed into the same ZIP as `NEXUS.exe`. NEXUS finds it in `NEXUS\Engine`, checks every file and loads it in the background while the interface starts. `NEXUS.exe --engine-check result.json` runs the same check from the command line.
 - **First-time setup:** when there are no users yet, NEXUS opens a short setup — name → picture → profile colour → review. Your picture and colour (a ring around your picture, and the highlight colour while you are signed in) appear wherever your user is shown and can be changed later in *User settings*.
 - **Up to 8 users.** *Add user* disappears when 8 exist; existing users are kept as they are.
 - **Controller layouts for games:** Nintendo positions or Xbox labels, the controller type the game sees (Pro Controller, Joy-Con pair, handheld), and any Switch button moved to another button — for all games (*Controllers*) or for one game (*Configure Game Settings › Controls*). Some games come with a preset (for example, Joy-Con pair for party games). *Restore defaults* is always one step away.
-- **Light and dark themes everywhere:** every screen, list, dialog and the setup use one set of theme colours; the play-time list no longer shows a white background in dark mode, and text in your profile colour is adjusted to stay readable on both themes.
-
-**New in 2.1:**
+- **Light and dark themes everywhere:** every screen, list, dialog and the setup use one set of theme colours, and text in your profile colour is adjusted to stay readable on both themes.
 - **One download.** `NEXUS-<version>-Windows-x64.zip` contains NEXUS *and* its engine (`NEXUS\Engine`). Extract it and run `NEXUS.exe`; nothing else to install. The engine is found relative to `NEXUS.exe`, so the folder works wherever you put it, and it is updated together with NEXUS.
 - **Hardware information** and **Optimise for my device** (*Emulation settings*): NEXUS reads your CPU, GPU, memory, Windows version and display, and recommends engine settings with *Performance*, *Balanced* or *Quality* profiles, for all games or for one game. You see every change first, choose which to apply, and can restore the previous settings.
 - **Readable save folders:** `Saves\<profile ID> - <name>\<game>` (for example `BOTW - The Legend of Zelda Breath of the Wild`), ready for dropping in your own saves; export and import as ZIP.
 - **Animated wallpapers** (GIF, animated WebP, MP4, WebM) with a preview, and **Home transitions**: pressing Home during a game pauses it and opens the Home screen; *Resume* takes you back.
-
-**New in 2.0: NEXUS runs games itself.** The NEXUS engine (Switch emulation core built on the yuzu/Eden code base) is loaded inside NEXUS. When you press Play, NEXUS opens the game window, plays the game and brings you back to the home screen. No other emulator program is started, and there is no emulator to choose.
+- **NEXUS runs games itself.** The NEXUS engine (Switch emulation core built on the yuzu/Eden code base) is loaded inside NEXUS. When you press Play, NEXUS opens the game window, plays the game and brings you back to the home screen. No other emulator program is started, and there is no emulator to choose.
 - **NEXUS Engine** settings: status, supported systems, engine builds with verified install and rollback.
 - **Game volume 0–200 %** with a NEXUS slider: in *Game sessions & saves*, *Emulation settings › Audio*, per game, and live on the playing screen. 100 % is the game's own level; above it a soft limiter prevents harsh clipping.
 - **Compatibility** per game, from what actually happens when you play it in NEXUS, plus your own rating.
 - Updates and DLC in your game folders are applied automatically; player 1 is mapped to your controller automatically.
-- New startup wordmark typeface (Outfit) — same animation.
-- Faster library: tiles use cached, downscaled artwork.
+- Fast library: tiles use cached, downscaled artwork.
 
-> **About this package.** This ZIP was produced by the project's Windows build (GitHub Actions, `.github/workflows/nexus-build.yml`): it compiles the NEXUS engine from upstream Lichii build-130 plus the NEXUS patches in `engine/patches`, runs the engine's test suite (1,156 test cases), loads the DLL and checks its interface, runs NEXUS's own tests on Windows, builds `NEXUS.exe`, packs both into this ZIP, then extracts the ZIP into a fresh folder and has `NEXUS.exe --engine-check` find, verify and load the engine there. The build machine has no GPU and no games, so **running real games has not been tested yet** (see *Known limitations*).
+> **About this package.** This ZIP was produced by the project's Windows build (GitHub Actions, `.github/workflows/nexus-build.yml`): it compiles the NEXUS engine from upstream Lichii build-150 plus the NEXUS patches in `engine/patches`, runs the engine's test suite (its full test suite), loads the DLL and checks its interface, runs NEXUS's own tests on Windows, builds `NEXUS.exe`, packs both into this ZIP, then extracts the ZIP into a fresh folder and has `NEXUS.exe --engine-check` find, verify and load the engine there. The build machine has no GPU and no games, so **running real games has not been tested yet** (see *Known limitations*).
 
 NEXUS is an independent project. It is not affiliated with or endorsed by Nintendo. It contains **no games, keys or firmware**.
 
@@ -339,7 +336,7 @@ The sequence, on red by default:
 1. The screen powers on to the startup colour with a soft glow.
 2. The emblem appears centred on screen: its two halves slide in from either side and click together, each with a sound.
 3. The joined emblem pops and rings of light pulse outward.
-4. The logo rises while **NEXUS** fades up and **SWITCH** opens out from the centre beneath it. Since 2.0 both words are set in **Outfit** (SIL Open Font License), a modern geometric typeface; the emblem, timings, layout and colours are unchanged.
+4. The logo rises while **NEXUS** fades up and **SWITCH** opens out from the centre beneath it. Both words are set in **Outfit** (SIL Open Font License), a modern geometric typeface; the emblem, timings, layout and colours are unchanged.
 5. A light sweep crosses the logo, which then fades smoothly into the home screen.
 
 The full animation is about 3.5 seconds, or about 2.5 with *Short*. In *System Settings › Startup* you can:
@@ -407,15 +404,15 @@ NEXUS never downloads or swaps an emulator executable. The engine is built from 
 ## 9. How this build was verified
 
 **On Windows, by the build (every ZIP):**
-- the engine compiles and links (`nexus_engine.dll`), all 1,156 upstream engine test cases pass;
+- the engine compiles and links (`nexus_engine.dll`), all upstream engine test cases pass;
 - the engine's C interface is called directly (version, build information, status, volume, suspend, refusing a bad request);
 - every DLL the engine imports is either in the package (including the complete VC++ runtime) or part of Windows;
 - NEXUS's Go test suite passes on Windows (and on Linux);
 - after a fresh extract of the ZIP, `NEXUS.exe --engine-check` finds the engine next to it, verifies every file against `engine.json`, loads it into NEXUS and reads its build information.
 
-**In a browser against the stand-in engine (2.2 checks):** first-time setup on an empty data folder (name → picture → colour → review, empty and duplicate names refused); the picture and colour saved and shown (colour ring in the top bar); 8 users allowed, a 9th refused and *Add user* hidden; users, colours, pictures and both kinds of controller layout kept after a restart and after replacing the NEXUS folder (data folder kept); the Controllers and game Controls pages and the button editor in dark and light; the play-time list in both themes; an automated contrast check of 20 screens in both themes.
+**In a browser against the stand-in engine:** first-time setup on an empty data folder (name → picture → colour → review, empty and duplicate names refused); the picture and colour saved and shown (colour ring in the top bar); 8 users allowed, a 9th refused and *Add user* hidden; users, colours, pictures and both kinds of controller layout kept after a restart and after replacing the NEXUS folder (data folder kept); the Controllers and game Controls pages and the button editor in dark and light; the play-time list in both themes; an automated contrast check of 20 screens in both themes.
 
-**Earlier (2.1) checks, in Go tests and a browser walkthrough:** NEXUS ran against a stand-in engine with the same states and audio path:
+**Earlier checks, in Go tests and a browser walkthrough:** NEXUS ran against a stand-in engine with the same states and audio path:
 - **Bundled engine:** found relative to the NEXUS folder after the folder was moved; damaged library files detected; added builds and rollback to the included engine.
 - **Release script:** run with a stand-in engine. It produced one ZIP with `Engine\` inside, and its self-checks passed.
 - **Optimiser:**
@@ -447,7 +444,7 @@ NEXUS never downloads or swaps an emulator executable. The engine is built from 
 ## 10. Licensing
 
 - **NEXUS is free software under the GNU GPL v3.0 or later** (`Licences\NEXUS-GPL-3.0.txt`), because it loads the GPL engine in-process. Full source: `Source\NEXUS-source.zip`.
-- **The NEXUS engine** is GPL-3.0-or-later, built on Lichii (github.com/zortos293/Lichii), Eden, yuzu and other projects. Corresponding source: `Source\engine\nexus-engine-source.tar.gz` (the exact tree that was compiled: Lichii build-130 with the NEXUS patches applied); the patches themselves are in the NEXUS source (`engine/patches`). Component licences: `Licences\engine-third-party\`.
+- **The NEXUS engine** is GPL-3.0-or-later, built on Lichii (github.com/zortos293/Lichii), Eden, yuzu and other projects. Corresponding source: `Source\engine\nexus-engine-source.tar.gz` (the exact tree that was compiled: Lichii build-150 with the NEXUS patches applied); the patches themselves are in the NEXUS source (`engine/patches`). Component licences: `Licences\engine-third-party\`.
 - **Ryujinx** (MIT) is used only as a technical reference; no Ryujinx code is included. Its licence is kept in `Licences\` for any fix ported in future.
 - Libraries in NEXUS.exe: go-webview2 (MIT, with Microsoft's WebView2Loader), go-winloader (ISC), golang.org/x/sys and the Go standard library (BSD). Fonts: Inter and Outfit (both SIL Open Font License 1.1).
 - "Switch" and "Nintendo Switch" are trademarks of Nintendo. **Personal build:** the NEXUS SWITCH emblem, `Resources\ProfileIcons` and the Ocarina of Time artwork are artwork you supplied (Nintendo designs); replace/remove them before sharing (see the NOTICE files).
@@ -457,6 +454,6 @@ NEXUS never downloads or swaps an emulator executable. The engine is built from 
 
 **Release (one ZIP):** the GitHub repository's `.github/workflows/nexus-build.yml` (Windows runner) checks out upstream Lichii at the commit in `app/engine.lock`, applies `engine/patches/*.patch` in order, builds `nexus_engine` and the engine tests with clang-cl (as upstream's Windows builds do), runs the tests and the interface smoke test, packages the engine (`tools/nexus/package_engine.py`, recording the upstream base and the SHA-256 of the patch series), runs NEXUS's tests, builds `NEXUS.exe`, calls `tools/release/make_release.py` (which refuses an engine that is damaged, of another interface version, or not built from this patch series) and finally checks a fresh extract with `NEXUS.exe --engine-check`. The ZIP is the run's artifact; a `v*` tag publishes it as a release.
 
-NEXUS: Go 1.24+; `GOOS=windows GOARCH=amd64 go build -ldflags "-H windowsgui -s -w -X main.AppVersion=2.2.0" -o NEXUS.exe .`; `go test .` (the tests use the stand-in engine; `NEXUS_FAKE_ENGINE=1 go run .` starts the UI for development on Linux).
+NEXUS: Go 1.24+; `GOOS=windows GOARCH=amd64 go build -ldflags "-H windowsgui -s -w -X main.AppVersion=0.0.0" -o NEXUS.exe .`; `go test .` (the tests use the stand-in engine; `NEXUS_FAKE_ENGINE=1 go run .` starts the UI for development on Linux).
 
-Engine by hand: apply the patches to Lichii build-130 and build on Windows (Visual Studio 2022 + LLVM clang-cl + Vulkan SDK): `cmake -B build -G Ninja -DNEXUS_ENGINE=ON -DYUZU_TESTS=ON -DENABLE_QT=OFF -DYUZU_CMD=OFF -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl`, then `cmake --build build --target nexus_engine tests`.
+Engine by hand: apply the patches to Lichii build-150 and build on Windows (Visual Studio 2022 + LLVM clang-cl + Vulkan SDK): `cmake -B build -G Ninja -DNEXUS_ENGINE=ON -DYUZU_TESTS=ON -DENABLE_QT=OFF -DYUZU_CMD=OFF -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl`, then `cmake --build build --target nexus_engine tests`.

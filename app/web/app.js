@@ -1960,9 +1960,10 @@ async function gameConfig(key, startSection = 'general') {
       return;
     }
     if (!view.perGameOk) { body.append(h('p', { class: 'note warn' }, view.perGameReason)); return; }
-    const note = { graphics: 'Applies only to this game. “Use global” follows Settings › Emulation settings.', advanced: 'For advanced users. If a game misbehaves, use Restore defaults on the General page.',
+    const note = { enhance: 'Applies only to this game. Frame generation suits games that already run at a steady frame rate.', graphics: 'Applies only to this game. “Use global” follows Settings › Emulation settings.', advanced: 'For advanced users. If a game misbehaves, use Restore defaults on the General page.',
       audio: '', controls: '', system: '' }[section];
     if (note) body.append(h('p', { class: 'note' }, note));
+    if (section === 'enhance') { const eb = h('div'); body.append(eb); enhancementsPanel(eb); }
     settingRows(body, view, section, { mode: 'game', engine: eng, save });
   };
   const draw = focusBody => {
@@ -2392,6 +2393,39 @@ async function optimiserPanel(holder, gameKey = '', after) {
   await load();
 }
 
+// ---------- frame generation, DLSS and FSR 4: what this PC can use, and the files they need
+async function enhancementsPanel(box) {
+  let en;
+  try { en = await api('/api/enhancements'); } catch (e) { box.append(h('p', { class: 'note warn' }, e.message)); return; }
+  const pill = (cls, label) => h('span', { class: 'pill ' + cls }, label);
+  const draw = () => {
+    box.replaceChildren();
+    const st = f => f.ready ? pill('ok', 'Ready') : f.supported ? pill('warn', 'Needs files') : pill('bad', 'Not supported');
+    box.append(h('dl', { class: 'kv enh-kv' },
+      h('dt', {}, 'Graphics card'), h('dd', {}, en.gpu || 'Not detected'),
+      h('dt', {}, 'FSR 3 frame generation'), h('dd', {}, st(en.frameGen)),
+      h('dt', {}, 'Lossless Scaling frame generation'), h('dd', {}, st(en.lossless)),
+      h('dt', {}, 'NVIDIA DLSS'), h('dd', {}, st(en.dlss)),
+      h('dt', {}, 'AMD FSR 4'), h('dd', {}, st(en.fsr4))));
+    if (en.frameGen.supported && !en.lossless.ready) {
+      box.append(rowButton('Find Lossless Scaling…', { sub: (en.lossless.detail ? en.lossless.detail + '. ' : '') + 'Copies Lossless.dll from your own Lossless Scaling (Steam) into NEXUS. NEXUS never includes it.', onClick: async () => {
+        try { en = await api('/api/enhancements/lossless', { body: {} }); toast('Lossless Scaling ready', I.check); draw(); }
+        catch (e) {
+          if (await confirmDlg('Lossless Scaling not found', e.message + '\n\nChoose Lossless.dll yourself?', 'Choose file')) {
+            try { const r = await api('/api/enhancements/lossless', { body: { pick: true } }); if (!r.cancelled) { en = r; toast('Lossless Scaling ready', I.check); draw(); } } catch (e2) { alertDlg('Could not use that file', e2.message); }
+          }
+        }
+      } }));
+    }
+    if (en.dlss.supported && !en.dlss.ready) {
+      box.append(h('p', { class: 'note' }, en.dlss.why));
+      box.append(rowButton('Open the DLSS folder', { sub: en.dlssDir, onClick: () => api('/api/app/open-folder', { body: { which: 'streamline' } }).catch(e => toast(e.message, I.warn)) }));
+      box.append(rowButton('Check again', { onClick: async () => { en = await api('/api/enhancements'); draw(); } }));
+    }
+  };
+  draw();
+}
+
 // ---------- global emulation settings
 let emuSection = 'graphics';
 async function renderEmuSettings(p) {
@@ -2417,6 +2451,7 @@ async function renderEmuSettings(p) {
       if (keep >= 0) { const it = Nav.items(holder); Nav.setFocus(it[Math.min(keep, it.length - 1)], { silent: true, scroll: false }); }
       return;
     }
+    if (emuSection === 'enhance') { const eb = h('div'); holder.append(eb); enhancementsPanel(eb); }
     if (emuSection === 'graphics') holder.append(rowButton('Optimise for my device…', { icon: I.bolt || I.check, sub: 'Recommended settings for your hardware, with Performance, Balanced and Quality profiles.', onClick: () => { emuSection = 'optimise'; draw(); } }));
     settingRows(holder, view, emuSection, { mode: 'global', save: async patch => {
       try { view = await api('/api/engine-settings', { body: patch }); toast('Saved', I.check, 1200); draw(); } catch (e) { alertDlg('Could not save', e.message); }

@@ -1,6 +1,33 @@
 # The NEXUS engine: investigation, architecture, status and plan
 
-## 0. Changes in 2.2
+## 0. Current engine: NEXUS Engine 0.1.0 (NEXUS 0.0.0)
+
+* **Upstream base: Lichii build-150** (was build-130). The NEXUS patches were re-applied on top; one
+  conflict (the engine data folder, `common/fs/path_util.cpp`) was resolved so NEXUS's explicit data
+  folder still wins over Lichii's new own data folder and Eden import.
+* What build-150 brings (51 upstream commits), among others:
+  * **DLSS:** quality modes and model presets (default preset M), DLSS stays on when Streamline warns
+    about the VRAM budget, presets E/F accepted, DLSS memory logged.
+  * **AMD FSR 3.1 / FSR 4** for The Legend of Zelda: Ocarina of Time (in place of the game's
+    anti-aliasing network; FSR 4 through AMD's runtime), camera jitter and LOD bias.
+  * **Vulkan:** buffers allocated over the memory budget instead of crashing; fewer barriers and
+    commands for in-order uploads; a dispatch's barrier in its own command; evicted pipelines keep
+    their storage-buffer pointers; clearer out-of-host-memory errors.
+  * **Textures / buffers:** block-linear swizzle in 16-byte units, 2D-engine blits between 3D surfaces
+    slice by slice, a join's upload skipped when overwritten, collector thresholds within the host's
+    commit (Ocarina of Time out-of-memory crash), read-only compute storage buffers bound to the end
+    of their mapping (Mario Kart World dark lighting).
+  * **Audio:** ADPCM nibble sign fixed (Ocarina of Time ocarina crackle); the system mix queue sized to
+    the host's callback.
+  * **Core / NX2:** kernel shut down when no loader is found; loading no longer waits for the time
+    services; destroyed GPU backing released and ranges refreshed; NUP add-ons registered from
+    external content; damaged NUP members served with a stand-in; GPU threads waiting on syncs
+    released at shutdown.
+* **Frame generation, DLSS and FSR 4 in NEXUS:** the engine's `frame_gen*`, `nvidia_dlss*` and
+  `amd_fsr4` settings are now NEXUS settings (*Emulation settings › Frame generation & DLSS*, and
+  per game), offered according to the detected graphics card (see README).
+
+## 0.1 Earlier: the first Windows builds
 
 * **The engine is compiled, tested and shipped.** The NEXUS repository holds the engine as a patch
   series on upstream Lichii build-130 (`engine/patches`, 10 patches). Its Windows build
@@ -18,7 +45,7 @@
   user's or game's layout; see README, Controller support.
 * **Still untested:** a real game (needs a GPU, keys/firmware and games).
 
-## 0.1 Changes in 2.1
+## 0.2 Packaging and interface 2
 
 * **Packaging:** the engine ships inside the NEXUS folder (`Engine\nexus_engine.dll`, `Engine\engine.json`, `Engine\Libraries\`).
   * NEXUS finds it relative to `NEXUS.exe` and loads it with `LoadLibraryExW`. Dependencies are searched only in the engine folder, `Engine\Libraries` and System32.
