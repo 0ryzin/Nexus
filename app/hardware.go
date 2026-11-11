@@ -71,6 +71,8 @@ type Display struct {
 	Height    int    `json:"height"`
 	RefreshHz int    `json:"refreshHz"`
 	Primary   bool   `json:"primary"`
+	// RefreshRates: the refresh rates the display offers at its current resolution
+	RefreshRates []int `json:"refreshRates,omitempty"`
 }
 
 type DiskInfo struct {

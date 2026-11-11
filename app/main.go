@@ -92,6 +92,7 @@ func main() {
 	app.Log.Printf("UI server at %s", srv.ln.Addr())
 	// Load and verify the bundled engine in the background while the interface starts, so the
 	// first game launch does not wait for it and the engine status is ready on the home screen.
+	app.StartPerfOverlay() // in-game performance bar (idle unless a game is in front and it is on)
 	app.Emu.CheckEngineInBackground(func(ok bool, msg string) {
 		if !ok {
 			app.Log.Printf("engine: %s", msg)

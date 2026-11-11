@@ -1,6 +1,27 @@
 # The NEXUS engine: investigation, architecture, status and plan
 
-## 0. NEXUS Engine 0.2.0 (NEXUS 0.1.0): the configuration error
+## 0. NEXUS Engine 0.3.0 (NEXUS 0.2.0): the loading-screen fix and the Home key (patch 0013)
+
+**The problem.** Between the NEXUS loading screen and the first frame of a game, a black window with
+a white frame filled the screen. The engine created its game window *visible* before loading the
+game; while the game and its shader cache loaded, the engine thread handled no window messages, so
+Windows drew an unpainted window (black, with the default white frame).
+
+**The fix.** The game window is created hidden. It is shown, switched to fullscreen (if set) and
+brought to the front only when the first frame has been drawn (or after 20 seconds, so a game that
+never draws still becomes visible). Until then the NEXUS loading screen stays on top.
+
+Also in 0013:
+* real loading progress in the status JSON: `loadStage` ("preparing" / "shaders"), `loadDone`,
+  `loadTotal` (from the engine's own disk-resource callback; no invented percentages);
+* the NEXUS Home key (`homeKey`, an SDL scancode; default H) and the controller Guide/Home button
+  (`homeButton`) are consumed by the engine and counted in `homePresses`; when the key is used by
+  player 1's controls the engine leaves it to the game and reports `homeKeyConflict`;
+* `shown`: whether the game window has been shown.
+
+Not verified on real hardware: the build machines have no GPU. CI compiles and tests the engine.
+
+## 1. NEXUS Engine 0.2.0 (NEXUS 0.1.0): the configuration error
 
 **What went wrong.** Lichii build-150 (#1253, "Give Lichii its own data folder with a recoverable
 Eden import") added `FrontendCommon::CheckLegacyProfileBeforeConfig()` to `Config::Initialize`. It

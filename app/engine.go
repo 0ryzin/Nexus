@@ -35,6 +35,11 @@ type RunState struct {
 	// Stage, while starting: preparing (NEXUS writes the session) | loading (the engine reads the
 	// game) | starting (the game runs, first frame not shown yet). Shown on the loading screen.
 	Stage string `json:"stage,omitempty"`
+	// LoadDone/LoadTotal: measured progress of the current stage (shaders), when the engine has it
+	LoadDone  uint64 `json:"loadDone,omitempty"`
+	LoadTotal uint64 `json:"loadTotal,omitempty"`
+	// HomeKeyConflict: the Home key is one of the game's controls, so it goes to the game
+	HomeKeyConflict bool `json:"homeKeyConflict,omitempty"`
 }
 
 const engineID = "nexus"
@@ -221,6 +226,18 @@ func (e *Emulator) writeSessionConfig(g *Game, pr *Profile) (string, error) {
 			ini.Set("Controls", "player_0_profile_name", input)
 		}
 	}
+	// "Match my display": the Switch 2 frame-rate limit follows the refresh rate of the display
+	match := s.Engine["graphics.fps_match_display"]
+	if g != nil {
+		if v, ok := gameNexusSettings(e.app.Library.GP.Get(g.Key))["graphics.fps_match_display"]; ok {
+			match = v
+		}
+	}
+	if match == "true" {
+		if hz := primaryRefresh(e.app.DetectHardware(false)); hz > 0 {
+			ini.SetSetting("Renderer", "nx2_frame_rate_limit", strconv.Itoa(int(clampF(float64(hz), 30, 240))))
+		}
+	}
 	if s.Emulator.ManageSaves && pr != nil {
 		dir := e.app.Profiles.SaveDir(pr.ID)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -338,7 +355,8 @@ func (e *Emulator) Launch(g *Game, profileID string) error {
 	}
 	req := EngineRequest{Game: g.Path, DataDir: e.DataDir(), ConfigFile: cfg, Title: "NEXUS — " + g.Title,
 		Fullscreen: s.Emulator.Fullscreen, Volume: vol, OwnerWindow: e.app.UI.WindowHandle(),
-		Contents: e.extraContents(g), AutoMapController: e.inputProfileFor(g, pr) == ""}
+		Contents: e.extraContents(g), AutoMapController: e.inputProfileFor(g, pr) == "",
+		HomeKey: s.Emulator.HomeKey, HomeButton: s.Emulator.HomeButton}
 	if req.AutoMapController {
 		layout, _, _ := e.EffectiveLayout(g, pr)
 		req.ButtonMap, req.ControllerType = layout.Resolve(), layout.ControllerType
@@ -384,6 +402,8 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 	gameSystem := ""
 	comboHeld := time.Time{}
 	guideWas := false
+	homeSeen := uint64(0)
+	lastHome := time.Time{}
 	checkpoint := func() {
 		if st.Phase != "playing" {
 			return
@@ -405,11 +425,18 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 			gameSystem = es.System
 		}
 		if st.Phase == "starting" {
-			stage := map[string]string{"loading": "loading", "running": "starting"}[es.State]
-			if stage != "" && stage != st.Stage {
-				st.Stage = stage
+			stage := map[string]string{"starting": "loading", "loading": "loading", "running": "starting"}[es.State]
+			if es.LoadStage == "shaders" {
+				stage = "shaders"
+			}
+			if stage != "" && (stage != st.Stage || es.LoadDone != st.LoadDone || es.LoadTotal != st.LoadTotal) {
+				st.Stage, st.LoadDone, st.LoadTotal = stage, es.LoadDone, es.LoadTotal
 				e.setState(st)
 			}
+		}
+		if es.HomeKeyConflict != st.HomeKeyConflict {
+			st.HomeKeyConflict = es.HomeKeyConflict
+			e.setState(st)
 		}
 		switch es.State {
 		case "running":
@@ -440,9 +467,17 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 				e.app.Events.Emit("emulator.home", st)
 			}
 		}
-		// the controller's Home/Guide button toggles between the game and NEXUS Home
-		g := guidePressed()
-		if g && !guideWas && st.Phase == "playing" {
+		// NEXUS Home: the Xbox Guide button (read here through XInput), or the Home key / a
+		// controller's Home button seen by the game window (counted by the engine). Either one
+		// toggles between the game and NEXUS Home; presses close together count once.
+		g := guidePressed() && s.Emulator.HomeButton
+		home := g && !guideWas
+		if es.HomePresses > homeSeen {
+			home = true
+		}
+		homeSeen = es.HomePresses
+		if home && st.Phase == "playing" && time.Since(lastHome) > 400*time.Millisecond {
+			lastHome = time.Now()
 			host.Suspend(!st.Suspended)
 		}
 		guideWas = g
@@ -689,4 +724,12 @@ func (e *Emulator) writeDiagnostic(st RunState, le *LaunchError, tail string) st
 		return ""
 	}
 	return p
+}
+
+// primaryRefresh: the refresh rate of the main display (0 if unknown).
+func primaryRefresh(h Hardware) int {
+	if d := h.PrimaryDisplay(); d != nil {
+		return d.RefreshHz
+	}
+	return 0
 }

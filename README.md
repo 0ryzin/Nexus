@@ -12,6 +12,8 @@ NEXUS is being developed around an integrated emulation engine. The intended exp
 
 **[⬇ Download the latest NEXUS for Windows (Releases)](https://github.com/0ryzin/Nexus/releases/latest)**
 
+**Platforms:** Windows x64 — available (preview). Linux — planned next, not available yet. macOS — planned after Linux, not available yet. See [Platforms](docs/PLATFORMS.md).
+
 Every release lists what it brings. Download `NEXUS-<version>-Windows-x64.zip`, extract the whole folder anywhere, and run `NEXUS\NEXUS.exe`. Nothing else needs installing. All versions: [Releases](https://github.com/0ryzin/Nexus/releases).
 
 > **Development status:** NEXUS is a preview (0.x). The NEXUS Engine is built, tested and included in every release ZIP, and NEXUS loads it automatically. Running real games has **not** been tested by the project yet (the build machines have no GPU or games), so expect problems and please report them. See [Engine status](docs/ENGINE_STATUS.md).
@@ -40,6 +42,10 @@ Every release lists what it brings. Download `NEXUS-<version>-Windows-x64.zip`, 
 - Controller layouts for all games or per game (Nintendo or Xbox button positions, controller type, any button remapped).
 - Frame generation (AMD FSR 3, or Lossless Scaling with your own copy), NVIDIA DLSS in place of a game's DLSS on RTX cards, AMD FSR 4 on Radeon RX 9000 — offered only when your graphics card supports them.
 - Import paths for relevant data from the Eden data directory.
+- A full-screen NEXUS loading screen with the game's artwork and real loading steps; the game window appears only once the game is drawing.
+- **NEXUS Home while playing:** press **H** (changeable, or off) or the controller's Home/Guide button to return to NEXUS. The game keeps running in the background, muted and receiving no input; its tile shows a green dot, with *Resume Game* and *Close Game*. If H is used by your game controls, NEXUS leaves it to the game and tells you.
+- **Performance monitor:** an overlay at the top or bottom of the screen with FPS, frame time, CPU and GPU use and temperature, VRAM, RAM and RAM speed. Anything that can't be measured on your PC shows N/A. Choose metrics, opacity and size, for all games or chosen games, and toggle it while playing.
+- **Frame rate and VSync:** a frame rate limit for Switch 2 games (30–240, presets 30/60/90/120/144/165/240) or "match my display's refresh rate", VSync on/off/mailbox, per game. Switch 1 games run at their own rate; turning off the emulation speed limit speeds the game up rather than adding frames; frame generation adds frames on top.
 
 Real-game launching has not yet been validated by the project; see *Development status*.
 

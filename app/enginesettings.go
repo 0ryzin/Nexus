@@ -26,6 +26,7 @@ type NSetting struct {
 	Max     int         `json:"max,omitempty"`
 	Step    int         `json:"step,omitempty"`
 	Suffix  string      `json:"suffix,omitempty"`
+	Presets []int       `json:"presets,omitempty"` // int: values offered in the picker (all steps when empty)
 	Help    string      `json:"help,omitempty"`
 }
 
@@ -48,7 +49,13 @@ var NexusSettings = []NSetting{
 	{ID: "graphics.aspect", Section: "graphics", Label: "Aspect ratio", Kind: "enum",
 		Choices: []EmuChoice{{"16:9", "16:9"}, {"4:3", "4:3"}, {"16:10", "16:10"}, {"21:9", "21:9"}, {"stretch", "Stretch to window"}}},
 	{ID: "graphics.vsync", Section: "graphics", Label: "VSync", Kind: "enum",
+		Help:    "On: frames are shown in step with your display's refresh (no tearing). Off: shown immediately (lowest latency, may tear). Mailbox: no tearing with lower latency where the driver supports it.",
 		Choices: []EmuChoice{{"fifo", "On"}, {"relaxed", "On (relaxed)"}, {"mailbox", "Mailbox"}, {"off", "Off (unlimited)"}}},
+	{ID: "graphics.fps_limit", Section: "graphics", Label: "Frame rate limit (Switch 2 games)", Kind: "int", Min: 30, Max: 240, Step: 1, Suffix: " fps",
+		Presets: []int{30, 40, 45, 50, 60, 72, 75, 80, 90, 100, 110, 120, 144, 160, 165, 170, 180, 200, 240},
+		Help:    "The highest frame rate Switch 2 games may render at (30–240). Switch 1 games run at their own rate (usually 30 or 60) whatever is set here — a higher limit never speeds a game up. Frame generation adds frames on top."},
+	{ID: "graphics.fps_match_display", Section: "graphics", Label: "Match my display’s refresh rate", Kind: "bool",
+		Help: "Sets the frame rate limit above to the refresh rate of your display when the game starts."},
 	{ID: "graphics.fullscreen", Section: "graphics", Label: "Fullscreen behaviour", Kind: "enum",
 		Choices: []EmuChoice{{"borderless", "Borderless window"}, {"exclusive", "Exclusive fullscreen"}}},
 	{ID: "graphics.aa", Section: "graphics", Label: "Anti-aliasing", Kind: "enum",
@@ -67,7 +74,8 @@ var NexusSettings = []NSetting{
 	{ID: "adv.nvdec", Section: "advanced", Label: "Video decoding", Kind: "enum", Choices: []EmuChoice{{"gpu", "GPU"}, {"cpu", "CPU"}, {"off", "Off"}}},
 	{ID: "adv.cpu_accuracy", Section: "advanced", Label: "CPU accuracy", Kind: "enum", Choices: []EmuChoice{{"auto", "Automatic"}, {"accurate", "Accurate"}, {"unsafe", "Unsafe (faster)"}, {"paranoid", "Paranoid (slowest)"}}},
 	{ID: "adv.multicore", Section: "advanced", Label: "Multicore CPU emulation", Kind: "bool"},
-	{ID: "adv.speed_limit_on", Section: "advanced", Label: "Limit emulation speed", Kind: "bool"},
+	{ID: "adv.speed_limit_on", Section: "advanced", Label: "Limit emulation speed", Kind: "bool",
+		Help: "On: games run at real-time speed. Off (uncapped): the game's own simulation runs as fast as your PC allows — the game itself speeds up; this is not the same as a higher frame rate."},
 	{ID: "adv.speed_limit", Section: "advanced", Label: "Speed limit", Kind: "int", Min: 25, Max: 400, Step: 25, Suffix: "%"},
 	// Frame generation & upscaler replacement (enhancements.go decides what this PC can use)
 	{ID: "enhance.framegen", Section: "enhance", Label: "Frame generation", Kind: "bool",
@@ -178,6 +186,7 @@ var engineBinds = map[string]engineBind{
 	"adv.multicore":           {"Core/use_multi_core", nil},
 	"adv.speed_limit_on":      {"Core/use_speed_limit", nil},
 	"adv.speed_limit":         {"Core/speed_limit", nil},
+	"graphics.fps_limit":      {"Renderer/nx2_frame_rate_limit", nil},
 	"enhance.framegen":        {"Renderer/frame_gen", nil},
 	"enhance.framegen_type":   {"Renderer/frame_gen_type", map[string]string{"lsfg": "0", "fsr3": "1"}},
 	"enhance.framegen_mult":   {"Renderer/frame_gen_multiplier", map[string]string{"2": "2", "3": "3", "4": "4"}},
@@ -281,6 +290,8 @@ func EngineCaps() map[string]Support {
 		case "audio.quality":
 			sup = Support{Note: s.Help}
 		case "controls.profile":
+			sup = Support{Available: true, PerGame: true}
+		case "graphics.fps_match_display": // applied by NEXUS when the session starts
 			sup = Support{Available: true, PerGame: true}
 		case "controls.mapping":
 			sup.Note = "Buttons are set in Controllers (your layout for all games) or in a game's Controls page (its own layout)."

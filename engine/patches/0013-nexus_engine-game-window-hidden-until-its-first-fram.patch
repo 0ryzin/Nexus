@@ -1,0 +1,279 @@
+From 887cb6f8aae23d931ce94164522e6c5ae3c5011e Mon Sep 17 00:00:00 2001
+From: NEXUS <nexus@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 19:44:23 +0000
+Subject: [PATCH 13/13] nexus_engine: game window hidden until its first frame,
+ real loading progress, NEXUS Home key
+
+- The game window was created visible before the game loaded. While the engine
+  thread loaded the game (and its shader cache) the window received no
+  messages, so Windows showed an unpainted black window with a white frame over
+  the NEXUS loading screen. It is now created hidden and shown (fullscreen,
+  raised) with the first presented frame, or after 20 s if nothing is shown.
+- Disk shader cache loading reports its real progress (loadStage/loadDone/
+  loadTotal in the status) for the NEXUS loading screen.
+- NEXUS Home: request "homeKey" (an SDL key name, "" for none) and
+  "homeButton" (controller Guide/Home). The key is taken by NEXUS only when no
+  player-1 control is bound to it; otherwise it goes to the game and the status
+  reports homeKeyConflict. Each press counts in homePresses.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
+---
+ src/nexus_engine/nexus_engine.cpp         | 124 +++++++++++++++++++++-
+ src/yuzu_cmd/emu_window/emu_window_sdl3.h |  19 +++-
+ 2 files changed, 139 insertions(+), 4 deletions(-)
+
+diff --git a/src/nexus_engine/nexus_engine.cpp b/src/nexus_engine/nexus_engine.cpp
+index 5b75b5358..7535468a7 100644
+--- a/src/nexus_engine/nexus_engine.cpp
++++ b/src/nexus_engine/nexus_engine.cpp
+@@ -8,6 +8,7 @@
+ // NEXUS instead of to a console.
+ 
+ #include <algorithm>
++#include <cctype>
+ #include <atomic>
+ #include <chrono>
+ #include <cstdio>
+@@ -97,6 +98,10 @@ struct Request {
+     // applied on top of the automatic mapping. Empty = the default positional layout.
+     std::map<std::string, std::string> button_map;
+     std::string controller_type; // pro | dual_joycon | handheld ("" = keep)
++    // NEXUS Home: keyboard key (SDL scancode name, e.g. "H"; "" = none) and whether the
++    // controller's Guide/Home button returns to NEXUS
++    std::string home_key;
++    bool home_button{true};
+ };
+ 
+ struct Engine {
+@@ -111,6 +116,14 @@ struct Engine {
+     std::atomic<std::uint64_t> frames{0};
+     std::atomic<std::uint64_t> program_id{0};
+     std::atomic<int> system_gen{0}; // 1 = Switch 1 program, 2 = Switch 2 program (NPDM ACID layout)
++    // real loading progress (disk shader cache): stage 0 none, 1 preparing, 2 building shaders
++    std::atomic<int> load_stage{0};
++    std::atomic<std::uint64_t> load_done{0};
++    std::atomic<std::uint64_t> load_total{0};
++    // NEXUS Home requests from the game window (keyboard key or controller Home button)
++    std::atomic<std::uint64_t> home_presses{0};
++    std::atomic<bool> home_key_conflict{false};
++    std::atomic<bool> shown{false}; // the game window has been shown (first frame)
+     std::string code;    // guarded by mutex
+     std::string message; // guarded by mutex
+     std::string info_json;
+@@ -293,6 +306,49 @@ void RegisterExternalContent(FileSys::ManualContentProvider& provider, Core::Sys
+     }
+ }
+ 
++// Whether a keyboard key is bound to any of player 1's controls (buttons, sticks, motion), so
++// NEXUS never takes a key the game needs. Keyboard bindings are "engine:keyboard,code:<scancode>";
++// stick bindings nest them as "code$0<scancode>".
++bool KeyUsedByGameControls(SDL_Scancode key) {
++    const auto& player = Settings::values.players.GetValue()[0];
++    const std::string code = std::to_string(static_cast<int>(key));
++    const auto uses = [&](const std::string& param) {
++        if (param.find("keyboard") == std::string::npos) {
++            return false;
++        }
++        for (const std::string& marker : {std::string{"code:"}, std::string{"code$0"}}) {
++            for (std::size_t at = param.find(marker); at != std::string::npos;
++                 at = param.find(marker, at + 1)) {
++                const std::size_t begin = at + marker.size();
++                std::size_t end = begin;
++                while (end < param.size() && std::isdigit(static_cast<unsigned char>(param[end]))) {
++                    ++end;
++                }
++                if (param.compare(begin, end - begin, code) == 0 && end > begin) {
++                    return true;
++                }
++            }
++        }
++        return false;
++    };
++    for (const auto& b : player.buttons) {
++        if (uses(b)) {
++            return true;
++        }
++    }
++    for (const auto& a : player.analogs) {
++        if (uses(a)) {
++            return true;
++        }
++    }
++    for (const auto& m : player.motions) {
++        if (uses(m)) {
++            return true;
++        }
++    }
++    return false;
++}
++
+ void RunSession(Request req) {
+     Engine& e = E();
+     e.frames = 0;
+@@ -300,6 +356,11 @@ void RunSession(Request req) {
+     e.system_gen = 0;
+     e.suspend_request = -1;
+     e.suspended = false;
++    e.load_stage = 0;
++    e.load_done = 0;
++    e.load_total = 0;
++    e.home_key_conflict = false;
++    e.shown = false;
+ 
+     // All engine data lives in the folder NEXUS chose (keys, firmware, NAND, saves, caches).
+     Common::FS::SetAppDirectory(req.data_dir);
+@@ -327,6 +388,8 @@ void RunSession(Request req) {
+         InputCommon::InputSubsystem& input = *e.input;
+         system.ApplySettings();
+ 
++        // hidden until the first frame: the NEXUS loading screen stays in front meanwhile
++        NexusStartHidden() = true;
+         std::unique_ptr<EmuWindow_SDL3> window = MakeWindow(input, system, req.fullscreen);
+ #ifdef _WIN32
+         Common::Windows::SetCurrentTimerResolutionToMaximum();
+@@ -366,7 +429,13 @@ void RunSession(Request req) {
+         if (Settings::values.use_disk_shader_cache.GetValue()) {
+             system.Renderer().ReadRasterizer()->LoadDiskResources(
+                 system.GetApplicationProcessProgramID(), std::stop_token{},
+-                [](VideoCore::LoadCallbackStage, size_t, size_t) {});
++                [](VideoCore::LoadCallbackStage stage, size_t done, size_t total) {
++                    // real progress for the NEXUS loading screen
++                    E().load_stage = stage == VideoCore::LoadCallbackStage::Build ? 2 : 1;
++                    E().load_done = done;
++                    E().load_total = total;
++                });
++            e.load_stage = 0;
+         }
+         system.RegisterExitCallback([] { E().stop_requested = true; }); // the game quit itself
+ 
+@@ -374,6 +443,17 @@ void RunSession(Request req) {
+         const std::uint64_t presents_at_start = Core::g_nx2_present_count.load();
+         void(system.Run());
+         e.state = State::Running;
++        const auto running_since = std::chrono::steady_clock::now();
++
++        // NEXUS Home on the keyboard: only when the key is not one of the game controls
++        const SDL_Scancode home_key =
++            req.home_key.empty() ? SDL_SCANCODE_UNKNOWN : SDL_GetScancodeFromName(req.home_key.c_str());
++        const bool home_key_usable = home_key != SDL_SCANCODE_UNKNOWN && !KeyUsedByGameControls(home_key);
++        e.home_key_conflict = home_key != SDL_SCANCODE_UNKNOWN && !home_key_usable;
++        if (e.home_key_conflict) {
++            LOG_WARNING(Frontend, "NEXUS Engine: the Home key {} is a game control; it goes to the game",
++                        req.home_key);
++        }
+ 
+         // Event loop: input, window events, live volume, stop requests.
+         int applied_volume = e.volume.load();
+@@ -381,9 +461,37 @@ void RunSession(Request req) {
+             SDL_Event event;
+             if (SDL_WaitEventTimeout(&event, 4)) {
+                 do {
++                    // NEXUS Home: the configured key (when no game control uses it) and the
++                    // controller's Guide/Home button are taken by NEXUS and not passed to the game
++                    if (home_key_usable && (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) &&
++                        event.key.scancode == home_key) {
++                        if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
++                            ++e.home_presses;
++                        }
++                        continue;
++                    }
++                    if (req.home_button && event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN &&
++                        event.gbutton.button == SDL_GAMEPAD_BUTTON_GUIDE) {
++                        ++e.home_presses;
++                        continue;
++                    }
+                     window->OnEvent(event);
+                 } while (SDL_PollEvent(&event));
+             }
++            // show the game window with its first frame (or after 20 s if a program never
++            // presents one), so no empty window covers the NEXUS loading screen
++            if (!e.shown && (e.frames > 0 || std::chrono::steady_clock::now() - running_since >
++                                                 std::chrono::seconds(20))) {
++                SDL_Window* sdl_window = window->GetSDLWindow();
++                if (!e.suspended) {
++                    SDL_ShowWindow(sdl_window);
++                    if (req.fullscreen) {
++                        window->ApplyFullscreen();
++                    }
++                    SDL_RaiseWindow(sdl_window);
++                }
++                e.shown = true;
++            }
+             window->ApplyPendingTitle();
+             // Home in NEXUS: pause emulation and hide the game window; resume shows it again.
+             if (const int req_s = e.suspend_request.exchange(-1); req_s >= 0) {
+@@ -394,7 +502,9 @@ void RunSession(Request req) {
+                     e.suspended = true;
+                     LOG_INFO(Frontend, "NEXUS Engine: suspended (Home)");
+                 } else if (req_s == 0 && e.suspended) {
+-                    SDL_ShowWindow(sdl_window);
++                    if (e.shown) {
++                        SDL_ShowWindow(sdl_window);
++                    }
+                     SDL_RaiseWindow(sdl_window);
+                     void(system.Run());
+                     e.suspended = false;
+@@ -502,6 +612,8 @@ NEXUS_API int32_t nexus_engine_start(const char* request_json) {
+             }
+         }
+         req.controller_type = j.value("controllerType", std::string{});
++        req.home_key = j.value("homeKey", std::string{});
++        req.home_button = j.value("homeButton", true);
+         if (const auto it = j.find("contents"); it != j.end() && it->is_array()) {
+             for (const auto& c : *it) {
+                 if (c.is_string()) {
+@@ -547,6 +659,14 @@ NEXUS_API int32_t nexus_engine_status(char* buf, int32_t buf_len) {
+         j["programId"] = hex;
+     }
+     j["suspended"] = e.suspended.load();
++    j["shown"] = e.shown.load();
++    j["homePresses"] = e.home_presses.load();
++    j["homeKeyConflict"] = e.home_key_conflict.load();
++    if (const int st = e.load_stage.load(); st != 0) {
++        j["loadStage"] = st == 2 ? "shaders" : "preparing";
++        j["loadDone"] = e.load_done.load();
++        j["loadTotal"] = e.load_total.load();
++    }
+     if (const int gen = e.system_gen.load(); gen != 0) {
+         j["system"] = gen == 2 ? "switch2" : "switch1";
+     }
+diff --git a/src/yuzu_cmd/emu_window/emu_window_sdl3.h b/src/yuzu_cmd/emu_window/emu_window_sdl3.h
+index 35c09cc65..59b673f52 100644
+--- a/src/yuzu_cmd/emu_window/emu_window_sdl3.h
++++ b/src/yuzu_cmd/emu_window/emu_window_sdl3.h
+@@ -30,10 +30,20 @@ enum class MouseButton;
+ 
+ // EDEN_NX2_HIDE_WINDOW=1 (anything but 0) creates the render window hidden and without focus, for unattended
+ // test runs that must not cover or interrupt the desktop.
++/// NEXUS: create the game window hidden; the NEXUS engine shows it when the game presents its
++/// first frame, so the NEXUS loading screen stays visible (and no unpainted window appears) while
++/// the game loads.
++inline bool& NexusStartHidden() {
++    static bool hidden = false;
++    return hidden;
++}
++
+ inline SDL_WindowFlags Nx2HiddenWindowFlags() {
+     const char* hide = std::getenv("EDEN_NX2_HIDE_WINDOW");
+-    return hide != nullptr && hide[0] != '0' ? SDL_WINDOW_HIDDEN | SDL_WINDOW_NOT_FOCUSABLE
+-                                                         : SDL_WindowFlags{0};
++    if (hide != nullptr && hide[0] != '0') {
++        return SDL_WINDOW_HIDDEN | SDL_WINDOW_NOT_FOCUSABLE;
++    }
++    return NexusStartHidden() ? SDL_WINDOW_HIDDEN : SDL_WindowFlags{0};
+ }
+ 
+ /// NEXUS: when set, game windows are titled with this text instead of the upstream build name.
+@@ -67,6 +77,11 @@ public:
+     // Sets the window icon from yuzu.bmp
+     void SetWindowIcon();
+ 
++    /// NEXUS: apply the fullscreen mode again (after the window was shown).
++    void ApplyFullscreen() {
++        Fullscreen();
++    }
++
+ protected:
+     /// Called by WaitEvent when a key is pressed or released.
+     void OnKeyEvent(int key, u8 state);

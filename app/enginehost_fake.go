@@ -64,9 +64,16 @@ func (f *fakeEngine) run(req EngineRequest) {
 	}
 	// development: a loading phase (NEXUS_FAKE_LOAD) and an engine exception with upstream wording
 	if d, err := time.ParseDuration(os.Getenv("NEXUS_FAKE_LOAD")); err == nil && d > 0 {
-		f.set(func(s *EngineStatus) { s.State = "loading" })
-		time.Sleep(d)
+		// like the real engine: "starting" while loading, the second half with measured shader progress
+		f.set(func(s *EngineStatus) { s.State = "starting" })
+		time.Sleep(d / 2)
+		for i := uint64(0); i <= 20; i++ {
+			f.set(func(s *EngineStatus) { s.LoadStage, s.LoadDone, s.LoadTotal = "shaders", i*50, 1000 })
+			time.Sleep(d / 40)
+		}
+		f.set(func(s *EngineStatus) { s.LoadStage, s.LoadDone, s.LoadTotal = "", 0, 0 })
 	}
+	fakeLast = f
 	if strings.Contains(req.Game, "exception") || os.Getenv("NEXUS_FAKE_FAIL") == "exception" {
 		f.set(func(s *EngineStatus) {
 			*s = EngineStatus{State: "error", Code: "exception", Message: "Legacy emulator data or an unfinished import was found. Open the Lichii GUI to import it or explicitly start fresh before using eden-cli. No configuration was created."}
@@ -198,3 +205,8 @@ func (f *fakeEngine) Peak() int {
 }
 
 var _ = json.Marshal
+
+// fakeLast is the stand-in engine of the current session (development: simulate a Home press).
+var fakeLast *fakeEngine
+
+func (f *fakeEngine) PressHome() { f.set(func(s *EngineStatus) { s.HomePresses++ }) }

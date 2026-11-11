@@ -75,6 +75,7 @@ var EmuOptions = []EmuOption{
 	{ID: "Audio/audio_muted", Label: "Mute", Group: "Audio", Kind: "bool"},
 	{ID: "Audio/output_engine", Label: "Audio output", Group: "Audio", Kind: "enum", PerGame: true,
 		Choices: []EmuChoice{{"0", "Automatic"}, {"1", "Cubeb"}, {"2", "SDL"}, {"3", "No audio"}}},
+	{ID: "Renderer/nx2_frame_rate_limit", Label: "Frame rate limit (Switch 2 games)", Group: "Graphics", Kind: "int", Min: 30, Max: 240, Step: 1, Suffix: " fps", PerGame: true},
 	// frame generation and upscaler replacement (settings.h: frame_gen*, nvidia_dlss*, amd_fsr4)
 	{ID: "Renderer/frame_gen", Label: "Frame generation", Group: "Graphics", Kind: "bool", PerGame: true},
 	{ID: "Renderer/frame_gen_type", Label: "Frame generation method", Group: "Graphics", Kind: "enum", PerGame: true,

@@ -515,7 +515,6 @@ func (l *DeviceLink) addDeviceLocked(d TrustedDevice) {
 	_ = l.saveDevicesLocked()
 }
 
-
 func addrHost(addr string) string {
 	h, _, err := net.SplitHostPort(addr)
 	if err != nil {

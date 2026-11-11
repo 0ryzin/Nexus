@@ -34,6 +34,10 @@ type EngineRequest struct {
 	// ButtonMap / ControllerType: the NEXUS controller layout (controls.go) for this game.
 	ButtonMap      map[string]string `json:"buttonMap,omitempty"`
 	ControllerType string            `json:"controllerType,omitempty"`
+	// NEXUS Home: keyboard key (SDL key name, "" = none; the engine leaves it to the game when a
+	// game control uses it) and the controller's Guide/Home button
+	HomeKey    string `json:"homeKey"`
+	HomeButton bool   `json:"homeButton"`
 }
 
 // EngineStatus is the JSON returned by nexus_engine_status.
@@ -46,6 +50,15 @@ type EngineStatus struct {
 	Code      string `json:"code,omitempty"`
 	Message   string `json:"message,omitempty"`
 	Volume    int    `json:"volume"`
+	// Shown: the game window is visible (the engine shows it with the first frame)
+	Shown bool `json:"shown,omitempty"`
+	// HomePresses counts NEXUS Home requests from the game window (key or controller button)
+	HomePresses     uint64 `json:"homePresses,omitempty"`
+	HomeKeyConflict bool   `json:"homeKeyConflict,omitempty"`
+	// real loading progress: loadStage "preparing" | "shaders", loadDone of loadTotal
+	LoadStage string `json:"loadStage,omitempty"`
+	LoadDone  uint64 `json:"loadDone,omitempty"`
+	LoadTotal uint64 `json:"loadTotal,omitempty"`
 }
 
 // EngineBuildInfo is nexus_engine_info plus what NEXUS knows about the installed build.

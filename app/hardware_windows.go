@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"runtime"
+	"sort"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -325,12 +326,29 @@ func detectDisplays(h *Hardware) {
 		if r, _, _ := enumSet.Call(uintptr(unsafe.Pointer(&dd[4])), 0xFFFFFFFF, uintptr(unsafe.Pointer(&dm[0]))); r == 0 {
 			continue
 		}
-		h.Displays = append(h.Displays, Display{
+		d := Display{
 			Name:      fmt.Sprintf("Display %d", len(h.Displays)+1),
 			Width:     int(binary.LittleEndian.Uint32(dm[172:])),
 			Height:    int(binary.LittleEndian.Uint32(dm[176:])),
 			RefreshHz: int(binary.LittleEndian.Uint32(dm[184:])),
 			Primary:   state&4 != 0,
-		})
+		}
+		// every mode the display offers at its current resolution: the available refresh rates
+		seen := map[int]bool{}
+		for m := uintptr(0); m < 2000; m++ {
+			var mm [220]byte
+			binary.LittleEndian.PutUint16(mm[68:], 220)
+			if r, _, _ := enumSet.Call(uintptr(unsafe.Pointer(&dd[4])), m, uintptr(unsafe.Pointer(&mm[0]))); r == 0 {
+				break
+			}
+			if int(binary.LittleEndian.Uint32(mm[172:])) == d.Width && int(binary.LittleEndian.Uint32(mm[176:])) == d.Height {
+				if hz := int(binary.LittleEndian.Uint32(mm[184:])); hz > 1 && !seen[hz] {
+					seen[hz] = true
+					d.RefreshRates = append(d.RefreshRates, hz)
+				}
+			}
+		}
+		sort.Ints(d.RefreshRates)
+		h.Displays = append(h.Displays, d)
 	}
 }

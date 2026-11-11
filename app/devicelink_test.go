@@ -121,7 +121,7 @@ func TestDeviceLinkingEndToEnd(t *testing.T) {
 		t.Fatal("after too many wrong codes the code must be cancelled")
 	}
 
-		// declined
+	// declined
 	code, _, _ = pc.link.StartPairing(tom.ID)
 	approveNext(pc, false)
 	if _, err := deck.link.PairWith(pc.addr, uid, code); err == nil || !strings.Contains(err.Error(), "declined") {

@@ -21,6 +21,9 @@ type GlobalSettings struct {
 		Height     int  `json:"height"`
 	} `json:"display"`
 
+	// PerfMonitor: the in-game performance overlay (perf.go, overlay_windows.go)
+	PerfMonitor PerfMonitorSettings `json:"perfMonitor"`
+
 	Startup struct {
 		Enabled bool   `json:"enabled"`
 		Color   string `json:"color"`
@@ -59,6 +62,10 @@ type EmulatorSettings struct {
 	// WhoPlays: when to ask "Who's playing?" before a game starts: "several" (when there is more
 	// than one user; default), "always" or "never" (the current user plays)
 	WhoPlays string `json:"whoPlays"`
+	// NEXUS Home while playing: keyboard key (SDL key name, "" = off) and the controller's
+	// Guide/Home button. A key that is one of the game's controls stays with the game.
+	HomeKey    string `json:"homeKey"`
+	HomeButton bool   `json:"homeButton"`
 	// Overrides holds engine keys saved by NEXUS 1.2-1.5; migrated into Engine on load.
 	Overrides map[string]string `json:"overrides"`
 }
@@ -68,6 +75,8 @@ func DefaultSettings() GlobalSettings {
 	s.Version = 1
 	s.Display.Fullscreen = true
 	s.Display.Width, s.Display.Height = 1280, 760
+	s.PerfMonitor = PerfMonitorSettings{Mode: "off", Position: "top", Opacity: 80, Scale: 100,
+		Metrics: []string{"fps", "frametime", "cpu", "gpu", "vram", "ram"}}
 	s.Startup.Enabled = true
 	s.Startup.Color = "#e60012"
 	s.Startup.Style = "standard"
@@ -82,7 +91,7 @@ func DefaultSettings() GlobalSettings {
 	s.Library.NlibURL = "https://api.nlib.cc"
 	s.Library.ArtProviders = []string{}
 	s.Engine = map[string]string{}
-	s.Emulator = EmulatorSettings{Fullscreen: true, QuitCombo: true, ManageSaves: true, WhoPlays: "several", Overrides: map[string]string{}}
+	s.Emulator = EmulatorSettings{Fullscreen: true, QuitCombo: true, ManageSaves: true, WhoPlays: "several", HomeKey: "H", HomeButton: true, Overrides: map[string]string{}}
 	return s
 }
 
@@ -194,4 +203,28 @@ func deepMerge(dst, src map[string]any) {
 		}
 		dst[k] = sv
 	}
+}
+
+type PerfMonitorSettings struct {
+	Mode     string   `json:"mode"`     // off | all (every game) | selected (the games in Games)
+	Games    []string `json:"games"`    // game keys for "selected"
+	Position string   `json:"position"` // top | bottom
+	Metrics  []string `json:"metrics"`  // ids from PerfMetrics, in display order
+	Opacity  int      `json:"opacity"`  // 30-100 %
+	Scale    int      `json:"scale"`    // 75-200 %
+}
+
+// PerfMonitorFor: whether the overlay shows for this game.
+func (p PerfMonitorSettings) For(gameKey string) bool {
+	switch p.Mode {
+	case "all":
+		return true
+	case "selected":
+		for _, g := range p.Games {
+			if g == gameKey {
+				return true
+			}
+		}
+	}
+	return false
 }

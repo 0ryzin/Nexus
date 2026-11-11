@@ -1493,6 +1493,8 @@ function gameTile(g, extraClass = '') {
   t.append(art);
   if (S.stats[g.key]?.lastPlayed && S.recent.indexOf(g.key) > -1 && S.recent.indexOf(g.key) < 3) t.append(h('span', { class: 'recent-dot', title: 'Recently played' }));
   if (g.kind === 'homebrew') t.append(h('span', { class: 'badge' }, 'HOMEBREW'));
+  // a game kept running in the background (NEXUS Home): subtle green outline and status light
+  if (S.playing?.running && S.playing.gameKey === g.key) { t.classList.add('running'); t.append(h('span', { class: 'run-dot', title: 'Running' })); }
   if (g.kind === 'update') t.append(h('span', { class: 'badge' }, 'UPDATE'));
   if (g.kind === 'dlc') t.append(h('span', { class: 'badge' }, 'DLC'));
   if (g.perGame) t.append(h('span', { class: 'cfg-dot', title: 'Has its own game settings' }));
@@ -1840,6 +1842,7 @@ function nchoices(st, only) {
   let out = [];
   if (st.kind === 'bool') out = [{ v: 'true', l: 'On' }, { v: 'false', l: 'Off' }];
   else if (st.kind === 'enum') out = (st.choices || []).map(c => ({ v: c.v, l: c.l }));
+  else if (st.kind === 'int' && st.presets?.length) out = st.presets.map(x => ({ v: String(x), l: x + (st.suffix || '') }));
   else if (st.kind === 'int') for (let x = st.min; x <= st.max; x += st.step) out.push({ v: String(x), l: x + (st.suffix || '') });
   if (only?.length) out = out.filter(c => only.includes(c.v));
   return out;
@@ -2002,6 +2005,7 @@ async function gameConfig(key, startSection = 'general') {
         h('dt', {}, 'Title ID'), h('dd', {}, g.titleId || 'Unknown'),
         h('dt', {}, 'Type'), h('dd', {}, kind),
         h('dt', {}, 'File'), h('dd', {}, `${ext} · ${fmtBytes(g.size)}`)));
+      body.append(rowToggle('Performance monitor in this game', perfOn(g.key), v => perfToggleGame(g.key, v), 'The FPS / CPU / GPU bar while you play (Settings \u203a Performance Monitor).'));
       body.append(h('h3', {}, 'Compatibility'));
       body.append(compatRow(view.compat, g, r => { view.compat = r; drawBody(); }));
       body.append(h('h3', {}, 'Optimise for my device'));
@@ -2058,7 +2062,12 @@ async function launchGame(key, force = false) {
   if (!isPlayable(g)) { alertDlg('Not a game', 'This file is an update or DLC. Keep it in one of your game folders: NEXUS applies it automatically when you start the base game.'); return; }
   if (!S.profile) { showWho(); return; }
   if (S.playing?.suspended) {
-    if (S.playing.gameKey === key) { resumeGame(); return; }
+    if (S.playing.gameKey === key) {
+      const v = await dialog({ title: g.title, text: 'This game is running in the background. Resume it where you left off, or close it (unsaved progress is lost).', buttons: [{ label: 'Cancel', value: null }, { label: 'Close Game', value: 'close', danger: true }, { label: 'Resume Game', value: 'resume', primary: true }], cancelValue: null });
+      if (v === 'resume') resumeGame();
+      if (v === 'close' && await confirmDlg(`Close ${g.title}?`, 'Unsaved progress will be lost.', 'Close Game', true)) api('/api/emulator/stop', { body: {} }).catch(e => toast(e.message, I.warn));
+      return;
+    }
     const v = await dialog({ title: `${S.playing.title} is still running`, text: `Close it to start ${g.title}? Unsaved progress in ${S.playing.title} will be lost.`, buttons: [{ label: 'Cancel', value: false }, { label: `Resume ${S.playing.title}`, value: 'resume' }, { label: 'Close it', value: 'close', danger: true }], cancelValue: false });
     if (v === 'resume') resumeGame();
     if (v === 'close') api('/api/emulator/stop', { body: {} }).catch(e => toast(e.message, I.warn));
@@ -2129,6 +2138,25 @@ function whoIsPlaying(g) {
   });
 }
 
+// Waits for one key (for the NEXUS Home key). Esc keeps the old key, Backspace/Delete turns it off.
+const SDL_KEY = c => /^Key[A-Z]$/.test(c) ? c.slice(3) : /^Digit\d$/.test(c) ? c.slice(5) : /^F([1-9]|1[0-2])$/.test(c) ? c :
+  ({ Home: 'Home', End: 'End', Insert: 'Insert', PageUp: 'PageUp', PageDown: 'PageDown', Pause: 'Pause', ScrollLock: 'ScrollLock', Backquote: '`' })[c];
+function captureKey() {
+  return new Promise(resolve => {
+    const box = h('div', { class: 'dialog' }, h('div', { class: 'd-body' }, h('h2', {}, 'Press a key'), h('p', {}, 'Letters, numbers, F1–F12, Home, End, Insert, Page Up/Down, Pause or Scroll Lock. Backspace turns the Home key off; Esc cancels.')));
+    let layer;
+    const onKey = ev => {
+      ev.preventDefault(); ev.stopPropagation();
+      if (ev.code === 'Escape') return done(undefined);
+      if (ev.code === 'Backspace' || ev.code === 'Delete') return done('');
+      const k = SDL_KEY(ev.code); if (k) done(k); else toast('That key cannot be used', I.warn, 1500);
+    };
+    const done = v => { window.removeEventListener('keydown', onKey, true); layer.close(); resolve(v); };
+    layer = openLayer(box, { onBack: () => done(undefined) });
+    window.addEventListener('keydown', onKey, true);
+  });
+}
+
 function launchArt(g, cls) {
   const el = h('div', { class: 'launch-art ' + cls });
   if (g?.artSource) el.append(h('img', { src: `/art/${g.key}?v=${g.artRev || 0}&w=640`, alt: '' }));
@@ -2140,12 +2168,12 @@ function launchArt(g, cls) {
 // engine's real progress steps, then the game. One design for every game for now.
 const Launch = {
   busy: false, el: null, key: null, t0: 0,
-  STAGES: { preparing: ['Preparing your session', 0], loading: ['Loading the game', 1], starting: ['Starting', 2] },
+  STAGES: { preparing: ['Preparing your session', 0], loading: ['Loading the game', 1], shaders: ['Preparing shaders', 1], starting: ['Starting', 2] },
   open(g, st) {
     this.close(true);
     this.key = g.key; this.t0 = performance.now();
     const ghost = launchArt(g, 'lx-ghost'), art = launchArt(g, 'lx-art');
-    const steps = h('div', { class: 'lx-steps' }, Object.values(this.STAGES).map(([t]) => h('span', {}, h('i'), t)));
+    const steps = h('div', { class: 'lx-steps' }, ['preparing', 'loading', 'starting'].map(k => h('span', {}, h('i'), this.STAGES[k][0])));
     const el = h('div', { class: 'launchfx' + (S.anim === 'off' ? ' no-anim' : ''), role: 'status' },
       h('div', { class: 'lx-backdrop', style: g.artSource ? { backgroundImage: `url("/art/${g.key}?v=${g.artRev || 0}&w=640")` } : {} }),
       h('div', { class: 'lx-stage' }, h('div', { class: 'lx-artwrap' }, ghost, art),
@@ -2166,7 +2194,11 @@ const Launch = {
   update(st) {
     const el = this.el; if (!el || !st) return;
     const [label, idx] = this.STAGES[st.stage] || this.STAGES.preparing;
-    $('.lx-status', el).textContent = label + '…';
+    // a determinate bar only when the engine measures progress (the shader cache); never invented
+    const measured = st.stage === 'shaders' && st.loadTotal > 0;
+    $('.lx-status', el).textContent = measured ? `${label}: ${st.loadDone} of ${st.loadTotal}` : label + '…';
+    const bar = $('.lx-bar', el); bar.classList.toggle('measured', measured);
+    if (measured) bar.firstChild.style.width = `${Math.min(100, Math.round(st.loadDone / st.loadTotal * 100))}%`; else bar.firstChild.style.width = '';
     $$('.lx-steps span', el).forEach((s, i) => { s.classList.toggle('done', i < idx); s.classList.toggle('on', i === idx); });
     if (st.phase === 'playing') this.enter();
   },
@@ -2211,14 +2243,23 @@ function showPlaying(justLaunched = false) {
   else art.append(h('div', { class: 'tile all' }, svg(I.chip, 'all-ic')));
   $('#play-title').textContent = st.title || 'NEXUS';
   $('#play-sub').textContent = st.phase === 'playing' ? `Playing as ${S.profile?.name || ''} · NEXUS Engine` : 'Starting the NEXUS engine…';
-  $('#play-tip').textContent = 'Press the Home (Guide) button to pause the game and open the Home screen.' + (S.settings.emulator?.quitCombo ? ' Hold View + Menu (Back + Start) to close the game.' : '');
+  const hk = S.settings.emulator?.homeKey;
+  $('#play-tip').textContent = (hk && !st.homeKeyConflict ? `Press ${hk} or the controller\u2019s Home button` : 'Press the controller\u2019s Home button') + ' to go back to NEXUS Home; the game keeps running.' + (st.homeKeyConflict ? ` (${hk} is one of this game\u2019s controls, so it goes to the game. You can choose another Home key in Settings \u203a Game sessions.)` : '') + (S.settings.emulator?.quitCombo ? ' Hold View + Menu (Back + Start) to close the game.' : '');
   $('#play-close').textContent = 'Close game';
+  $('#play-perf').textContent = perfOn(st.gameKey) ? 'Hide performance monitor' : 'Show performance monitor';
   const vh = $('#play-volume'); let sl = vh.firstChild;
   if (!sl) { sl = volumeSlider({ value: st.volume ?? S.emulator?.volume ?? 100, onChange: sendVolume, compact: true, label: 'Game volume' }); vh.append(sl); }
   else if (!sl.classList.contains('drag') && Nav.cur !== sl) sl.setValue(st.volume ?? 100);
   show('playing', { initial: $('#play-return'), anim: !justLaunched });
 }
 Screens.playing = { onBack: () => resumeGame() };
+$('#play-perf').addEventListener('click', async () => {
+  const key = S.playing?.gameKey; if (!key) return;
+  const on = !perfOn(key);
+  await perfToggleGame(key, on);
+  toast(on ? 'Performance monitor on for this game' : 'Performance monitor off for this game', I.check, 2000);
+  showPlaying();
+});
 $('#play-return').addEventListener('click', () => resumeGame());
 $('#play-close').addEventListener('click', async () => {
   const ok = await confirmDlg('Close the game?', 'Unsaved progress will be lost.', 'Close', true);
@@ -2235,7 +2276,7 @@ $('#play-close').addEventListener('click', async () => {
 // ---------- settings
 const CATS = [
   ['appearance', 'Appearance'], ['startup', 'Startup'], ['library', 'Game library'], ['controllers', 'Controllers'], ['users', 'Users & saves'], ['system', 'System'],
-  ['-', 'System & Emulation'], ['engine', 'NEXUS Engine'], ['sysfiles', 'System files'], ['emusettings', 'Emulation settings'], ['emulator', 'Game sessions & saves'],
+  ['-', 'System & Emulation'], ['engine', 'NEXUS Engine'], ['sysfiles', 'System files'], ['emusettings', 'Emulation settings'], ['emulator', 'Game sessions & saves'], ['perf', 'Performance Monitor'],
 ];
 const NAVCATS = () => catList().filter(c => c[0] !== '-' && c[0] !== 'controllers');
 // NEXUS Sync appears only when the experimental Device Linking feature is switched on
@@ -2365,6 +2406,7 @@ async function themePatch(patch) { if (!S.profile) return; await patchProfile(S.
 const ACCENTS = ['#ff2a3a', '#00c8ff', '#ff3b5c', '#ff9f0a', '#ffd60a', '#30d158', '#64d2ff', '#5e5ce6', '#bf5af2', '#ff6ec7', '#ffffff'];
 const BOOT_COLORS = ['#e60012', '#ff5a1f', '#f5b300', '#1fae5b', '#0a84ff', '#5e2bff', '#e0218a', '#1d1e21', '#f2f2f2'];
 const Panels = {
+  perf(p) { return renderPerfSettings(p); },
   sync(p) { return renderSync(p); },
   appearance(p) {
     const th = S.profile?.theme || {};
@@ -2444,6 +2486,12 @@ const Panels = {
     p.append(h('h2', {}, 'Game sessions & saves'), h('p', { class: 'note' }, 'How NEXUS runs games and keeps each user’s saves. Graphics, audio and system options are in Emulation settings; keys and firmware in System files.'));
     p.append(rowVolume('Game volume', +(S.settings.engine?.['audio.volume'] ?? 100), sendVolume, '0% is silent, 100% is the game’s own level, up to 200% boosts quiet games (a soft limiter prevents harsh clipping). Also adjustable while playing.'));
     p.append(rowChoice('Ask who\u2019s playing', [{ v: 'several', l: 'When there is more than one user' }, { v: 'always', l: 'Always' }, { v: 'never', l: 'Never (the current user plays)' }], es.whoPlays || 'several', v => saveSettings({ emulator: { whoPlays: v } }), 'Before a game starts, NEXUS asks which user is playing. Play time, saves and controller layout belong to that user.'));
+    p.append(h('h3', {}, 'NEXUS Home while playing'));
+    p.append(rowButton('Home key', { value: es.homeKey || 'Off', sub: 'Press it in a game to go back to NEXUS Home; the game keeps running. If the key is one of the game\u2019s controls, it stays with the game. With the standard keyboard layout H is the R button, so when you play with the keyboard choose another key (for example F1).', onClick: async () => {
+      const k = await captureKey(); if (k === undefined) return;
+      saveSettings({ emulator: { homeKey: k } }).then(rebuildPanel);
+    } }));
+    p.append(rowToggle('Controller Home button', es.homeButton !== false, v => saveSettings({ emulator: { homeButton: v } }), 'The Xbox Guide button, the PlayStation button or a controller\u2019s Home button returns to NEXUS Home where Windows lets applications read it. Press it again (or choose Resume) to go back to the game.'));
     p.append(rowToggle('Start games in full screen', es.fullscreen, v => saveSettings({ emulator: { fullscreen: v } }), 'The game window belongs to NEXUS; when the game ends you are back on the NEXUS home screen.'));
     p.append(rowToggle('Quit shortcut: hold View + Menu', es.quitCombo, v => saveSettings({ emulator: { quitCombo: v } }), 'Hold Back + Start for 2 seconds on an XInput controller to close the game.'));
     p.append(rowToggle('Separate saves for each user', es.manageSaves, async v => {
@@ -2533,7 +2581,7 @@ async function hardwarePanel(holder, refresh = false) {
   ])));
   holder.append(card('Memory', [['Installed', fmtMB(m.totalMb)], ['Available', fmtMB(m.availableMb)], ['In use', m.totalMb ? `${fmtMB(m.usedMb)} (${m.loadPercent}%)` : 'Not detected']]));
   holder.append(card('System', [['Windows', NA([hw.os.name, hw.os.version].filter(Boolean).join(' '))], ['Build', NA(hw.os.build)],
-    ...(hw.displays.length ? hw.displays.map(d => [d.name + (d.primary ? ' (main)' : ''), `${d.width} × ${d.height} at ${d.refreshHz} Hz`]) : [['Display', 'Not detected']]),
+    ...(hw.displays.length ? hw.displays.map(d => [d.name + (d.primary ? ' (main)' : ''), `${d.width} × ${d.height} at ${d.refreshHz} Hz` + (d.refreshRates && d.refreshRates.length > 1 ? ` (supports ${d.refreshRates.join(', ')} Hz)` : '')]) : [['Display', 'Not detected']]),
     ...hw.storage.map(d => [d.label, `${fmtMB(d.freeMb)} free of ${fmtMB(d.totalMb)}`]),
     ['Vulkan', hw.vulkan.available ? `Available (${hw.vulkan.instance || 'loader'})` : hw.vulkan.loader ? 'Driver found, no Vulkan GPU' : 'Not detected']]));
   for (const n of hw.notes || []) holder.append(h('p', { class: 'note' }, n));
@@ -2612,6 +2660,39 @@ async function enhancementsPanel(box) {
     }
   };
   draw();
+}
+
+// ---------- Performance Monitor: the in-game bar (a Windows overlay window) and its live preview
+async function perfToggleGame(key, on) {
+  const pm = S.settings.perfMonitor || {};
+  let games = (pm.games || []).filter(k => k !== key);
+  if (on) games.push(key);
+  const mode = on && pm.mode === 'off' ? 'selected' : pm.mode;
+  await saveSettings({ perfMonitor: { games, mode } });
+}
+function perfOn(key) { const pm = S.settings.perfMonitor || {}; return pm.mode === 'all' || (pm.mode === 'selected' && (pm.games || []).includes(key)); }
+async function renderPerfSettings(p) {
+  const pm = S.settings.perfMonitor || {};
+  p.append(h('h2', {}, 'Performance Monitor'), h('p', { class: 'note' }, 'A thin bar at the top or bottom of the screen while you play. Every value is measured on this PC; what cannot be measured shows N/A. It needs borderless fullscreen or a window (exclusive fullscreen covers it).'));
+  const preview = h('div', { class: 'perf-preview ' + (pm.position === 'bottom' ? 'bottom' : 'top'), style: { opacity: (pm.opacity || 80) / 100, fontSize: `${(pm.scale || 100) / 100}em` } }, 'Measuring…');
+  p.append(h('div', { class: 'perf-stage' }, preview));
+  const save = async patch => { await saveSettings({ perfMonitor: patch }); rebuildPanel(); };
+  p.append(rowChoice('Show it', [{ v: 'off', l: 'Off' }, { v: 'all', l: 'In every game' }, { v: 'selected', l: 'Only in games I choose' }], pm.mode || 'off', v => save({ mode: v }), pm.mode === 'selected' ? `${(pm.games || []).length} game(s) chosen — switch it on for a game in its Configure Game Settings, or while playing.` : ''));
+  p.append(rowChoice('Position', [{ v: 'top', l: 'Top' }, { v: 'bottom', l: 'Bottom' }], pm.position || 'top', v => save({ position: v })));
+  p.append(rowRange('Opacity', { min: 30, max: 100, step: 5, value: pm.opacity || 80, fmt: v => v + '%', onChange: v => saveSettings({ perfMonitor: { opacity: v } }).then(() => preview.style.opacity = v / 100) }));
+  p.append(rowRange('Size', { min: 75, max: 200, step: 5, value: pm.scale || 100, fmt: v => v + '%', onChange: v => saveSettings({ perfMonitor: { scale: v } }).then(() => preview.style.fontSize = `${v / 100}em`) }));
+  p.append(h('h3', {}, 'What it shows'));
+  let info; try { info = await api('/api/perf'); } catch { info = { metrics: [] }; }
+  const notes = { cputemp: 'Windows does not give applications a reliable CPU temperature sensor, so this shows N/A.', gputemp: 'Measured on NVIDIA graphics cards (through the NVIDIA driver); N/A on others.', ramspeed: 'The configured memory speed of your RAM modules — a speed, not how much is in use.', fps: 'Frames the game presented in the last second.', frametime: 'Average time per presented frame over the last second.', vram: 'Graphics memory in use, of the card’s total.', gpu: 'Busiest graphics engine (3D) of your graphics card.' };
+  const sel = pm.metrics || [];
+  for (const m of info.metrics) p.append(rowToggle(m.l, sel.includes(m.v), v => save({ metrics: v ? [...sel, m.v] : sel.filter(x => x !== m.v) }), notes[m.v] || ''));
+  // live preview while this page is open (stops by itself when the page closes)
+  const tick = async () => {
+    if (!preview.isConnected) return;
+    try { const r = await api('/api/perf'); preview.textContent = r.text || 'Nothing selected'; } catch { }
+    setTimeout(tick, 1000);
+  };
+  tick();
 }
 
 // ---------- NEXUS Sync: experimental Device Linking (only with the feature switched on)
