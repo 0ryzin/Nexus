@@ -325,6 +325,10 @@ func TestEngineSessionAndPlaytime(t *testing.T) {
 	if !sawCheckpoint || !sawPlaying {
 		t.Fatalf("checkpoint=%v playing=%v", sawCheckpoint, sawPlaying)
 	}
+	// the session is finished (play time, compatibility) when emulator.exit is sent
+	if waitEvent(t, exits, "emulator.exit") == nil {
+		t.Fatal("no emulator.exit event")
+	}
 	gs := app.Profiles.Stats(p.ID).Games[g.Key]
 	if gs == nil || gs.Sessions != 1 || gs.Seconds < 2 || gs.Seconds > 3 || gs.ByEmulator[engineID] != gs.Seconds {
 		t.Fatalf("stats %+v", gs)
@@ -335,9 +339,6 @@ func TestEngineSessionAndPlaytime(t *testing.T) {
 	c := app.Compat.Get(g.Key)
 	if c.Sessions != 1 || c.Booted != 1 || c.Status != "boots" || c.System != "switch1" {
 		t.Fatalf("compat %+v", c)
-	}
-	if waitEvent(t, exits, "emulator.exit") == nil {
-		t.Fatal("no emulator.exit event")
 	}
 	// crash recovery
 	now := nowUnix()
