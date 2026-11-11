@@ -13,16 +13,16 @@ import (
 // Hardware is what NEXUS could detect about this PC. Empty strings and zero values mean
 // "not detected"; the interface shows those as unavailable instead of guessing.
 type Hardware struct {
-	CPU      CPUInfo     `json:"cpu"`
-	GPUs     []GPUInfo   `json:"gpus"`
-	Memory   MemoryInfo  `json:"memory"`
-	OS       OSInfo      `json:"os"`
-	Displays []Display   `json:"displays"`
-	Storage  []DiskInfo  `json:"storage"`
-	Vulkan   VulkanInfo  `json:"vulkan"`
-	Notes    []string    `json:"notes,omitempty"` // what could not be detected and why
-	At       int64       `json:"at"`
-	Source   string      `json:"source"` // "detected" or "override" (developer test profiles)
+	CPU      CPUInfo    `json:"cpu"`
+	GPUs     []GPUInfo  `json:"gpus"`
+	Memory   MemoryInfo `json:"memory"`
+	OS       OSInfo     `json:"os"`
+	Displays []Display  `json:"displays"`
+	Storage  []DiskInfo `json:"storage"`
+	Vulkan   VulkanInfo `json:"vulkan"`
+	Notes    []string   `json:"notes,omitempty"` // what could not be detected and why
+	At       int64      `json:"at"`
+	Source   string     `json:"source"` // "detected" or "override" (developer test profiles)
 }
 
 type CPUInfo struct {
@@ -36,19 +36,19 @@ type CPUInfo struct {
 }
 
 type GPUInfo struct {
-	Vendor        string `json:"vendor"`
-	Model         string `json:"model"`
-	VendorID      uint32 `json:"vendorId"`
-	DeviceID      uint32 `json:"deviceId"`
-	DedicatedMB   int64  `json:"dedicatedMb"` // dedicated video memory (0 = none/unknown)
-	SharedMB      int64  `json:"sharedMb"`
-	Integrated    bool   `json:"integrated"`
-	Kind          string `json:"kind"` // discrete | integrated | software | unknown
-	Driver        string `json:"driver"`
-	VulkanAPI     string `json:"vulkanApi,omitempty"` // highest Vulkan version the driver offers for this GPU
-	VulkanDriver  string `json:"vulkanDriver,omitempty"`
-	DirectX       string `json:"directX,omitempty"`
-	Primary       bool   `json:"primary"`
+	Vendor       string `json:"vendor"`
+	Model        string `json:"model"`
+	VendorID     uint32 `json:"vendorId"`
+	DeviceID     uint32 `json:"deviceId"`
+	DedicatedMB  int64  `json:"dedicatedMb"` // dedicated video memory (0 = none/unknown)
+	SharedMB     int64  `json:"sharedMb"`
+	Integrated   bool   `json:"integrated"`
+	Kind         string `json:"kind"` // discrete | integrated | software | unknown
+	Driver       string `json:"driver"`
+	VulkanAPI    string `json:"vulkanApi,omitempty"` // highest Vulkan version the driver offers for this GPU
+	VulkanDriver string `json:"vulkanDriver,omitempty"`
+	DirectX      string `json:"directX,omitempty"`
+	Primary      bool   `json:"primary"`
 }
 
 type MemoryInfo struct {

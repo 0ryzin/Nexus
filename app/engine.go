@@ -2,13 +2,14 @@ package main
 
 import (
 	"errors"
-	"strconv"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -38,12 +39,28 @@ type Emulator struct {
 	app *App
 	mu  sync.Mutex
 
-	state RunState
-	host  EngineHost
+	state   RunState
+	host    EngineHost
 	hostErr error
 	hostDir string
 
 	Builds *EngineBuilds
+
+	// startupCheck is set while the first engine check (verify + load) runs in the background
+	// after NEXUS starts; the interface does not wait for it (Status reports "checking").
+	startupCheck atomic.Bool
+}
+
+// CheckEngineInBackground verifies and loads the engine without holding up the interface.
+func (e *Emulator) CheckEngineInBackground(done func(ok bool, msg string)) {
+	e.startupCheck.Store(true)
+	go func() {
+		ok, msg := e.EngineAvailable()
+		e.startupCheck.Store(false)
+		if done != nil {
+			done(ok, msg)
+		}
+	}()
 }
 
 func NewEmulator(a *App) *Emulator {
@@ -62,12 +79,14 @@ func (e *Emulator) DataDir() string { return filepath.Join(e.app.Paths.System, "
 // UserDir is kept as the name the rest of NEXUS uses for the engine data folder.
 func (e *Emulator) UserDir() string { return e.DataDir() }
 
-func (e *Emulator) ConfigDir() string    { return filepath.Join(e.DataDir(), "config") }
-func (e *Emulator) ConfigPath() string   { return filepath.Join(e.ConfigDir(), "nexus-engine.ini") }
-func (e *Emulator) SessionPath() string  { return filepath.Join(e.ConfigDir(), "session.ini") }
-func (e *Emulator) KeysDir() string      { return filepath.Join(e.DataDir(), "keys") }
-func (e *Emulator) FirmwareDir() string  { return filepath.Join(e.DataDir(), "nand", "system", "Contents", "registered") }
-func (e *Emulator) KeysPresent() bool    { return fileExists(filepath.Join(e.KeysDir(), "prod.keys")) }
+func (e *Emulator) ConfigDir() string   { return filepath.Join(e.DataDir(), "config") }
+func (e *Emulator) ConfigPath() string  { return filepath.Join(e.ConfigDir(), "nexus-engine.ini") }
+func (e *Emulator) SessionPath() string { return filepath.Join(e.ConfigDir(), "session.ini") }
+func (e *Emulator) KeysDir() string     { return filepath.Join(e.DataDir(), "keys") }
+func (e *Emulator) FirmwareDir() string {
+	return filepath.Join(e.DataDir(), "nand", "system", "Contents", "registered")
+}
+func (e *Emulator) KeysPresent() bool     { return fileExists(filepath.Join(e.KeysDir(), "prod.keys")) }
 func (e *Emulator) FirmwarePresent() bool { return dirHasFiles(e.FirmwareDir()) }
 
 // InputProfiles lists controller profiles saved in the engine configuration.
@@ -601,9 +620,13 @@ func (e *Emulator) ImportNandSaves(profileID string, overwrite bool) (int, error
 
 // Status summarises the engine for the UI.
 func (e *Emulator) Status() map[string]any {
-	ok, why := e.EngineAvailable()
+	checking := e.startupCheck.Load()
+	ok, why := false, ""
+	if !checking {
+		ok, why = e.EngineAvailable()
+	}
 	return map[string]any{
-		"installed": ok, "problem": why, "dataDir": e.DataDir(), "keys": e.KeysPresent(),
+		"installed": ok, "problem": why, "checking": checking, "dataDir": e.DataDir(), "keys": e.KeysPresent(),
 		"firmware": e.FirmwarePresent(), "vcRuntime": vcRuntimeAvailable(e.Builds.ActiveDir()), "vulkan": vulkanLoaderPresent(), "state": e.State(),
 		"inputProfiles": e.InputProfiles(), "volume": e.Volume(),
 	}

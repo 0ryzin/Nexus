@@ -2,13 +2,13 @@ package main
 
 import (
 	"bytes"
-	"image/gif"
 	"crypto/rand"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image/gif"
 	"io"
 	"io/fs"
 	"net"
@@ -1336,15 +1336,15 @@ func (s *Server) storage() map[string]any {
 	}
 	free, total := diskSpace(a.Paths.Root)
 	return map[string]any{
-		"disk":      map[string]any{"free": free, "total": total},
-		"games":     sz(a.Paths.Games),
-		"saves":     sz(a.Paths.Saves),
-		"artwork":   sz(a.Paths.Artwork),
-		"engine":    sz(a.Emu.Builds.Root()),
+		"disk":       map[string]any{"free": free, "total": total},
+		"games":      sz(a.Paths.Games),
+		"saves":      sz(a.Paths.Saves),
+		"artwork":    sz(a.Paths.Artwork),
+		"engine":     sz(a.Emu.Builds.Root()),
 		"engineData": sz(a.Emu.DataDir()),
-		"logs":      sz(a.Paths.Logs),
-		"archived":  sz(a.Paths.Trash),
-		"wallpaper": sz(a.Paths.Wallpapers),
+		"logs":       sz(a.Paths.Logs),
+		"archived":   sz(a.Paths.Trash),
+		"wallpaper":  sz(a.Paths.Wallpapers),
 	}
 }
 
@@ -1407,7 +1407,7 @@ func (s *Server) engineInfo() map[string]any {
 	out["job"] = a.Emu.Builds.Job()
 	out["buildsDir"] = a.Emu.Builds.BuildsDir()
 	out["apiVersion"] = engineAPIVersion
-	if ok, _ := a.Emu.EngineAvailable(); ok {
+	if ok, _ := out["installed"].(bool); ok {
 		if h, err := a.Emu.Host(); err == nil {
 			if info, err := h.Info(); err == nil {
 				out["info"] = info

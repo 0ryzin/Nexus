@@ -125,7 +125,6 @@ func (b *EngineBuilds) HasActive() bool {
 	return d != "" && fileExists(filepath.Join(d, "nexus_engine.dll"))
 }
 
-
 // VerifyActive checks the engine in use against its manifest once per run.
 func (b *EngineBuilds) VerifyActive() error {
 	dir := b.ActiveDir()

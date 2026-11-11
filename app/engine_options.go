@@ -155,7 +155,6 @@ type LaunchError struct {
 
 func (le *LaunchError) Error() string { return le.Message }
 
-
 func splitArgs(s string) []string {
 	var out []string
 	var cur strings.Builder
@@ -178,7 +177,6 @@ func splitArgs(s string) []string {
 	}
 	return out
 }
-
 
 func tailFile(path string, n int, keep func(string) bool) string {
 	data, err := os.ReadFile(path)

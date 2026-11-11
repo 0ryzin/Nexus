@@ -45,5 +45,5 @@ func diskSpace(path string) (free, total uint64) {
 	return st.Bavail * uint64(st.Bsize), st.Blocks * uint64(st.Bsize)
 }
 
-func setHidden(string) {}
+func setHidden(string)   {}
 func clearHidden(string) {}

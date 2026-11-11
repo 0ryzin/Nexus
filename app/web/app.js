@@ -645,7 +645,8 @@ window.addEventListener('blur', () => { Wall.focused = false; Wall.update(); });
 // ------------------------------------------------------------------ avatar
 function avatarEl(p, cls = '') {
   // --pc: the user's profile colour (their accent), drawn as a ring wherever the user is shown
-  const el = h('span', { class: 'avatar ' + cls, style: { '--c': p?.avatar?.color || '#666', '--pc': p?.theme?.accent || 'transparent' } });
+  const el = h('span', { class: 'avatar ' + cls, style: { '--c': p?.avatar?.color || '#666' } });
+  if (p?.theme?.accent) el.style.setProperty('--pc', p.theme.accent);
   if (p?.avatar?.kind === 'image') el.append(h('img', { src: `/avatar/${p.id}?v=${p.avatar.rev || 0}`, alt: '' }));
   else { const g = GLYPHS[p?.avatar?.preset] || GLYPHS.star; el.append(svg(g[0], '', !!g[1])); }
   return el;
@@ -1367,6 +1368,7 @@ function renderTopbar() {
   ordered.slice(0, 8).forEach((p, i) => {
     const a = avatarEl(p, p.id === S.profile?.id ? 'active' : '');
     const b = h('button', { class: a.className, style: { '--c': a.style.getPropertyValue('--c'), '--i': i }, 'data-nav': true, title: p.name }, ...a.childNodes);
+    if (p.theme?.accent) b.style.setProperty('--pc', p.theme.accent);
     b._profile = p;
     b.addEventListener('click', () => p.id === S.profile?.id ? profilePage(p.id) : switchProfile(p.id));
     left.append(b);
@@ -1504,7 +1506,8 @@ function renderBanner() {
     return;
   }
   if (en.job?.active) { msg = h('span', { class: 'grow' }, h('b', {}, 'Installing the NEXUS engine… '), en.job.message || ''); }
-  else if (!en.installed) { msg = h('span', { class: 'grow' }, h('b', {}, 'NEXUS engine not installed. '), 'Install an engine build to play games.'); label = 'NEXUS Engine'; action = () => showSettings('engine'); }
+  else if (en.checking) { /* the engine is being verified and loaded in the background */ }
+  else if (!en.installed) { msg = h('span', { class: 'grow' }, h('b', {}, 'The NEXUS engine cannot be used. '), en.problem || 'Extract the complete NEXUS ZIP again.'); label = 'Details'; action = () => showSettings('engine'); }
   else if (S.games.some(g => g.kind !== 'homebrew') && !en.keys) { msg = h('span', { class: 'grow' }, h('b', {}, 'System files needed. '), 'Install the prod.keys and firmware from your own console to play commercial games.'); label = 'Install'; action = () => showSettings('sysfiles'); }
   if (!msg) { b.hidden = true; return; }
   b.hidden = false;
@@ -2762,6 +2765,7 @@ function connectEvents() {
           if (m.data.errors?.length) console.warn(m.data.errors);
         } else if (m.data.state === 'start') { S.library = { ...(S.library || {}), scanning: true }; if (S.screen === 'library') renderLibrary(); }
         break;
+      case 'engine.ready': await refreshEngine(); if (S.screen === 'home') renderBanner(); if (S.screen === 'settings' && curCat === 'engine') rebuildPanel(); break;
       case 'library.changed': await loadGames(); if (['home', 'library'].includes(S.screen)) refreshViews(); break;
       case 'emulator.state': {
         const st = m.data;

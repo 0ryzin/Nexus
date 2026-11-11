@@ -26,7 +26,7 @@ func newFakeEngine() *fakeEngine { return &fakeEngine{st: EngineStatus{State: "i
 
 func (f *fakeEngine) Info() (EngineBuildInfo, error) {
 	return EngineBuildInfo{Name: "NEXUS Engine", Version: "test stand-in (not an emulator)", API: engineAPIVersion,
-		Upstream: map[string]string{"project": "development stand-in"},
+		Upstream:  map[string]string{"project": "development stand-in"},
 		Systems:   []EngineSystem{{ID: "switch1", Name: "Nintendo Switch", Status: "core"}, {ID: "switch2", Name: "Nintendo Switch 2", Status: "experimental"}},
 		Renderers: []string{"null"}, Components: []string{"test tone audio through the engine gain curve"}}, nil
 }
@@ -51,11 +51,15 @@ func (f *fakeEngine) Start(req EngineRequest) error {
 func (f *fakeEngine) run(req EngineRequest) {
 	time.Sleep(150 * time.Millisecond)
 	if strings.Contains(req.Game, "bad") {
-		f.set(func(s *EngineStatus) { *s = EngineStatus{State: "error", Code: "load", Message: "The game could not be loaded."} })
+		f.set(func(s *EngineStatus) {
+			*s = EngineStatus{State: "error", Code: "load", Message: "The game could not be loaded."}
+		})
 		return
 	}
 	if _, err := os.Stat(req.ConfigFile); err != nil {
-		f.set(func(s *EngineStatus) { *s = EngineStatus{State: "error", Code: "config", Message: "session configuration missing"} })
+		f.set(func(s *EngineStatus) {
+			*s = EngineStatus{State: "error", Code: "config", Message: "session configuration missing"}
+		})
 		return
 	}
 	sys := "switch1"
@@ -90,7 +94,11 @@ func (f *fakeEngine) run(req EngineRequest) {
 			f.samples = toneBuffer(f.volume)
 			f.mu.Unlock()
 			if strings.Contains(req.Game, "crash") && f.Status().Frames > 15 {
-				f.set(func(s *EngineStatus) { s.State = "error"; s.Code = "crash"; s.Message = "The game stopped unexpectedly." })
+				f.set(func(s *EngineStatus) {
+					s.State = "error"
+					s.Code = "crash"
+					s.Message = "The game stopped unexpectedly."
+				})
 				return
 			}
 		}

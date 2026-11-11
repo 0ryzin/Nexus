@@ -37,8 +37,8 @@ type DeviceClass struct {
 type OptChange struct {
 	ID     string `json:"id"`
 	Label  string `json:"label"`
-	From   string `json:"from"`   // current effective value ("" = engine default)
-	To     string `json:"to"`     // recommended value
+	From   string `json:"from"` // current effective value ("" = engine default)
+	To     string `json:"to"`   // recommended value
 	FromL  string `json:"fromLabel"`
 	ToL    string `json:"toLabel"`
 	Reason string `json:"reason"`
@@ -537,4 +537,3 @@ func (e *Emulator) RestoreOptimisation(gameKey string) error {
 	optMu.Unlock()
 	return err
 }
-

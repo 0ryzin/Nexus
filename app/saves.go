@@ -3,11 +3,11 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"io"
-	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -537,7 +537,6 @@ func (o *SaveOrganizer) List(profileID string) []SaveFolder {
 	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].Folder) < strings.ToLower(out[j].Folder) })
 	return out
 }
-
 
 // Export writes a ZIP of the user's readable save folders and the mapping file.
 func (o *SaveOrganizer) Export(profileID string, w io.Writer) error {

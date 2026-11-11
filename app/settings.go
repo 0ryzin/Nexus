@@ -38,10 +38,10 @@ type GlobalSettings struct {
 		Recursive      bool     `json:"recursive"`
 		ScanOnStart    bool     `json:"scanOnStart"`
 		ShowFormats    []string `json:"formats"`
-		ReadKeysForIDs bool     `json:"readKeysForIds"`    // decrypt NCA headers with prod.keys to identify titles
-		OnlineArtwork  bool     `json:"onlineArtwork"`     // download missing icons by Title ID
-		NlibURL        string   `json:"nlibUrl"`           // Nlib API base URL
-		ArtProviders   []string `json:"artProviders"`      // extra icon URL templates containing {tid}
+		ReadKeysForIDs bool     `json:"readKeysForIds"` // decrypt NCA headers with prod.keys to identify titles
+		OnlineArtwork  bool     `json:"onlineArtwork"`  // download missing icons by Title ID
+		NlibURL        string   `json:"nlibUrl"`        // Nlib API base URL
+		ArtProviders   []string `json:"artProviders"`   // extra icon URL templates containing {tid}
 	} `json:"library"`
 
 	Emulator EmulatorSettings `json:"emulator"` // game session behaviour (NEXUS engine)
@@ -50,7 +50,6 @@ type GlobalSettings struct {
 
 	// Engine holds global emulation settings as NEXUS values (see enginesettings.go).
 	Engine map[string]string `json:"engine"`
-
 }
 
 type EmulatorSettings struct {

@@ -33,9 +33,9 @@ func focusWindow(uintptr)             {}
 func windowTrackingUnavailable() bool { return os.Getenv("NEXUS_FAKE_TITLE_FILE") == "" }
 func prepareCmd(*exec.Cmd)            {}
 func vcRuntimeInstalled() bool        { return true }
-func vcRuntimeAvailable(string) bool   { return true }
+func vcRuntimeAvailable(string) bool  { return true }
 func vulkanLoaderPresent() bool       { return true }
 func quitComboPressed() bool          { return false }
 func xinputConnected() []int          { return nil }
 func powerInfo() (bool, int, bool)    { return false, 0, false }
-func guidePressed() bool             { return false }
+func guidePressed() bool              { return false }

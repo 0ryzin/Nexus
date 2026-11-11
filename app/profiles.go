@@ -30,12 +30,12 @@ type Wallpaper struct {
 }
 
 type Theme struct {
-	Mode       string    `json:"mode"`       // dark | light
-	Accent     string    `json:"accent"`     // hex
-	Animations string    `json:"animations"` // full | reduced | off
+	Mode       string `json:"mode"`       // dark | light
+	Accent     string `json:"accent"`     // hex
+	Animations string `json:"animations"` // full | reduced | off
 	// HomeTransition: how NEXUS animates into the Home screen (zoom | fade | slide | off).
-	HomeTransition string `json:"homeTransition"`
-	Wallpaper  Wallpaper `json:"wallpaper"`
+	HomeTransition string    `json:"homeTransition"`
+	Wallpaper      Wallpaper `json:"wallpaper"`
 }
 
 type Controls struct {

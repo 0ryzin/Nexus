@@ -80,10 +80,10 @@ func detectCPU(h *Hardware) {
 
 func detectMemory(h *Hardware) {
 	var ms struct {
-		Length, MemoryLoad                       uint32
-		TotalPhys, AvailPhys, TotalPageFile      uint64
+		Length, MemoryLoad                        uint32
+		TotalPhys, AvailPhys, TotalPageFile       uint64
 		AvailPageFile, TotalVirtual, AvailVirtual uint64
-		AvailExtendedVirtual                     uint64
+		AvailExtendedVirtual                      uint64
 	}
 	ms.Length = uint32(unsafe.Sizeof(ms))
 	p := windows.NewLazySystemDLL("kernel32.dll").NewProc("GlobalMemoryStatusEx")

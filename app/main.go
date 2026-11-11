@@ -77,13 +77,14 @@ func main() {
 	app.Log.Printf("UI server at %s", srv.ln.Addr())
 	// Load and verify the bundled engine in the background while the interface starts, so the
 	// first game launch does not wait for it and the engine status is ready on the home screen.
-	go func() {
-		if ok, msg := app.Emu.EngineAvailable(); !ok {
+	app.Emu.CheckEngineInBackground(func(ok bool, msg string) {
+		if !ok {
 			app.Log.Printf("engine: %s", msg)
 		} else {
 			app.Log.Printf("engine: ready (%s)", app.Emu.Builds.ActiveVersionLabel())
 		}
-	}()
+		app.Events.Emit("engine.ready", map[string]any{"installed": ok, "problem": msg})
+	})
 	runUI(app, url)
 	// make sure a running game isn't orphaned silently
 	if st := app.Emu.State(); st.Running {
