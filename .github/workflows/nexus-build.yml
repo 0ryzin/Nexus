@@ -206,10 +206,11 @@ jobs:
         working-directory: engine-src
         shell: bash
         env:
-          GITHUB_REF_NAME: engine-v${{ steps.lock.outputs.version }}
           NEXUS_ENGINE_UPSTREAM_BASE: ${{ steps.lock.outputs.base }}
           NEXUS_ENGINE_PATCHSET: ${{ steps.lock.outputs.patchset }}
-        run: python tools/nexus/package_engine.py build/bin ../engine-out
+        # package_engine.py takes the version from GITHUB_REF_NAME; the runner's own value (the
+        # branch name) wins over a step env entry, so it is set on the command itself
+        run: GITHUB_REF_NAME="engine-v${{ steps.lock.outputs.version }}" python tools/nexus/package_engine.py build/bin ../engine-out
 
       - name: Build NEXUS.exe
         working-directory: app
