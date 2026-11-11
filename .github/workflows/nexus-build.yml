@@ -296,7 +296,7 @@ jobs:
           tag="v$NEXUS_VERSION"; publish=false
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             publish=true
-          elif [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/main ]]; then
+          elif [[ ( "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ) && "$GITHUB_REF" == refs/heads/main ]]; then
             if gh release view "$tag" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
               echo "$tag is already released"
             elif [[ ! -f "docs/releases/$tag.md" ]]; then
