@@ -238,35 +238,6 @@ func TestMigrateOldLayout(t *testing.T) {
 	}
 }
 
-// TestImportPreviousEngineData: keys/firmware from the emulator data folder NEXUS 1.x used
-// are brought into the NEXUS engine data folder once, without touching the originals.
-func TestImportPreviousEngineData(t *testing.T) {
-	appdata := t.TempDir()
-	t.Setenv("APPDATA", appdata)
-	eden := filepath.Join(appdata, "eden")
-	os.MkdirAll(filepath.Join(eden, "keys"), 0o755)
-	os.WriteFile(filepath.Join(eden, "keys", "prod.keys"), []byte("header_key = 00\n"), 0o644)
-	reg := filepath.Join(eden, "nand", "system", "Contents", "registered")
-	os.MkdirAll(reg, 0o755)
-	os.WriteFile(filepath.Join(reg, "a.nca"), []byte("nca"), 0o644)
-	os.MkdirAll(filepath.Join(eden, "nand", "user", "save"), 0o755)
-	os.WriteFile(filepath.Join(eden, "nand", "user", "save", "s.bin"), []byte("save"), 0o644)
-	app, _ := testNewAppWithPaths(t, NewPathsSplit(t.TempDir(), t.TempDir(), false))
-	app.importPreviousEngineData()
-	if !app.Emu.KeysPresent() || !app.Emu.FirmwarePresent() {
-		t.Fatal("keys/firmware not imported")
-	}
-	if fileExists(filepath.Join(app.Emu.DataDir(), "nand", "user", "save", "s.bin")) {
-		t.Fatal("saves must only be imported when the user asks")
-	}
-	if !fileExists(filepath.Join(eden, "keys", "prod.keys")) || !fileExists(filepath.Join(reg, "a.nca")) {
-		t.Fatal("originals must be kept")
-	}
-	if app.Emu.NandSaveDir() == "" {
-		t.Fatal("previous saves should be offered for import")
-	}
-}
-
 func TestCompareVersions(t *testing.T) {
 	for _, c := range []struct {
 		a, b string

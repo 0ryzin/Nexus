@@ -163,6 +163,10 @@ type LaunchError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 	Detail  string `json:"detail,omitempty"`
+	// Technical: the engine's own message and last log lines, shown only on request
+	Technical string `json:"technical,omitempty"`
+	// Log: the diagnostic file written for this failure
+	Log string `json:"log,omitempty"`
 }
 
 func (le *LaunchError) Error() string { return le.Message }

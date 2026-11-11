@@ -1,6 +1,27 @@
 # The NEXUS engine: investigation, architecture, status and plan
 
-## 0. Current engine: NEXUS Engine 0.1.0 (NEXUS 0.0.0)
+## 0. NEXUS Engine 0.2.0 (NEXUS 0.1.0): the configuration error
+
+**What went wrong.** Lichii build-150 (#1253, "Give Lichii its own data folder with a recoverable
+Eden import") added `FrontendCommon::CheckLegacyProfileBeforeConfig()` to `Config::Initialize`. It
+throws "Legacy emulator data or an unfinished import was found. Open the Lichii GUI…" when:
+* the data folder is not portable, and
+* `<data folder>.migration` holds no import decision (for NEXUS: `%APPDATA%\NEXUS\System\Engine.migration`
+  never exists), and
+* any of `%APPDATA%\eden`, `citron`, `sudachi`, `suyu`, `yuzu` exists.
+
+The NEXUS engine builds its configuration through that `Config` class (`SdlConfig`), so on any PC
+that had Eden (or yuzu…) every game launch failed in NEXUS 0.0.0, before a configuration was made.
+NEXUS does not run the upstream command-line program; the check simply ran inside the engine
+library. NEXUS's own data folder was correct; the check looked at the other emulators' folders.
+
+**The fix (patch 0011).** `SetAppDirectory()` with an explicit folder marks the data folder as
+*host-managed* (`Common::FS::IsHostManagedDataDirectory()`); the upstream check is skipped for it,
+because NEXUS owns that folder and runs its own import (with backup, start fresh and retry — see
+README, *Data from other emulators*). eden-cli and the Qt frontend keep the upstream behaviour.
+Engine tests cover both cases.
+
+## 0.1 NEXUS Engine 0.1.0 (NEXUS 0.0.0)
 
 * **Upstream base: Lichii build-150** (was build-130). The NEXUS patches were re-applied on top; one
   conflict (the engine data folder, `common/fs/path_util.cpp`) was resolved so NEXUS's explicit data
@@ -27,7 +48,7 @@
   `amd_fsr4` settings are now NEXUS settings (*Emulation settings › Frame generation & DLSS*, and
   per game), offered according to the detected graphics card (see README).
 
-## 0.1 Earlier: the first Windows builds
+## 0.2 Earlier: the first Windows builds
 
 * **The engine is compiled, tested and shipped.** The NEXUS repository holds the engine as a patch
   series on upstream Lichii build-130 (`engine/patches`, 10 patches). Its Windows build
@@ -45,7 +66,7 @@
   user's or game's layout; see README, Controller support.
 * **Still untested:** a real game (needs a GPU, keys/firmware and games).
 
-## 0.2 Packaging and interface 2
+## 0.3 Packaging and interface 2
 
 * **Packaging:** the engine ships inside the NEXUS folder (`Engine\nexus_engine.dll`, `Engine\engine.json`, `Engine\Libraries\`).
   * NEXUS finds it relative to `NEXUS.exe` and loads it with `LoadLibraryExW`. Dependencies are searched only in the engine folder, `Engine\Libraries` and System32.

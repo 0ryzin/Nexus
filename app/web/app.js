@@ -864,6 +864,60 @@ async function selectProfile(id) {
   S.settings.lastProfileId = id;
   await loadGames();
   goHome();
+  maybeOfferEngineImport();
+}
+
+// ---------- data from other emulators (NEXUS's own import; nothing is needed from those programs)
+let engineImportAsked = false;
+function describeSource(src) {
+  const items = src.items.map(i => `• ${i.label} — ${i.files} file${i.files === 1 ? '' : 's'}, ${fmtBytes(i.bytes)}`);
+  if (src.saves) items.push(`• Saves (${src.saves} files) — offered afterwards for each user, in User settings`);
+  return `${src.name}: ${src.path}\n` + items.join('\n');
+}
+async function maybeOfferEngineImport(force = false) {
+  if (engineImportAsked && !force) return;
+  let st; try { st = await api('/api/engine-data'); } catch { return; }
+  if (!st.ask && !force) return;
+  engineImportAsked = true;
+  if (!st.sources.length) { alertDlg('Nothing to import', 'No data from other Switch emulators was found on this PC. NEXUS has set up its own engine data folder and configuration.'); return; }
+  const interrupted = st.record.state === 'interrupted' || st.record.state === 'error';
+  const src = st.sources.find(x => x.id === st.record.source) || st.sources[0];
+  const text = (interrupted
+    ? `The last import from ${src.name} did not finish${st.record.error ? ' (' + st.record.error + ')' : ''}. Nothing was lost: what was copied is kept, and trying again copies only what is missing.\n\n`
+    : 'NEXUS found data from another Switch emulator on this PC. NEXUS can copy it into its own engine data, so your keys, firmware and installed updates work in NEXUS straight away.\n\n')
+    + describeSource(src)
+    + '\n\nThe original files are only read, never changed or moved. Files NEXUS already has are kept (and backed up). You can also start fresh and import later in Settings › System files.';
+  const buttons = [{ label: 'Later', value: 'later' }, { label: 'Start fresh', value: 'fresh' }];
+  if (st.sources.length > 1) buttons.push({ label: 'Choose another…', value: 'choose' });
+  buttons.push({ label: interrupted ? 'Try again' : `Import from ${src.name}`, value: 'import', primary: true });
+  const v = await dialog({ title: interrupted ? 'Finish importing your emulator data?' : 'Bring in your emulator data?', text, buttons, cancelValue: 'later' });
+  if (v === 'fresh') { await api('/api/engine-data/fresh', { body: {} }).catch(e => toast(e.message, I.warn)); toast('NEXUS starts fresh. You can import later in System files.', I.check, 3500); }
+  if (v === 'import') startEngineImport(src.id);
+  if (v === 'choose') {
+    const pick = await dialog({ title: 'Import from', text: st.sources.map(describeSource).join('\n\n'), buttons: [{ label: 'Cancel', value: null }, ...st.sources.map(x => ({ label: x.name, value: x.id }))] });
+    if (pick) startEngineImport(pick);
+  }
+}
+async function startEngineImport(id) {
+  try { await api('/api/engine-data/import', { body: { source: id } }); toast('Importing… you can keep using NEXUS.', I.info, 2500); }
+  catch (e) { alertDlg('Could not import', e.message); }
+}
+function engineDataSection(p) {
+  const box = h('div'); p.append(h('h3', {}, 'Data from other emulators'), box);
+  api('/api/engine-data').then(st => {
+    const r = st.record;
+    const state = st.running ? `Importing… ${Math.round(st.progress * 100)}%` : r.state === 'interrupted' ? 'Import interrupted — can be retried'
+      : r.state === 'error' ? 'Import failed — can be retried' : r.decision === 'imported' ? `Imported from ${st.sources.find(x => x.id === r.source)?.name || r.source}${r.copied ? ` (${r.copied} files)` : ''}`
+      : r.decision === 'fresh' ? 'Started fresh (nothing imported)' : st.sources.length ? 'Not decided yet' : 'None found on this PC';
+    box.append(infoRow('NEXUS engine data', st.ready ? 'Set up' : 'Not set up', st.dataDir));
+    box.append(infoRow('Import', state, r.error || (r.backup ? `Backup of what NEXUS had: ${r.backup}` : '')));
+    for (const src of st.sources) {
+      box.append(rowButton(`Import from ${src.name}…`, { sub: `${src.path} · ${src.items.map(i => i.label.split(' (')[0]).join(', ') || 'saves only'}`, disabled: st.running, onClick: async () => {
+        if (await confirmDlg(`Import from ${src.name}?`, describeSource(src) + '\n\nOriginals are only read. Files NEXUS already has are kept.', 'Import')) { await startEngineImport(src.id); rebuildPanel(); }
+      } }));
+    }
+    if (st.sources.length && r.decision !== 'fresh' && !st.running) box.append(rowButton('Start fresh', { sub: 'Use NEXUS without importing. Nothing is deleted; you can import later.', onClick: async () => { await api('/api/engine-data/fresh', { body: {} }); rebuildPanel(); } }));
+  }).catch(e => box.append(h('p', { class: 'note warn' }, e.message)));
 }
 
 async function createProfileFlow() {
@@ -1987,7 +2041,7 @@ function artNote(g) {
 }
 function refreshViews() { if (S.screen === 'home') { const cur = Nav.cur; const k = cur?._game?.key; const dockIdx = cur ? $$('#dock .dock-btn').indexOf(cur) : -1; const topIdx = cur ? $$('#tb-profiles button').indexOf(cur) : -1; const inHome = cur && $('#home').contains(cur); renderHome(); if (Nav.top()?.dialog) return; let t = null; if (dockIdx >= 0) t = $$('#dock .dock-btn')[dockIdx]; else if (topIdx >= 0) t = $$('#tb-profiles button')[topIdx]; else t = $$('#tiles .tile').find(t => t._game?.key === k) || (inHome || !cur ? $('#tiles .tile') : null); if (t) Nav.setFocus(t, { silent: true }); } if (S.screen === 'library') { const k = Nav.cur?._game?.key; const keep = renderLibrary(k); if (keep) Nav.setFocus(keep, { silent: true }); } }
 
-// ---------- launching
+// ---------- launching: Who's playing? → the game opens → NEXUS loading screen → the game
 async function launchGame(key, force = false) {
   const g = gameByKey(key); if (!g) return;
   if (!isPlayable(g)) { alertDlg('Not a game', 'This file is an update or DLC. Keep it in one of your game folders: NEXUS applies it automatically when you start the base game.'); return; }
@@ -1999,12 +2053,25 @@ async function launchGame(key, force = false) {
     if (v === 'close') api('/api/emulator/stop', { body: {} }).catch(e => toast(e.message, I.warn));
     return;
   }
+  if (Launch.busy) return;
+  // Stage A: who's playing (the session, play time and saves belong to this user)
+  if (!force) {
+    const pid = await whoIsPlaying(g);
+    if (!pid) return;
+    if (pid !== S.profile.id) {
+      S.profile = profileById(pid); applyTheme(); refreshTop();
+      api(`/api/profiles/${pid}/select`, { body: {} }).catch(() => { });
+      S.settings.lastProfileId = pid;
+    }
+  }
+  Launch.busy = true;
   try {
     const st = await api('/api/launch', { body: { key, profileId: S.profile.id, force } });
     Sound.play('launch'); Pad.rumble(160, .5);
     S.playing = st;
-    showPlaying(true);
+    Launch.open(g, st);   // Stage B + C; Stage D when the engine shows the game
   } catch (e) {
+    Launch.busy = false;
     Sound.play('error');
     if (e.data?.warnings) {
       const w = e.data.warnings;
@@ -2014,9 +2081,115 @@ async function launchGame(key, force = false) {
       return;
     }
     const d = e.data || {};
-    const btn = await dialog({ title: d.error || 'Could not start the game', text: d.detail || e.message, buttons: d.code === 'no-engine' ? [{ label: 'Close', value: false }, { label: 'NEXUS Engine', value: 'emu', primary: true }] : [{ label: 'OK', value: false, primary: true }] });
+    const btn = await dialog({ title: d.error || 'NEXUS could not start this game', text: d.detail || e.message, buttons: d.code === 'no-engine' ? [{ label: 'Close', value: false }, { label: 'NEXUS Engine', value: 'emu', primary: true }] : [{ label: 'OK', value: false, primary: true }] });
     if (btn === 'emu') showSettings('engine');
   }
+}
+
+// Stage A — "Who's playing?". Skipped when only one user exists (setting: Game sessions › Ask
+// who's playing). Resolves with the chosen profile id, or null when cancelled.
+function whoIsPlaying(g) {
+  const mode = S.settings.emulator?.whoPlays || 'several';
+  if (mode === 'never' || (mode === 'several' && S.profiles.length < 2)) return Promise.resolve(S.profile.id);
+  return new Promise(resolve => {
+    let done = false;
+    const row = h('div', { class: 'wp-row', 'data-row': 'strict' });
+    const card = h('div', { class: 'wp-card' },
+      h('div', { class: 'wp-head' }, h('div', { class: 'wp-game' }, launchArt(g, 'wp-art')), h('div', {}, h('h2', {}, 'Who\u2019s playing?'), h('p', {}, g.title))),
+      row);
+    const layer = openLayer(card, { name: 'who-plays', onBack: () => finish(null) });
+    layer.root.classList.add('wp-layer');
+    const finish = (pid, btn) => {
+      if (done) return; done = true;
+      if (!pid) { layer.close(); resolve(null); return; }
+      Sound.play('select'); Pad.rumble(60, .3);
+      btn?.classList.add('picked');
+      card.classList.add('confirmed');
+      setTimeout(() => { layer.close(); resolve(pid); }, S.anim === 'off' ? 0 : 420);
+    };
+    for (const p of S.profiles) {
+      const a = avatarEl(p, 'wp-avatar');
+      const b = h('button', { class: 'wp-user', 'data-nav': true, style: { '--pc': p.theme?.accent || 'var(--accent)' } }, a, h('span', {}, p.name));
+      b.addEventListener('click', () => finish(p.id, b));
+      row.append(b);
+    }
+    const cur = $$('.wp-user', row)[S.profiles.findIndex(p => p.id === S.profile?.id)] || $('.wp-user', row);
+    Nav.setFocus(cur, { silent: true });
+  });
+}
+
+function launchArt(g, cls) {
+  const el = h('div', { class: 'launch-art ' + cls });
+  if (g?.artSource) el.append(h('img', { src: `/art/${g.key}?v=${g.artRev || 0}&w=640`, alt: '' }));
+  else el.append(h('div', { class: 'launch-ph' }, svg(I.pad), h('span', {}, g?.title || '')));
+  return el;
+}
+
+// Stages B–D: the game opens (artwork with an expanding ghost), the NEXUS loading screen with the
+// engine's real progress steps, then the game. One design for every game for now.
+const Launch = {
+  busy: false, el: null, key: null, t0: 0,
+  STAGES: { preparing: ['Preparing your session', 0], loading: ['Loading the game', 1], starting: ['Starting', 2] },
+  open(g, st) {
+    this.close(true);
+    this.key = g.key; this.t0 = performance.now();
+    const ghost = launchArt(g, 'lx-ghost'), art = launchArt(g, 'lx-art');
+    const steps = h('div', { class: 'lx-steps' }, Object.values(this.STAGES).map(([t]) => h('span', {}, h('i'), t)));
+    const el = h('div', { class: 'launchfx' + (S.anim === 'off' ? ' no-anim' : ''), role: 'status' },
+      h('div', { class: 'lx-backdrop', style: g.artSource ? { backgroundImage: `url("/art/${g.key}?v=${g.artRev || 0}&w=640")` } : {} }),
+      h('div', { class: 'lx-stage' }, h('div', { class: 'lx-artwrap' }, ghost, art),
+        h('div', { class: 'lx-info' }, h('h1', {}, g.title), h('div', { class: 'lx-status' }, ''), h('div', { class: 'lx-bar' }, h('i')), steps)),
+      h('div', { class: 'lx-brand' }, h('span', { class: 'lx-mark' }), 'NEXUS'));
+    const cancel = h('button', { class: 'btn lx-cancel', 'data-nav': true }, 'Cancel');
+    cancel.addEventListener('click', () => this.cancel());
+    el.append(cancel);
+    document.body.append(el); this.el = el;
+    // the loading screen takes the controls while it is up (nothing behind it reacts)
+    this.layer = { root: el, dialog: true, name: 'launch', onBack: () => this.cancel(), initial: cancel };
+    Nav.push(this.layer); renderHints();
+    requestAnimationFrame(() => el.classList.add('in'));
+    // Stage B → C: after the opening animation the loading screen takes over
+    setTimeout(() => el.classList.add('loading'), S.anim === 'off' ? 0 : 950);
+    this.update(st);
+  },
+  update(st) {
+    const el = this.el; if (!el || !st) return;
+    const [label, idx] = this.STAGES[st.stage] || this.STAGES.preparing;
+    $('.lx-status', el).textContent = label + '…';
+    $$('.lx-steps span', el).forEach((s, i) => { s.classList.toggle('done', i < idx); s.classList.toggle('on', i === idx); });
+    if (st.phase === 'playing') this.enter();
+  },
+  // Stage D: the engine shows the game — the loading screen fades and NEXUS steps aside
+  enter() {
+    const el = this.el; if (!el || el.classList.contains('out')) return;
+    const wait = Math.max(0, (S.anim === 'off' ? 0 : 1500) - (performance.now() - this.t0)); // let the opening finish
+    setTimeout(() => {
+      $('.lx-status', el).textContent = 'Have fun!';
+      $$('.lx-steps span', el).forEach(s => { s.classList.add('done'); s.classList.remove('on'); });
+      el.classList.add('out');
+      showPlaying(true);
+      setTimeout(() => this.close(), S.anim === 'off' ? 0 : 520);
+    }, wait);
+  },
+  async cancel() {
+    if (!this.el || this.el.classList.contains('out')) return;
+    if (await confirmDlg('Stop starting the game?', 'NEXUS closes the game before it opens.', 'Stop', true)) api('/api/emulator/stop', { body: {} }).catch(() => { });
+  },
+  close(now) {
+    if (this.layer) { Nav.pop(this.layer); this.layer = null; renderHints(); }
+    if (this.el) { const el = this.el; this.el = null; if (now) el.remove(); else { el.classList.add('out'); setTimeout(() => el.remove(), 300); } }
+    this.busy = false;
+  },
+};
+
+// A failed or crashed game, in NEXUS's words; the engine's technical details only on request.
+async function launchErrorDlg(title, err) {
+  const btns = [{ label: 'OK', value: false, primary: true }];
+  if (err.technical) btns.unshift({ label: 'Technical details', value: 'tech' });
+  if (err.log) btns.unshift({ label: 'Open diagnostic log', value: 'log' });
+  const v = await dialog({ title: err.message || 'NEXUS could not start this game', text: (title ? title + '\n\n' : '') + (err.detail || ''), buttons: btns });
+  if (v === 'log') api('/api/app/reveal-log', { body: { path: err.log } }).catch(e => toast(e.message, I.warn));
+  if (v === 'tech') { await dialog({ title: 'Technical details', pre: err.technical + (err.log ? '\n\nDiagnostic log: ' + err.log : ''), buttons: [{ label: 'Close', value: true, primary: true }] }); }
 }
 
 function showPlaying(justLaunched = false) {
@@ -2256,6 +2429,7 @@ const Panels = {
     const es = S.settings.emulator || {};
     p.append(h('h2', {}, 'Game sessions & saves'), h('p', { class: 'note' }, 'How NEXUS runs games and keeps each user’s saves. Graphics, audio and system options are in Emulation settings; keys and firmware in System files.'));
     p.append(rowVolume('Game volume', +(S.settings.engine?.['audio.volume'] ?? 100), sendVolume, '0% is silent, 100% is the game’s own level, up to 200% boosts quiet games (a soft limiter prevents harsh clipping). Also adjustable while playing.'));
+    p.append(rowChoice('Ask who\u2019s playing', [{ v: 'several', l: 'When there is more than one user' }, { v: 'always', l: 'Always' }, { v: 'never', l: 'Never (the current user plays)' }], es.whoPlays || 'several', v => saveSettings({ emulator: { whoPlays: v } }), 'Before a game starts, NEXUS asks which user is playing. Play time, saves and controller layout belong to that user.'));
     p.append(rowToggle('Start games in full screen', es.fullscreen, v => saveSettings({ emulator: { fullscreen: v } }), 'The game window belongs to NEXUS; when the game ends you are back on the NEXUS home screen.'));
     p.append(rowToggle('Quit shortcut: hold View + Menu', es.quitCombo, v => saveSettings({ emulator: { quitCombo: v } }), 'Hold Back + Start for 2 seconds on an XInput controller to close the game.'));
     p.append(rowToggle('Separate saves for each user', es.manageSaves, async v => {
@@ -2487,6 +2661,7 @@ async function sysAction(path, body, { pickText, okMsg } = {}) {
 }
 async function renderSystemFiles(p) {
   p.append(h('h2', {}, 'System files'));
+  engineDataSection(p);
   const holder = h('div'); p.append(holder);
   let st;
   try { st = await api('/api/system-files'); } catch (e) { holder.append(h('p', { class: 'note warn' }, e.message)); return; }
@@ -2807,6 +2982,7 @@ function connectEvents() {
         const was = S.playing?.suspended;
         if (st.running) {
           S.playing = st;
+          if (Launch.el) { Launch.update(st); if (st.phase !== 'playing') break; }
           if (was && !st.suspended && S.screen === 'home') showPlaying(true); // resumed (e.g. with the Home button)
           else if (S.screen === 'playing') showPlaying(true);
           if (S.screen === 'home') renderBanner();
@@ -2823,11 +2999,12 @@ function connectEvents() {
       }
       case 'emulator.exit': {
         S.playing = null;
+        Launch.close();
         await loadGames();
         await refreshEmu();
         goHome();
         const r = m.data;
-        if (r.error) { Sound.play('error'); alertDlg(r.error.message, r.error.detail ? r.error.detail.split('\n\nLast log lines:')[0] : '', r.error.detail?.includes('Last log lines:') ? r.error.detail.split('Last log lines:\n')[1] : undefined); }
+        if (r.error) { Sound.play('error'); launchErrorDlg(r.title, r.error); }
         else if (r.mode === 'game' && r.seconds > 0) toast(`${r.title}: ${fmtPlay(r.seconds).replace('Played for', 'played for')}`, I.check, 3500);
         if (r.mode === 'config') { await loadState(); }
         refreshEngine();
@@ -2839,6 +3016,15 @@ function connectEvents() {
         if (!m.data.active) await refreshEngine();
         if (S.screen === 'settings' && curCat === 'engine') rebuildPanel();
         if (S.screen === 'home') renderBanner();
+        break;
+      }
+      case 'enginedata.job': {
+        if (m.data.running === false) {
+          if (m.data.done) toast(`Import finished: ${m.data.copied} file${m.data.copied === 1 ? '' : 's'} copied${m.data.skipped ? `, ${m.data.skipped} already in NEXUS` : ''}`, I.check, 4000);
+          else alertDlg('The import did not finish', (m.data.error || '') + '\n\nNothing was lost. Try again in Settings › System files.');
+          await refreshEngine(); if (S.screen === 'home') renderBanner();
+        }
+        if (S.screen === 'settings' && curCat === 'sysfiles' && (m.data.running === false || Math.random() < .2)) rebuildPanel();
         break;
       }
       case 'engine.changed': await refreshEngine(); if (S.screen === 'home') renderBanner(); break;

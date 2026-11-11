@@ -23,7 +23,11 @@ func main() {
 	}
 	defer app.Close()
 	app.migrateToDataDir()
-	app.importPreviousEngineData()
+	// the engine's data folder and configuration belong to NEXUS: create them if missing (other
+	// emulators' data is only imported when the user chooses to, see enginedata.go)
+	if err := app.Emu.EnsureEngineData(); err != nil {
+		app.Log.Printf("engine data: %v", err)
+	}
 	for _, w := range app.Sys.EnsureEngine() {
 		app.Log.Printf("system files: %s", w)
 	}

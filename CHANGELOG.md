@@ -4,6 +4,15 @@ All notable NEXUS changes will be recorded here.
 
 The project is in preview. Releases are numbered from **0.0.0**; the first intended stable release is **1.0.0**. Every release, with its notes and download, is on the [Releases page](https://github.com/0ryzin/Nexus/releases).
 
+## 0.1.0 — Windows x64 (preview)
+
+- Fixed: games failed with "Legacy emulator data or an unfinished import was found…" on PCs with another Switch emulator installed. The NEXUS Engine (0.2.0) now treats its NEXUS-chosen data folder as host-managed.
+- NEXUS creates its engine data and configuration itself; NEXUS's own import of other emulators' data (copy only, backup, start fresh, interrupted-import recovery).
+- New launch flow: Who's playing? → artwork opening → NEXUS loading screen → game.
+- Launch errors in NEXUS's words, with technical details and a diagnostic log.
+- docs/ENGINE_SOURCES.md: engine origin, other projects, support status.
+- Release notes: [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md).
+
 ## 0.0.0 — first public preview (Windows x64)
 
 - NEXUS application with the NEXUS Engine 0.1.0 (Lichii build-150 + NEXUS patches) in one ZIP.

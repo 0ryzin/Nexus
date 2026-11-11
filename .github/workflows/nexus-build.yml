@@ -261,9 +261,13 @@ jobs:
             if (!$inPkg -and !$inSys) { throw "$d is needed by the engine but not in the package" }
           }
           python engine-src/tools/nexus/abi_smoke.py (Join-Path $n 'Engine/nexus_engine.dll')
-          # NEXUS.exe finds, verifies and loads its engine exactly as on a user's PC
+          # Another Switch emulator's data on the PC must not stop NEXUS (NEXUS 0.0.0 failed with
+          # "Legacy emulator data or an unfinished import was found" in exactly this situation).
+          foreach ($d in 'eden\keys', 'yuzu') { New-Item -ItemType Directory -Force (Join-Path $env:APPDATA $d) | Out-Null }
+          # NEXUS.exe sets up its engine data and configuration, finds, verifies and loads its engine
+          # exactly as on a user's PC, then has the engine prepare a session (--probe-start)
           $res = Join-Path $env:RUNNER_TEMP 'engine-check.json'
-          $p = Start-Process -FilePath (Join-Path $n 'NEXUS.exe') -ArgumentList '--engine-check', "`"$res`"" -WorkingDirectory $env:RUNNER_TEMP -Wait -PassThru
+          $p = Start-Process -FilePath (Join-Path $n 'NEXUS.exe') -ArgumentList '--engine-check', "`"$res`"", '--probe-start' -WorkingDirectory $env:RUNNER_TEMP -Wait -PassThru
           Get-Content $res
           if ($p.ExitCode -ne 0) { throw "NEXUS.exe --engine-check failed (exit $($p.ExitCode))" }
 

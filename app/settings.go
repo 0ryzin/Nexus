@@ -56,6 +56,9 @@ type EmulatorSettings struct {
 	Fullscreen  bool `json:"fullscreen"`  // start games fullscreen
 	QuitCombo   bool `json:"quitCombo"`   // hold Back+Start (View+Menu) to quit the game
 	ManageSaves bool `json:"manageSaves"` // separate saves for every NEXUS user
+	// WhoPlays: when to ask "Who's playing?" before a game starts: "several" (when there is more
+	// than one user; default), "always" or "never" (the current user plays)
+	WhoPlays string `json:"whoPlays"`
 	// Overrides holds engine keys saved by NEXUS 1.2-1.5; migrated into Engine on load.
 	Overrides map[string]string `json:"overrides"`
 }
@@ -79,7 +82,7 @@ func DefaultSettings() GlobalSettings {
 	s.Library.NlibURL = "https://api.nlib.cc"
 	s.Library.ArtProviders = []string{}
 	s.Engine = map[string]string{}
-	s.Emulator = EmulatorSettings{Fullscreen: true, QuitCombo: true, ManageSaves: true, Overrides: map[string]string{}}
+	s.Emulator = EmulatorSettings{Fullscreen: true, QuitCombo: true, ManageSaves: true, WhoPlays: "several", Overrides: map[string]string{}}
 	return s
 }
 
