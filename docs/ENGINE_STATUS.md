@@ -11,30 +11,22 @@ NEXUS is designed to load its emulation engine in-process as a native library. T
 5. The engine reports session state, frames presented, program information and errors to NEXUS.
 6. When the game exits, NEXUS returns to its home screen and records play statistics and compatibility information.
 
-The design does not call for launching a separate emulator executable. The engine is a C ABI library loaded by NEXUS.
+The design does not call for launching a separate emulator executable. The engine is a native library loaded by NEXUS.
 
-## Upstream base
+## Upstream projects and foundations
 
-The supplied development package identifies the engine base as **Lichii build-130**, from:
+NEXUS's emulation development draws on **Lichii, Eden, yuzu and Ryujinx**, including related forks and components such as **Ryubing**. These projects form part of the wider upstream foundation and development work. Their original copyright notices and licences must be preserved for the relevant code and components.
 
-- Lichii: https://github.com/zortos293/Lichii
-- Eden: https://github.com/eden-emulator/mirror
-- yuzu: upstream lineage shared by the above projects.
-
-The supplied package includes the Lichii source archive and four NEXUS patch files. It records the NEXUS engine fork commit as:
-
-    969b55bf2b59441528d6bee8d4bfdba0a83b9999
-
-The engine is GPL-3.0-or-later. See [LICENSE](../LICENSE) and [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
+See [Third-party notices, licences and acknowledgements](../THIRD_PARTY_NOTICES.md) for the project acknowledgements and licence summary.
 
 ## Current implementation status
 
 The supplied package contains:
 
 - The NEXUS application executable and application source archive.
-- NEXUS engine integration code and the engine source/patch package.
+- NEXUS engine integration code and emulation-engine source/patch material.
 - Engine-build management UI and verified install/rollback logic.
-- A build and test workflow description for producing a Windows engine package.
+- A build and test workflow description for producing an engine package.
 - Tests and a fake/stand-in engine path for application-side development.
 
 **A compiled nexus_engine.dll is not included in the supplied package.** The package documentation states that the engine could not be compiled in the environment used to prepare it. Therefore, game launching is not ready for normal use in this package.
@@ -60,7 +52,7 @@ The upstream source contains experimental Switch 2-related work. The supplied NE
 
 ## Engine build management
 
-The intended engine package is a versioned ZIP containing the engine DLL, required runtime libraries and a manifest. The manifest records the engine version, source commit and file hashes. NEXUS verifies the package before installation and keeps earlier builds available for rollback.
+The intended engine package is a versioned archive containing the engine library, required runtime libraries and a manifest. The manifest records the engine version, source commit and file hashes. NEXUS verifies the package before installation and keeps earlier builds available for rollback.
 
 Engine build identifiers are independent from NEXUS application version numbers. See [VERSIONING.md](../VERSIONING.md).
 
@@ -68,7 +60,7 @@ Engine build identifiers are independent from NEXUS application version numbers.
 
 Before describing NEXUS game emulation as ready for release:
 
-- [ ] Build the engine DLL using the documented Windows toolchain.
+- [ ] Build the engine library using the documented toolchain for the target platform.
 - [ ] Run the engine's automated tests and the NEXUS integration/smoke tests.
 - [ ] Verify the engine manifest and every packaged file hash.
 - [ ] Test a homebrew title first, then legally obtained test titles.
