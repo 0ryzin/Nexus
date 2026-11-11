@@ -1,0 +1,17 @@
+PERSONAL BUILD - DO NOT REDISTRIBUTE
+
+The icon pack in this folder was supplied by the owner of this NEXUS build
+("NexusProfileIcons.png") and sliced into individual images.
+
+  System:              Nintendo Switch
+  Subject:             Profile Icons
+  Copyright:           Nintendo
+  Sprite rippers:      Random Talking Bush, Shiny Quagsire and sp1oo
+  Hosting permissions: The Spriters Resource / Sprite Database
+
+These images are Nintendo's copyrighted artwork. They are included only for
+the personal use of this build's owner. Remove this folder before sharing
+NEXUS with anyone else.
+
+Layout: one folder per category; order.txt sets the category order;
+palette.txt holds the 72 Switch background colours shown in the icon picker.
