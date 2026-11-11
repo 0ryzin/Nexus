@@ -1,3 +1,5 @@
+![NEXUS banner](assets/NEXUS_Banner_Logo.jpg)
+
 # NEXUS
 
 **A console-style game library and integrated emulation environment for Windows.**
