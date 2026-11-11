@@ -131,6 +131,7 @@ type App struct {
 	Emu      *Emulator
 	Avatars  *AvatarSet
 	Sys      *SystemFiles
+	Link     *DeviceLink // experimental Device Linking; nil unless the feature is on
 	Compat   *CompatStore
 	Saves    *SaveOrganizer
 	UI       UIHost // platform window (may be a no-op)

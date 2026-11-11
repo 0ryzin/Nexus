@@ -71,6 +71,17 @@ func main() {
 			}
 		}
 	}()
+	// experimental: NEXUS Device Linking (off unless switched on, see features.go)
+	if app.Feature("devicelink") {
+		if l, err := NewDeviceLink(app); err != nil {
+			app.Log.Printf("device link: %v", err)
+		} else if err := l.Listen(linkDefaultPort); err != nil {
+			app.Log.Printf("device link: %v", err)
+		} else {
+			app.Link = l
+			defer l.Close()
+		}
+	}
 	port, _ := strconv.Atoi(os.Getenv("NEXUS_PORT"))
 	srv := NewServer(app)
 	url, err := srv.Start(port)

@@ -396,16 +396,80 @@ func (st *ProfileStore) statsPath(id string) string {
 	return filepath.Join(st.profileDir(id), "stats.json")
 }
 
+// Stats is the user's play statistics: this device's own, plus — for a user linked to other
+// devices (experimental Device Linking) — the play time those devices reported, added up.
 func (st *ProfileStore) Stats(id string) ProfileStats {
+	out := st.LocalStats(id)
+	entries, _ := os.ReadDir(filepath.Join(st.profileDir(id), "stats-devices"))
+	for _, e := range entries {
+		var snap struct {
+			Stats ProfileStats `json:"stats"`
+		}
+		if readJSON(filepath.Join(st.profileDir(id), "stats-devices", e.Name()), &snap) != nil {
+			continue
+		}
+		for k, g := range snap.Stats.Games {
+			if g == nil {
+				continue
+			}
+			cur := out.Games[k]
+			if cur == nil {
+				c := *g
+				c.History = append([]SessionRec{}, g.History...)
+				out.Games[k] = &c
+				continue
+			}
+			cur.Seconds += g.Seconds
+			cur.Sessions += g.Sessions
+			cur.Launches += g.Launches
+			if cur.Title == "" {
+				cur.Title = g.Title
+			}
+			if g.LastPlayed > cur.LastPlayed {
+				cur.LastPlayed, cur.Last = g.LastPlayed, g.Last
+			}
+			if g.FirstPlay > 0 && (cur.FirstPlay == 0 || g.FirstPlay < cur.FirstPlay) {
+				cur.FirstPlay = g.FirstPlay
+			}
+			if len(g.ByEmulator) > 0 {
+				m := map[string]int64{}
+				for e, v := range cur.ByEmulator {
+					m[e] = v
+				}
+				for e, v := range g.ByEmulator {
+					m[e] += v
+				}
+				cur.ByEmulator = m
+			}
+			cur.History = append(append([]SessionRec{}, cur.History...), g.History...)
+			sort.Slice(cur.History, func(i, j int) bool { return cur.History[i].Start > cur.History[j].Start })
+			if len(cur.History) > 25 {
+				cur.History = cur.History[:25]
+			}
+		}
+	}
+	return out
+}
+
+// LocalStats is the play time recorded on this device only.
+func (st *ProfileStore) LocalStats(id string) ProfileStats {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	s := st.loadStatsLocked(id)
 	out := ProfileStats{Games: map[string]*GameStat{}}
 	for k, v := range s.Games {
 		c := *v
+		c.History = append([]SessionRec{}, v.History...)
 		out.Games[k] = &c
 	}
 	return out
+}
+
+// dropStatsCache forgets cached statistics (after other devices' play time arrived).
+func (st *ProfileStore) dropStatsCache(id string) {
+	st.mu.Lock()
+	delete(st.stats, id)
+	st.mu.Unlock()
 }
 
 func (st *ProfileStore) loadStatsLocked(id string) *ProfileStats {

@@ -758,7 +758,7 @@ const Boot = {
 // ------------------------------------------------------------------ data loading
 async function loadState() {
   const st = await api('/api/state');
-  Object.assign(S, { app: st.app, settings: st.settings, profiles: st.profiles || [], emulator: st.emulator, engine: st.engine || {}, formats: st.formats, scanDirs: st.scanDirs, gamesDir: st.gamesDir, avatarColors: st.avatarColors, avatarGlyphs: st.avatarGlyphs, maxProfiles: st.maxProfiles || 8, library: st.library });
+  Object.assign(S, { app: st.app, settings: st.settings, profiles: st.profiles || [], emulator: st.emulator, engine: st.engine || {}, formats: st.formats, scanDirs: st.scanDirs, gamesDir: st.gamesDir, avatarColors: st.avatarColors, avatarGlyphs: st.avatarGlyphs, maxProfiles: st.maxProfiles || 8, library: st.library, features: st.features || {} });
   if (S.profile) S.profile = profileById(S.profile.id) || null;
 }
 async function loadGames() {
@@ -958,7 +958,18 @@ function setupWizard({ first }) {
     const card = h('section', { class: 'setup-card' });
     root.append(head, card);
     let initial = null;
-    if (step === 0) {
+    if (step === 0 && first && S.features?.deviceLink && !d.mode) {
+      // Create an account / Link an existing account (experimental Device Linking)
+      const opt = (title, text, fn) => { const b = h('button', { class: 'setup-option', 'data-nav': true }, h('b', {}, title), h('span', {}, text)); b.addEventListener('click', fn); return b; };
+      card.append(h('h2', {}, 'Welcome'), h('div', { class: 'setup-options', 'data-row': 'strict' },
+        opt('Create an account', 'Create a new NEXUS account and set up your personal profile on this device.', () => { d.mode = 'create'; draw(); }),
+        opt('Link an existing account', 'Already have a NEXUS account? Link it to this device to access your profile and synchronise compatible game saves, settings and other user information across your devices.', async () => {
+          const pid = await linkEnterCode();
+          if (pid) { layer.close(); await selectProfile(pid); }
+        })),
+        h('p', { class: 'setup-sub' }, 'Account linking only works with NEXUS accounts. Connect NEXUS across your supported devices to synchronise your profiles, game saves, playtime and settings.'));
+      initial = $('.setup-option', card);
+    } else if (step === 0) {
       const inp = h('input', { type: 'text', class: 'setup-input', maxlength: 20, placeholder: 'Your name', value: d.name, 'data-nav': true, spellcheck: 'false', autocomplete: 'off' });
       const err = h('p', { class: 'setup-err' });
       const go = () => {
@@ -2226,10 +2237,12 @@ const CATS = [
   ['appearance', 'Appearance'], ['startup', 'Startup'], ['library', 'Game library'], ['controllers', 'Controllers'], ['users', 'Users & saves'], ['system', 'System'],
   ['-', 'System & Emulation'], ['engine', 'NEXUS Engine'], ['sysfiles', 'System files'], ['emusettings', 'Emulation settings'], ['emulator', 'Game sessions & saves'],
 ];
-const NAVCATS = () => CATS.filter(c => c[0] !== '-' && c[0] !== 'controllers');
+const NAVCATS = () => catList().filter(c => c[0] !== '-' && c[0] !== 'controllers');
+// NEXUS Sync appears only when the experimental Device Linking feature is switched on
+const catList = () => S.features?.deviceLink ? [...CATS, ['sync', 'NEXUS Sync (experimental)']] : CATS;
 function showSettings(cat = 'appearance') {
   const cats = $('#set-cats'); cats.innerHTML = '';
-  for (const [id, label] of CATS) {
+  for (const [id, label] of catList()) {
     if (id === '-') { cats.append(h('div', { class: 'cat-group' }, label)); continue; }
     const b = h('button', { class: 'cat' + (id === cat ? ' sel' : ''), 'data-nav': true }, label);
     b._cat = id;
@@ -2352,6 +2365,7 @@ async function themePatch(patch) { if (!S.profile) return; await patchProfile(S.
 const ACCENTS = ['#ff2a3a', '#00c8ff', '#ff3b5c', '#ff9f0a', '#ffd60a', '#30d158', '#64d2ff', '#5e5ce6', '#bf5af2', '#ff6ec7', '#ffffff'];
 const BOOT_COLORS = ['#e60012', '#ff5a1f', '#f5b300', '#1fae5b', '#0a84ff', '#5e2bff', '#e0218a', '#1d1e21', '#f2f2f2'];
 const Panels = {
+  sync(p) { return renderSync(p); },
   appearance(p) {
     const th = S.profile?.theme || {};
     p.append(h('h2', {}, 'Appearance'), h('p', { class: 'note' }, `These settings belong to ${S.profile?.name || 'the current user'}.`));
@@ -2598,6 +2612,64 @@ async function enhancementsPanel(box) {
     }
   };
   draw();
+}
+
+// ---------- NEXUS Sync: experimental Device Linking (only with the feature switched on)
+async function renderSync(p) {
+  p.append(h('h2', {}, 'NEXUS Sync'), h('p', { class: 'note warn' }, 'Experimental. Linked devices synchronise each user’s saves, profile and play time directly over your local network. Games, keys and firmware are never synchronised.'));
+  let st; try { st = await api('/api/link'); } catch (e) { p.append(h('p', { class: 'note warn' }, e.message)); return; }
+  p.append(infoRow('This device', st.device.name, `Listening on your local network, port ${st.port}`));
+  p.append(h('h3', {}, 'Linked devices'));
+  if (!st.devices.length) p.append(h('p', { class: 'note' }, 'No devices are linked yet.'));
+  for (const d of st.devices) {
+    const users = d.accounts.map(a => (profileById(a)?.name || a)).join(', ');
+    const sub = [d.role === 'approved-by-us' ? 'Approved on this device' : 'Linked through it', users, d.lastSync ? `last synchronised ${fmtAgo(d.lastSync)}` : 'not synchronised yet', d.lastError ? '⚠ ' + d.lastError : ''].filter(Boolean).join(' · ');
+    p.append(rowButton(d.name, { sub, onClick: async () => {
+      const v = await dialog({ title: d.name, text: sub, buttons: [{ label: 'Close', value: null }, { label: 'Remove device', value: 'remove', danger: true }, { label: 'Synchronise now', value: 'sync', primary: true }] });
+      if (v === 'sync') { try { const r = await api('/api/link/sync', { body: { device: d.deviceId } }); toast(`Synchronised: ${r.pulled} in, ${r.pushed} out${r.conflicts ? `, ${r.conflicts} conflict(s)` : ''}`, I.check, 4000); } catch (e) { alertDlg('Could not synchronise', e.message); } rebuildPanel(); }
+      if (v === 'remove' && await confirmDlg(`Remove ${d.name}?`, 'It can no longer synchronise with this device. Its own copy of the saves stays on it.', 'Remove', true)) { await api('/api/link/remove', { body: { device: d.deviceId } }); rebuildPanel(); }
+    } }));
+  }
+  if (st.conflicts.length) {
+    p.append(h('h3', {}, 'Save conflicts'));
+    for (const c of st.conflicts) {
+      p.append(rowButton(`${profileById(c.account)?.name || c.account}: ${c.path.replace(/^saves\//, '')}`, { sub: `Changed here and on ${c.device} · ${fmtAgo(c.detected)}`, onClick: async () => {
+        const v = await dialog({ title: 'Which version do you keep?', text: `This save was changed on this device and on ${c.device}. Both versions are kept until you choose.\n\nThe other version is stored in ${c.theirs}`, buttons: [{ label: 'Later', value: null }, { label: `Use ${c.device}’s`, value: 'theirs' }, { label: 'Keep this device’s', value: 'mine', primary: true }] });
+        if (v) { try { await api('/api/link/resolve', { body: { id: c.id, keep: v } }); toast('Done', I.check); } catch (e) { alertDlg('Could not resolve', e.message); } rebuildPanel(); }
+      } }));
+    }
+  }
+  p.append(h('h3', {}, 'Link'));
+  p.append(rowButton('Link another device…', { sub: 'Shows a one-time code for one of your users. Enter it on the other device; you approve it here.', onClick: () => linkShowCode() }));
+  p.append(rowButton('Link this device to an existing user…', { sub: 'Enter the User ID and the code shown on your other device.', onClick: () => linkEnterCode() }));
+  p.append(h('h3', {}, 'User IDs'));
+  for (const pr of S.profiles) p.append(infoRow(pr.name, st.userIds[pr.id]));
+}
+async function linkShowCode(profileId) {
+  let pid = profileId;
+  if (!pid) {
+    pid = S.profiles.length === 1 ? S.profiles[0].id : await dialog({ title: 'Which user?', buttons: [{ label: 'Cancel', value: null }, ...S.profiles.map(p => ({ label: p.name, value: p.id }))] });
+    if (!pid) return;
+  }
+  try {
+    const r = await api('/api/link/code', { body: { profile: pid } });
+    const mins = Math.round((r.expires * 1000 - Date.now()) / 60000);
+    await dialog({ title: 'Link another device', text: `On the other device, choose “Link an existing account” and enter:\n\nUser ID: ${r.userId}\nCode: ${r.code}\n\nThe code works once and expires in ${mins} minutes. You will be asked here to approve the device.`, buttons: [{ label: 'Done', value: true, primary: true }] });
+  } catch (e) { alertDlg('Could not create a code', e.message); }
+}
+async function linkEnterCode() {
+  const uid = await dialog({ title: 'Your NEXUS User ID', text: 'It is shown on your other device (Settings › NEXUS Sync).', input: { placeholder: 'NX-XXXX-XXXX-XXXX', max: 20 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Next', value: true, primary: true }] });
+  if (!uid) return false;
+  const code = await dialog({ title: 'Link code', text: 'The one-time code shown on your other device.', input: { placeholder: 'XXXX-XXXX', max: 12 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Link', value: true, primary: true }] });
+  if (!code) return false;
+  toast('Looking for your other device… approve the link there.', I.info, 6000);
+  try {
+    const r = await api('/api/link/pair', { body: { userId: uid, code } });
+    await loadState();
+    toast(`Linked with ${r.device.name}` + (r.syncError ? '' : ` · ${r.sync.pulled} item(s) synchronised`), I.check, 4000);
+    if (r.syncError) alertDlg('Linked, but not synchronised yet', r.syncError);
+    return r.device.accounts[0];
+  } catch (e) { alertDlg('Could not link', e.message); return false; }
 }
 
 // ---------- global emulation settings
@@ -3018,6 +3090,17 @@ function connectEvents() {
         if (S.screen === 'home') renderBanner();
         break;
       }
+      case 'link.request': {
+        const r = m.data; Sound.play('select');
+        const ok = await dialog({ title: 'A new device wants to connect to your NEXUS account', text: `User: ${profileById(r.account)?.name || r.account}
+Device: ${r.device}
+Network address: ${r.addr}
+
+Approve only if this is your own device and you started the link.`, buttons: [{ label: 'Decline', value: false }, { label: 'Approve', value: true, primary: true }], cancelValue: false });
+        api('/api/link/decide', { body: { id: r.id, approve: !!ok } }).catch(() => { });
+        break;
+      }
+      case 'link.changed': if (S.screen === 'settings' && curCat === 'sync') rebuildPanel(); break;
       case 'enginedata.job': {
         if (m.data.running === false) {
           if (m.data.done) toast(`Import finished: ${m.data.copied} file${m.data.copied === 1 ? '' : 's'} copied${m.data.skipped ? `, ${m.data.skipped} already in NEXUS` : ''}`, I.check, 4000);

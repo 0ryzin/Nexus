@@ -662,6 +662,118 @@ func (s *Server) routes() {
 		}
 		writeJSON(w, true)
 	})
+	// ----- experimental: NEXUS Device Linking (404 unless the feature is on)
+	link := func(w http.ResponseWriter) *DeviceLink {
+		if a.Link == nil {
+			writeErr(w, 404, errors.New("not available"))
+		}
+		return a.Link
+	}
+	m.HandleFunc("GET /api/link", func(w http.ResponseWriter, r *http.Request) {
+		l := link(w)
+		if l == nil {
+			return
+		}
+		users := map[string]string{}
+		for _, p := range a.Profiles.List() {
+			users[p.ID] = UserID(p.ID)
+		}
+		writeJSON(w, map[string]any{"device": map[string]string{"id": l.id.DeviceID, "name": l.id.DeviceName}, "port": l.Port,
+			"devices": l.Devices(), "requests": l.PendingRequests(), "conflicts": l.Conflicts(), "userIds": users})
+	})
+	m.HandleFunc("POST /api/link/code", func(w http.ResponseWriter, r *http.Request) {
+		l := link(w)
+		if l == nil {
+			return
+		}
+		var b struct{ Profile string }
+		_ = readBody(r, &b)
+		code, exp, err := l.StartPairing(b.Profile)
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, map[string]any{"code": code, "expires": exp.Unix(), "userId": UserID(b.Profile)})
+	})
+	m.HandleFunc("POST /api/link/decide", func(w http.ResponseWriter, r *http.Request) {
+		l := link(w)
+		if l == nil {
+			return
+		}
+		var b struct {
+			ID      string
+			Approve bool
+		}
+		_ = readBody(r, &b)
+		if err := l.Decide(b.ID, b.Approve); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, true)
+	})
+	m.HandleFunc("POST /api/link/pair", func(w http.ResponseWriter, r *http.Request) {
+		l := link(w)
+		if l == nil {
+			return
+		}
+		var b struct{ UserID, Code, Addr string }
+		_ = readBody(r, &b)
+		addr := b.Addr
+		if addr == "" {
+			var err error
+			if addr, err = Discover(profileIDFromUserID(b.UserID), linkDefaultPort, 3*time.Second); err != nil {
+				writeErr(w, 400, err)
+				return
+			}
+		}
+		d, err := l.PairWith(addr, b.UserID, b.Code)
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		res, serr := l.SyncWith(d.DeviceID, addr)
+		writeJSON(w, map[string]any{"device": d, "sync": res, "syncError": errString(serr)})
+	})
+	m.HandleFunc("POST /api/link/sync", func(w http.ResponseWriter, r *http.Request) {
+		l := link(w)
+		if l == nil {
+			return
+		}
+		var b struct{ Device string }
+		_ = readBody(r, &b)
+		res, err := l.SyncWith(b.Device, "")
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, res)
+	})
+	m.HandleFunc("POST /api/link/remove", func(w http.ResponseWriter, r *http.Request) {
+		l := link(w)
+		if l == nil {
+			return
+		}
+		var b struct{ Device string }
+		_ = readBody(r, &b)
+		if err := l.RemoveDevice(b.Device); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, true)
+	})
+	m.HandleFunc("POST /api/link/resolve", func(w http.ResponseWriter, r *http.Request) {
+		l := link(w)
+		if l == nil {
+			return
+		}
+		var b struct{ ID, Keep string }
+		_ = readBody(r, &b)
+		if err := l.ResolveConflict(b.ID, b.Keep); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, true)
+	})
 	// ----- NEXUS engine data: setup and import of other emulators' data (enginedata.go)
 	m.HandleFunc("GET /api/engine-data", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, a.Emu.EngineDataStatus())
@@ -1384,6 +1496,7 @@ func (s *Server) state() map[string]any {
 		"avatarColors": avatarColors,
 		"avatarGlyphs": avatarGlyphs,
 		"maxProfiles":  MaxProfiles,
+		"features":     map[string]bool{"deviceLink": a.Link != nil},
 	}
 }
 
