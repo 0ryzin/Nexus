@@ -1,5 +1,5 @@
 # NEXUS assets
 
-Place the official NEXUS header image in this folder as `nexus-header.jpg`.
+The official NEXUS README banner is stored here as `NEXUS_Banner_Logo.jpg`.
 
-The README will reference it from `assets/nexus-header.jpg`. Keep the original image dimensions and appearance; do not crop, recolour or compress it unless a separate optimised copy is deliberately created.
+Keep the original artwork unchanged. If an optimised version is ever needed, add it as a separate file rather than replacing the original.
