@@ -210,3 +210,10 @@ func checkPE(path string) error {
 	}
 	return nil
 }
+
+// sameDir: two paths name the same folder.
+func sameDir(a, b string) bool {
+	aa, _ := filepath.Abs(a)
+	bb, _ := filepath.Abs(b)
+	return strings.EqualFold(filepath.Clean(aa), filepath.Clean(bb))
+}

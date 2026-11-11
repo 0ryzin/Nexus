@@ -92,7 +92,8 @@ func (st *ProfileStore) ImportLinked(x ProfileExport) error {
 	}
 	st.normalise(pr)
 	_ = os.MkdirAll(st.profileDir(pr.ID), 0o755)
-	_ = os.MkdirAll(st.saveDirNamed(pr.ID, pr.Name), 0o755)
+	pr.PlayerID = newPlayerID()
+	_ = os.MkdirAll(filepath.Join(st.p.Saves, playerFolderName(pr.PlayerID, pr.Name)), 0o755)
 	st.Profiles = append(st.Profiles, pr)
 	err := st.saveLocked()
 	st.mu.Unlock()

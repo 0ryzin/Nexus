@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -275,7 +276,7 @@ func (s *Server) routes() {
 		_ = readBody(r, &b)
 		dir := map[string]string{
 			"root": a.Paths.Root, "data": a.Paths.Data, "games": a.Paths.Games, "logs": a.Paths.Logs, "artwork": a.Paths.Artwork,
-			"saves": a.Paths.Saves, "engine": a.Emu.Builds.Root(), "keys": a.Emu.KeysDir(),
+			"saves": a.Paths.Saves, "media": a.Paths.Media, "screenshots": filepath.Join(a.Paths.Media, "Screenshots"), "recordings": filepath.Join(a.Paths.Media, "Recordings"), "savebackups": filepath.Join(a.Paths.UserData, "Backups", "Saves"), "engine": a.Emu.Builds.Root(), "keys": a.Emu.KeysDir(),
 			"userdir": a.Emu.DataDir(), "enginedata": a.Emu.DataDir(), "archived": a.Paths.Trash, "resources": a.Paths.Resources, "systemfiles": a.Sys.Root(),
 			"avatars": a.avatarRoot(), "profiles": a.Paths.Profiles, "lossless": a.Emu.losslessDir(), "streamline": a.Emu.streamlineDir(), "gameprofiles": filepath.Join(a.Paths.System, "GameProfiles"),
 		}[b.Which]
@@ -283,11 +284,8 @@ func (s *Server) routes() {
 			writeErr(w, 400, errors.New("unknown folder"))
 			return
 		}
-		if b.Which == "saves" { // show the readable layout, with a folder per game ready for saves
-			a.Saves.OrganizeAll()
-			for _, p := range a.Profiles.List() {
-				a.Saves.EnsureGameFolders(p.ID)
-			}
+		if b.Which == "saves" {
+			a.Saves.TidyAll()
 		}
 		_ = os.MkdirAll(dir, 0o755)
 		if err := openInExplorer(dir); err != nil {
@@ -500,6 +498,195 @@ func (s *Server) routes() {
 			return
 		}
 		writeJSON(w, true)
+	})
+	// the loading screen has faded out: show the game window (engine 0.4)
+	m.HandleFunc("POST /api/emulator/reveal", func(w http.ResponseWriter, r *http.Request) {
+		if st := a.Emu.State(); st.Running {
+			if h, err := a.Emu.Host(); err == nil {
+				h.Reveal()
+			}
+		}
+		writeJSON(w, true)
+	})
+	// ----- NEXUS updates (updater.go)
+	m.HandleFunc("GET /api/update", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{"info": a.Updater.Last(), "job": a.Updater.Job(), "settings": a.Settings.Get().Updates,
+			"hasToken": a.Updater.HasToken(), "failed": a.updateFailed, "current": AppVersion, "canStoreToken": runtime.GOOS == "windows"})
+	})
+	m.HandleFunc("POST /api/update/check", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, a.Updater.Check())
+	})
+	m.HandleFunc("POST /api/update/download", func(w http.ResponseWriter, r *http.Request) {
+		if err := a.Updater.Download(); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, a.Updater.Job())
+	})
+	m.HandleFunc("POST /api/update/install", func(w http.ResponseWriter, r *http.Request) {
+		if err := a.Updater.Install(); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, true)
+	})
+	m.HandleFunc("POST /api/update/later", func(w http.ResponseWriter, r *http.Request) {
+		v := a.Updater.Last().Latest
+		_, _ = a.Settings.Update(func(s *GlobalSettings) { s.Updates.SkipVersion = v })
+		writeJSON(w, true)
+	})
+	m.HandleFunc("POST /api/update/settings", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			AutoCheck *bool
+			Repo      *string
+			Token     *string
+		}
+		_ = readBody(r, &b)
+		if b.Token != nil {
+			if err := a.Updater.SetToken(*b.Token); err != nil {
+				writeErr(w, 400, err)
+				return
+			}
+		}
+		if b.Repo != nil && *b.Repo != "" && !regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`).MatchString(*b.Repo) {
+			writeErr(w, 400, errors.New("The release repository is written as owner/name."))
+			return
+		}
+		_, _ = a.Settings.Update(func(s *GlobalSettings) {
+			if b.AutoCheck != nil {
+				s.Updates.AutoCheck = *b.AutoCheck
+			}
+			if b.Repo != nil {
+				s.Updates.Repo = strings.TrimSpace(*b.Repo)
+			}
+		})
+		writeJSON(w, true)
+	})
+	// ----- NVIDIA DLSS files (dlss.go)
+	m.HandleFunc("GET /api/dlss", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, a.Emu.DLSSStatus())
+	})
+	m.HandleFunc("POST /api/dlss/prepare", func(w http.ResponseWriter, r *http.Request) {
+		offer, err := a.Emu.PrepareDLSS()
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, offer)
+	})
+	m.HandleFunc("POST /api/dlss/install", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Accepted bool }
+		_ = readBody(r, &b)
+		if err := a.Emu.InstallDLSS(b.Accepted); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, a.Emu.DLSSStatus())
+	})
+	// ----- Media (media.go)
+	m.HandleFunc("GET /api/media", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{"items": a.Media.List(), "screenshots": a.Media.ScreenshotsDir(), "recordings": a.Media.RecordingsDir(),
+			"recordingAvailable": false})
+	})
+	m.HandleFunc("GET /media/file", func(w http.ResponseWriter, r *http.Request) {
+		p, err := a.Media.Path(r.URL.Query().Get("id"))
+		if err != nil {
+			writeErr(w, 404, err)
+			return
+		}
+		if wd, _ := strconv.Atoi(r.URL.Query().Get("w")); wd > 0 && mediaImageExts[strings.ToLower(filepath.Ext(p))] {
+			p = a.Thumbnail(p, wd)
+		}
+		w.Header().Set("Cache-Control", "no-cache")
+		http.ServeFile(w, r, p) // ranges: recordings can be played and seeked
+	})
+	m.HandleFunc("POST /api/media/delete", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			ID      string
+			Confirm bool
+		}
+		_ = readBody(r, &b)
+		if !b.Confirm {
+			writeErr(w, 400, errors.New("Deleting a capture needs confirmation."))
+			return
+		}
+		if err := a.Media.Delete(b.ID); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		a.Events.Emit("media.changed", nil)
+		writeJSON(w, true)
+	})
+	m.HandleFunc("POST /api/media/reveal", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ ID string }
+		_ = readBody(r, &b)
+		p, err := a.Media.Path(b.ID)
+		if err != nil {
+			writeErr(w, 404, err)
+			return
+		}
+		if err := revealInExplorer(p); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, true)
+	})
+	m.HandleFunc("POST /api/media/open", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ ID string }
+		_ = readBody(r, &b)
+		p, err := a.Media.Path(b.ID)
+		if err != nil {
+			writeErr(w, 404, err)
+			return
+		}
+		if err := openWithDefaultApp(p); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, true)
+	})
+	// ----- controllers (controllers.go)
+	m.HandleFunc("GET /api/controllers", func(w http.ResponseWriter, r *http.Request) {
+		pid := r.URL.Query().Get("profile")
+		list, errText := a.Controllers.List(pid)
+		writeJSON(w, map[string]any{"pads": list, "error": errText})
+	})
+	m.HandleFunc("POST /api/controllers/players", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			ProfileID string
+			Keys      []string
+		}
+		_ = readBody(r, &b)
+		if err := a.Controllers.SetPlayers(b.ProfileID, b.Keys); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		list, _ := a.Controllers.List(b.ProfileID)
+		writeJSON(w, map[string]any{"pads": list})
+	})
+	m.HandleFunc("POST /api/controllers/forget", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Key string }
+		_ = readBody(r, &b)
+		if err := a.Controllers.Forget(b.Key); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, true)
+	})
+	m.HandleFunc("POST /api/controllers/update", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			Key         string
+			Nickname    *string
+			Layout      *GameLayout
+			ClearLayout bool
+		}
+		_ = readBody(r, &b)
+		kp, err := a.Controllers.Update(b.Key, b.Nickname, b.Layout, b.ClearLayout)
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, kp)
 	})
 	m.HandleFunc("POST /api/emulator/volume", func(w http.ResponseWriter, r *http.Request) {
 		var b struct{ Percent int }
@@ -783,28 +970,23 @@ func (s *Server) routes() {
 		fakeLast.PressHome()
 		writeJSON(w, true)
 	})
+	m.HandleFunc("POST /api/dev/fake-screenshot", func(w http.ResponseWriter, r *http.Request) {
+		if !fakeEngineEnabled() || fakeLast == nil {
+			writeErr(w, 404, errors.New("not available"))
+			return
+		}
+		if err := fakeLast.PressScreenshot(); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, true)
+	})
 	m.HandleFunc("GET /api/perf", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"sample": perf.Sample(a.Emu), "metrics": PerfMetrics,
 			"text": formatPerf(perf.Sample(a.Emu), a.Settings.Get().PerfMonitor.Metrics, "    ")})
 	})
 	// ----- NEXUS engine data: setup and import of other emulators' data (enginedata.go)
 	m.HandleFunc("GET /api/engine-data", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, a.Emu.EngineDataStatus())
-	})
-	m.HandleFunc("POST /api/engine-data/import", func(w http.ResponseWriter, r *http.Request) {
-		var b struct{ Source string }
-		_ = readBody(r, &b)
-		if err := a.Emu.ImportLegacy(b.Source); err != nil {
-			writeErr(w, 400, err)
-			return
-		}
-		writeJSON(w, a.Emu.EngineDataStatus())
-	})
-	m.HandleFunc("POST /api/engine-data/fresh", func(w http.ResponseWriter, r *http.Request) {
-		if err := a.Emu.StartFresh(); err != nil {
-			writeErr(w, 400, err)
-			return
-		}
 		writeJSON(w, a.Emu.EngineDataStatus())
 	})
 	// ----- frame generation, DLSS, FSR 4 (enhancements.go)
@@ -1155,6 +1337,7 @@ func (s *Server) routes() {
 			writeErr(w, 500, err)
 			return
 		}
+		a.Controllers.RemoveProfile(p.ID)
 		a.Log.Printf("profile %s (%s) removed; data archived to %s", p.Name, p.ID, archive)
 		a.Events.Emit("profiles.changed", nil)
 		writeJSON(w, map[string]string{"archive": archive})
@@ -1373,33 +1556,149 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /wallpaper/{file}", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, filepath.Join(a.Paths.Wallpapers, filepath.Base(r.PathValue("file"))))
 	})
-	m.HandleFunc("GET /api/profiles/{id}/saves", func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-		if _, ok := a.Profiles.Get(id); !ok {
-			writeErr(w, 404, errors.New("Profile not found."))
+	// ----- per-game updates and mods (gamecontent.go)
+	m.HandleFunc("GET /api/games/{key}/content", func(w http.ResponseWriter, r *http.Request) {
+		key := r.PathValue("key")
+		ups, err := a.Content.Updates(key)
+		if err != nil {
+			writeErr(w, 400, err)
 			return
 		}
-		_, _ = a.Saves.Organize(id)
-		dir := a.Profiles.SaveDir(id)
-		b, n := dirSize(dir)
-		nand := []SaveTitle{}
-		if d := a.Emu.NandSaveDir(); d != "" { // <nand>/user/save
-			nand = ListSaves(filepath.Dir(filepath.Dir(d)))
+		mods, _ := a.Content.Mods(key)
+		g, _ := a.Library.Get(key)
+		writeJSON(w, map[string]any{"updates": ups, "mods": mods, "busy": a.Content.Busy(key), "titleId": g.TitleID,
+			"modsDir": a.Content.modsDir(g.TitleID), "updatesDir": a.Content.updatesDir(g.TitleID)})
+	})
+	m.HandleFunc("POST /api/games/{key}/updates/add", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Path string }
+		_ = readBody(r, &b)
+		p, ok := pick(w, b.Path, "Choose a game update package", "Game update (*.nsp;*.nsz;*.xci;*.xcz;*.nup)|*.nsp;*.nsz;*.xci;*.xcz;*.nup|", false)
+		if !ok {
+			return
 		}
-		writeJSON(w, map[string]any{
-			"dir": dir, "folderName": filepath.Base(dir), "bytes": b, "files": n, "titles": a.Saves.List(id),
-			"nandSaves": nand, "managed": a.Settings.Get().Emulator.ManageSaves,
-		})
+		u, err := a.Content.AddUpdate(r.PathValue("key"), p)
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, u)
+	})
+	m.HandleFunc("POST /api/games/{key}/updates/toggle", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			File string
+			On   bool
+		}
+		_ = readBody(r, &b)
+		if err := a.Content.SetUpdateEnabled(r.PathValue("key"), b.File, b.On); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, true)
+	})
+	m.HandleFunc("POST /api/games/{key}/updates/remove", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			File    string
+			Confirm bool
+		}
+		_ = readBody(r, &b)
+		if !b.Confirm {
+			writeErr(w, 400, errors.New("Removing an update needs confirmation."))
+			return
+		}
+		if err := a.Content.RemoveUpdate(r.PathValue("key"), b.File); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, true)
+	})
+	m.HandleFunc("POST /api/games/{key}/mods/add", func(w http.ResponseWriter, r *http.Request) {
+		key := r.PathValue("key")
+		var added []string
+		var err error
+		if ct := r.Header.Get("Content-Type"); strings.HasPrefix(ct, "application/zip") || strings.HasPrefix(ct, "application/octet-stream") {
+			data, rerr := io.ReadAll(io.LimitReader(r.Body, 2<<30))
+			if rerr != nil {
+				writeErr(w, 400, rerr)
+				return
+			}
+			added, err = a.Content.AddMod(key, "", data, firstNonEmpty(r.URL.Query().Get("name"), "mod.zip"))
+		} else {
+			var b struct{ Path, Pick string }
+			_ = readBody(r, &b)
+			var p string
+			var ok bool
+			if b.Pick == "zip" {
+				p, ok = pick(w, b.Path, "Choose a mod (ZIP archive)", "ZIP archive (*.zip)|*.zip|", false)
+			} else {
+				p, ok = pick(w, b.Path, "Choose the mod's folder", "", true)
+			}
+			if !ok {
+				return
+			}
+			added, err = a.Content.AddMod(key, p, nil, "")
+		}
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, map[string]any{"added": added})
+	})
+	m.HandleFunc("POST /api/games/{key}/mods/toggle", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			Name string
+			On   bool
+		}
+		_ = readBody(r, &b)
+		if err := a.Content.SetModEnabled(r.PathValue("key"), b.Name, b.On); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, true)
+	})
+	m.HandleFunc("POST /api/games/{key}/mods/remove", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			Name    string
+			Confirm bool
+		}
+		_ = readBody(r, &b)
+		if !b.Confirm {
+			writeErr(w, 400, errors.New("Removing a mod needs confirmation."))
+			return
+		}
+		if err := a.Content.RemoveMod(r.PathValue("key"), b.Name); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, true)
+	})
+	// ----- Save Data (saves.go)
+	m.HandleFunc("GET /api/profiles/{id}/saves", func(w http.ResponseWriter, r *http.Request) {
+		sp, err := a.Saves.Player(r.PathValue("id"))
+		if err != nil {
+			writeErr(w, 404, err)
+			return
+		}
+		writeJSON(w, map[string]any{"player": sp, "backups": a.Saves.Backups(sp.ProfileID, ""), "migrationError": a.saveMigrationErr,
+			"shared": a.Saves.SharedEngineSaves() != "", "busy": a.Saves.busy(sp.ProfileID)})
 	})
 	m.HandleFunc("POST /api/profiles/{id}/saves/open", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Folder string }
+		_ = readBody(r, &b)
 		id := r.PathValue("id")
 		if _, ok := a.Profiles.Get(id); !ok {
 			writeErr(w, 404, errors.New("Profile not found."))
 			return
 		}
-		_, _ = a.Saves.Organize(id)
-		a.Saves.EnsureGameFolders(id) // a folder per library game, ready for dropped-in saves
 		dir := a.Profiles.SaveDir(id)
+		if b.Folder != "" {
+			p, err := a.Saves.folderFor(id, b.Folder)
+			if err != nil {
+				writeErr(w, 404, err)
+				return
+			}
+			dir = p
+		}
+		_ = os.MkdirAll(dir, 0o755)
 		if err := openInExplorer(dir); err != nil {
 			writeErr(w, 500, err)
 			return
@@ -1413,52 +1712,147 @@ func (s *Server) routes() {
 			writeErr(w, 404, errors.New("Profile not found."))
 			return
 		}
-		_, _ = a.Saves.Organize(id)
+		folder := r.URL.Query().Get("folder")
+		what := "all saves"
+		if folder != "" {
+			if _, err := a.Saves.folderFor(id, folder); err != nil {
+				writeErr(w, 404, err)
+				return
+			}
+			what = folder
+		}
 		w.Header().Set("Content-Type", "application/zip")
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="NEXUS saves - %s - %s.zip"`, safeFolderName(pr.Name), time.Now().Format("2006-01-02")))
-		if err := a.Saves.Export(id, w); err != nil {
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="NEXUS saves - %s - %s - %s.zip"`, safeFolderName(pr.Name), safeFolderName(what), time.Now().Format("2006-01-02")))
+		if err := a.Saves.Export(id, folder, w); err != nil {
 			a.Log.Printf("save export: %v", err)
 		}
 	})
-	m.HandleFunc("POST /api/profiles/{id}/saves/import", func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-		if _, ok := a.Profiles.Get(id); !ok {
-			writeErr(w, 404, errors.New("Profile not found."))
-			return
-		}
-		if st := a.Emu.State(); st.Running && st.ProfileID == id {
-			writeErr(w, 409, errors.New("Close the running game first."))
-			return
-		}
-		data, err := io.ReadAll(io.LimitReader(r.Body, 2<<30))
-		if err != nil {
-			writeErr(w, 400, err)
-			return
-		}
-		n, err := a.Saves.ImportZip(id, data)
-		if err != nil {
-			writeErr(w, 400, err)
-			return
-		}
-		writeJSON(w, map[string]int{"folders": n})
-	})
-	m.HandleFunc("POST /api/profiles/{id}/import-saves", func(w http.ResponseWriter, r *http.Request) {
-		var b struct{ Overwrite bool }
+	m.HandleFunc("POST /api/profiles/{id}/saves/backup", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Folder string }
 		_ = readBody(r, &b)
-		if a.Emu.State().Running {
-			writeErr(w, 409, errors.New("Close the running game first."))
-			return
-		}
-		n, err := a.Emu.ImportNandSaves(r.PathValue("id"), b.Overwrite)
+		bk, err := a.Saves.Backup(r.PathValue("id"), b.Folder, "manual")
 		if err != nil {
-			code := 400
-			if errors.Is(err, errExists) {
-				code = 409
-			}
-			writeErr(w, code, err)
+			writeErr(w, 400, err)
 			return
 		}
-		writeJSON(w, map[string]int{"files": n})
+		writeJSON(w, bk)
+	})
+	m.HandleFunc("GET /api/profiles/{id}/saves/backups", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, a.Saves.Backups(r.PathValue("id"), r.URL.Query().Get("titleId")))
+	})
+	m.HandleFunc("POST /api/profiles/{id}/saves/restore", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			File    string
+			Confirm bool
+		}
+		_ = readBody(r, &b)
+		if !b.Confirm {
+			writeErr(w, 400, errors.New("Restoring replaces the current save: confirm first."))
+			return
+		}
+		if err := a.Saves.Restore(r.PathValue("id"), b.File); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, true)
+	})
+	m.HandleFunc("POST /api/profiles/{id}/saves/delete", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			Folder  string
+			Confirm bool
+		}
+		_ = readBody(r, &b)
+		if !b.Confirm {
+			writeErr(w, 400, errors.New("Deleting a save needs confirmation."))
+			return
+		}
+		bk, err := a.Saves.Delete(r.PathValue("id"), b.Folder)
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, bk)
+	})
+	m.HandleFunc("POST /api/profiles/{id}/saves/use-copy", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Folder string }
+		_ = readBody(r, &b)
+		if err := a.Saves.UseOtherCopy(r.PathValue("id"), b.Folder); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, true)
+	})
+	// import, step 1: inspect a folder (picked natively), a ZIP (upload or picked), or the engine's
+	// shared saves
+	m.HandleFunc("POST /api/saves/inspect", func(w http.ResponseWriter, r *http.Request) {
+		ct := r.Header.Get("Content-Type")
+		if strings.HasPrefix(ct, "application/zip") || strings.HasPrefix(ct, "application/octet-stream") {
+			data, err := io.ReadAll(io.LimitReader(r.Body, 1<<30))
+			if err != nil {
+				writeErr(w, 400, err)
+				return
+			}
+			insp, err := a.Saves.Inspect("", data, firstNonEmpty(r.URL.Query().Get("name"), "saves.zip"))
+			if err != nil {
+				writeErr(w, 400, err)
+				return
+			}
+			writeJSON(w, insp)
+			return
+		}
+		var b struct {
+			Path string
+			Pick string // "folder" | "zip" | "shared"
+		}
+		_ = readBody(r, &b)
+		path := b.Path
+		switch {
+		case b.Pick == "shared":
+			path = a.Saves.SharedEngineSaves()
+			if path == "" {
+				writeErr(w, 404, errors.New("There are no saves in the NEXUS engine's shared storage."))
+				return
+			}
+		case path == "" && b.Pick == "zip":
+			p, ok := pick(w, "", "Choose a ZIP archive of saves", "ZIP archive (*.zip)|*.zip|", false)
+			if !ok {
+				return
+			}
+			path = p
+		case path == "":
+			p, ok := pick(w, "", "Choose the save folder (a game's folder, or a folder with several)", "", true)
+			if !ok {
+				return
+			}
+			path = p
+		}
+		insp, err := a.Saves.Inspect(path, nil, "")
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, insp)
+	})
+	// import, step 2: the saves the user confirmed, into a user
+	m.HandleFunc("POST /api/saves/import", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			Token     string
+			ProfileID string
+			Picks     []SaveImportPick
+		}
+		_ = readBody(r, &b)
+		conflicts, err := a.Saves.Import(b.Token, b.ProfileID, b.Picks)
+		if errors.Is(err, errSaveConflict) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(409)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error(), "conflicts": conflicts})
+			return
+		}
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, true)
 	})
 }
 
@@ -1566,13 +1960,12 @@ func revealInExplorer(file string) error {
 	return exec.Command("xdg-open", filepath.Dir(file)).Start()
 }
 
-func firstNonEmpty(v ...string) string {
-	for _, s := range v {
-		if s != "" {
-			return s
-		}
+// openWithDefaultApp opens a file in the program Windows uses for it (Photos, a video player).
+func openWithDefaultApp(file string) error {
+	if runtime.GOOS == "windows" {
+		return exec.Command("explorer.exe", file).Start() // opens it in its default program
 	}
-	return ""
+	return exec.Command("xdg-open", file).Start()
 }
 
 // engineInfo describes the NEXUS engine for the Settings page: installed builds, the active

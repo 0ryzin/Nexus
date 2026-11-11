@@ -41,7 +41,13 @@ Every release lists what it brings. Download `NEXUS-<version>-Windows-x64.zip`, 
 - Light and dark themes throughout.
 - Controller layouts for all games or per game (Nintendo or Xbox button positions, controller type, any button remapped).
 - Frame generation (AMD FSR 3, or Lossless Scaling with your own copy), NVIDIA DLSS in place of a game's DLSS on RTX cards, AMD FSR 4 on Radeon RX 9000 — offered only when your graphics card supports them.
-- Import paths for relevant data from the Eden data directory.
+- Save Data: every user's saves in `UserData\Saves\<PLAYER_ID>-<name>\<GAME_ID>-<SHORT>` (for example `0400486024DEC000-OOT`), with easy import (player and game identified), export, backup, restore and delete — never without confirmation and a backup.
+- Media tab: screenshots (F12 or the controller's capture button) with their game and date.
+- NEXUS Home with one press of H or the controller's Home button; F11 for fullscreen/window while playing.
+- Remembered controllers and a chosen controller per player.
+- Game Updates and Mods per game, checked before they are accepted.
+- Automatic NEXUS updates, verified by SHA-256, with automatic rollback.
+- NEXUS manages its own system files; it never needs another emulator.
 - A full-screen NEXUS loading screen with the game's artwork and real loading steps; the game window appears only once the game is drawing.
 - **NEXUS Home while playing:** press **H** (changeable, or off) or the controller's Home/Guide button to return to NEXUS. The game keeps running in the background, muted and receiving no input; its tile shows a green dot, with *Resume Game* and *Close Game*. If H is used by your game controls, NEXUS leaves it to the game and tells you.
 - **Performance monitor:** an overlay at the top or bottom of the screen with FPS, frame time, CPU and GPU use and temperature, VRAM, RAM and RAM speed. Anything that can't be measured on your PC shows N/A. Choose metrics, opacity and size, for all games or chosen games, and toggle it while playing.
@@ -55,7 +61,7 @@ The NEXUS emulation project draws on the work and codebases of **Lichii, Eden, y
 
 NEXUS is designed to load its emulation engine directly. It is not intended to launch a separate Lichii, Ryujinx or other emulator application when a game is selected.
 
-The engine ships inside the release ZIP (`NEXUS\Engine`) and is built from upstream Lichii (currently build-150) plus the NEXUS patches in [`engine/patches`](engine/patches).
+The engine ships inside the release ZIP (`NEXUS\Engine`) and is built from upstream Lichii (currently build-160) plus the NEXUS patches in [`engine/patches`](engine/patches).
 
 Switch 2 support is experimental upstream work and has **not** been verified by NEXUS. No Switch 2 compatibility claim is made.
 

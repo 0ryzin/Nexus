@@ -136,10 +136,10 @@ func (e *Emulator) Enhancements() Enhancements {
 	out.DLSS = FeatureState{Supported: dlss}
 	if !dlss {
 		out.DLSS.Why = "DLSS needs an NVIDIA GeForce RTX graphics card (" + gpuName + ")."
-	} else if dir := e.findStreamline(); dir == "" {
-		out.DLSS.Why = "Needs NVIDIA Streamline (sl.interposer.dll with sl.common.dll and sl.dlss.dll from NVIDIA's Streamline SDK) in the DLSS folder. The DLSS model comes from the NVIDIA app if it is installed."
+	} else if missing := e.dlssMissing(); len(missing) > 0 {
+		out.DLSS.Why = "Needs NVIDIA's DLSS files (" + strings.Join(missing, ", ") + "). NEXUS can download them from NVIDIA in Frame generation & DLSS."
 	} else {
-		out.DLSS.Ready, out.DLSS.Detail = true, dir
+		out.DLSS.Ready, out.DLSS.Detail = true, e.streamlineDir()
 	}
 
 	out.FSR4 = FeatureState{Supported: fsr4, Ready: fsr4}

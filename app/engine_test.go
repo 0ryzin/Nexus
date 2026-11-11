@@ -282,7 +282,7 @@ func TestEngineSessionAndPlaytime(t *testing.T) {
 	if v, _ := ini.GetSetting("Renderer", "resolution_setup"); v != "6" {
 		t.Fatalf("per-game scale not applied: %q", v)
 	}
-	if v, _ := ini.Get("Data%20Storage", "save_directory"); !strings.Contains(v, p.ID) {
+	if v, _ := ini.Get("Data%20Storage", "save_directory"); !strings.Contains(v, p.PlayerID+"-Tom") {
 		t.Fatalf("save directory %q is not the user's", v)
 	}
 	sawCheckpoint, sawPlaying := false, false
@@ -593,7 +593,8 @@ func TestNoEmulatorProgramsRemain(t *testing.T) {
 		}
 		for _, line := range strings.Split(s, "\n") {
 			if strings.Contains(line, "exec.Command(") && !strings.Contains(line, "explorer.exe") &&
-				!strings.Contains(line, "xdg-open") && !strings.Contains(line, "exec.Command(p, args...)") { // p = msedge.exe fallback UI
+				!strings.Contains(line, "xdg-open") && !strings.Contains(line, "exec.Command(p, args...)") && // p = msedge.exe fallback UI
+				!strings.Contains(line, `"NEXUS.exe"`) && !strings.Contains(line, `"--apply-update"`) { // the updater starts NEXUS itself
 				t.Errorf("%s starts an external program: %s", f, strings.TrimSpace(line))
 			}
 		}

@@ -30,7 +30,9 @@ type Paths struct {
 	Games      string
 	System     string
 	Profiles   string
+	UserData   string // UserData: saves and their backups
 	Saves      string
+	Media      string // Media\Screenshots, Media\Recordings
 	Settings   string
 	Artwork    string
 	Wallpapers string
@@ -91,7 +93,9 @@ func NewPathsSplit(root, data string, portable bool) *Paths {
 		p.System = data
 	}
 	p.Profiles = filepath.Join(p.System, "Profiles")
-	p.Saves = filepath.Join(p.System, "Saves")
+	p.UserData = filepath.Join(p.System, "UserData")
+	p.Saves = filepath.Join(p.UserData, "Saves")
+	p.Media = filepath.Join(p.System, "Media")
 	p.Settings = filepath.Join(p.System, "Settings")
 	p.Artwork = filepath.Join(p.System, "Artwork")
 	p.Wallpapers = filepath.Join(p.System, "Wallpapers")
@@ -106,7 +110,8 @@ func NewPathsSplit(root, data string, portable bool) *Paths {
 
 func (p *Paths) Ensure() error {
 	// user data must be writable
-	for _, d := range []string{p.Profiles, p.Saves, p.Settings, p.Artwork, p.Wallpapers, p.Logs} {
+	for _, d := range []string{p.Profiles, p.UserData, p.Settings, p.Artwork, p.Wallpapers, p.Logs,
+		filepath.Join(p.Media, "Screenshots"), filepath.Join(p.Media, "Recordings")} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return fmt.Errorf("cannot create %s: %w", d, err)
 		}
@@ -122,19 +127,25 @@ func (p *Paths) Ensure() error {
 
 // App wires every subsystem together.
 type App struct {
-	Paths    *Paths
-	Log      *log.Logger
-	Events   *EventBus
-	Settings *SettingsStore
-	Profiles *ProfileStore
-	Library  *Library
-	Emu      *Emulator
-	Avatars  *AvatarSet
-	Sys      *SystemFiles
-	Link     *DeviceLink // experimental Device Linking; nil unless the feature is on
-	Compat   *CompatStore
-	Saves    *SaveOrganizer
-	UI       UIHost // platform window (may be a no-op)
+	saveMigrationErr string // shown in Save Data when the 0.3.0 save conversion could not run
+	updateFailed     string // an update was rolled back (shown once in Settings › Updates)
+	Paths            *Paths
+	Log              *log.Logger
+	Events           *EventBus
+	Settings         *SettingsStore
+	Profiles         *ProfileStore
+	Library          *Library
+	Emu              *Emulator
+	Avatars          *AvatarSet
+	Sys              *SystemFiles
+	Link             *DeviceLink // experimental Device Linking; nil unless the feature is on
+	Compat           *CompatStore
+	Saves            *SaveOrganizer
+	Media            *MediaLibrary
+	Controllers      *ControllerStore
+	Content          *GameContent
+	Updater          *Updater
+	UI               UIHost // platform window (may be a no-op)
 
 	logFile  *os.File
 	migrated []string
@@ -162,7 +173,12 @@ func NewAppWithPaths(p *Paths) (*App, error) {
 	a.Library = NewLibrary(a)
 	a.Emu = NewEmulator(a)
 	a.Compat = NewCompatStore(p.Settings)
+	a.Compat.SetEngine(func() string { return a.Emu.Builds.ActiveVersionLabel() })
 	a.Saves = NewSaveOrganizer(a)
+	a.Media = NewMediaLibrary(a)
+	a.Controllers = NewControllerStore(a)
+	a.Content = NewGameContent(a)
+	a.Updater = NewUpdater(a)
 	a.Avatars = &AvatarSet{app: a}
 	a.Sys = NewSystemFiles(a)
 	a.upgradeTheme()
@@ -190,6 +206,18 @@ func (a *App) Close() {
 }
 
 // ---------- small helpers shared by subsystems ----------
+
+// writeFileAtomic writes data via a temp file + rename.
+func writeFileAtomic(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
 
 // writeJSONAtomic writes v as indented JSON via a temp file + rename so a crash
 // can never leave a half-written settings or profile file behind.

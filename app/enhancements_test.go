@@ -56,6 +56,12 @@ func TestEnhancementSettings(t *testing.T) {
 	}
 	os.MkdirAll(app.Emu.streamlineDir(), 0o755)
 	os.WriteFile(filepath.Join(app.Emu.streamlineDir(), "sl.interposer.dll"), []byte("x"), 0o644)
+	if en := app.Emu.Enhancements(); en.DLSS.Ready {
+		t.Fatal("the plugins and the DLSS model are still missing")
+	}
+	for _, f := range []string{"sl.common.dll", "sl.dlss.dll", "nvngx_dlss.dll"} {
+		os.WriteFile(filepath.Join(app.Emu.streamlineDir(), f), []byte("x"), 0o644)
+	}
 	if en := app.Emu.Enhancements(); !en.DLSS.Ready {
 		t.Fatalf("Streamline present: %+v", en.DLSS)
 	}

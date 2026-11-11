@@ -115,6 +115,11 @@ func (e *Emulator) EffectiveLayout(g *Game, pr *Profile) (GameLayout, string, *G
 	if pr != nil && (pr.Controls.GameLayout.Base != "" || len(pr.Controls.GameLayout.Buttons) > 0 || pr.Controls.GameLayout.ControllerType != "") {
 		l, src = pr.Controls.GameLayout, "user"
 	}
+	if e.app.Controllers != nil {
+		if cl := e.app.Controllers.Player1Layout(pr); cl != nil {
+			l, src = *cl, "controller" // the player-1 controller's own layout
+		}
+	}
 	var preset *GamePreset
 	if g != nil {
 		if gl := e.app.Library.GP.Get(g.Key).Controls; gl != nil {

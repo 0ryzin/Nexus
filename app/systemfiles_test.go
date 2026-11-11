@@ -82,7 +82,7 @@ func writeTestFirmware(t *testing.T, dir string, k testKeys, display string, wit
 	}
 }
 
-func zipDir(t *testing.T, dir, dst string) {
+func zipFirmwareDir(t *testing.T, dir, dst string) {
 	f, _ := os.Create(dst)
 	zw := zip.NewWriter(f)
 	entries, _ := os.ReadDir(dir)
@@ -213,7 +213,7 @@ func TestSystemFilesFirmware(t *testing.T) {
 	}
 	// valid firmware as a zip (with one split entry)
 	zipPath := filepath.Join(t.TempDir(), "fw.zip")
-	zipDir(t, fwDir, zipPath)
+	zipFirmwareDir(t, fwDir, zipPath)
 	if err := app.Sys.InstallFirmware(zipPath); err != nil {
 		t.Fatal(err)
 	}

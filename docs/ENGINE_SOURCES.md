@@ -9,8 +9,8 @@ integrated, so that nobody has to guess.
 
 | Layer | Origin | Licence |
 |---|---|---|
-| Whole emulation core: CPU (dynarmic JIT), HLE services, kernel, file system/NAND, loader, GPU (Maxwell/Ampere command processing, Vulkan and OpenGL renderers, shader recompiler), audio core, input (SDL3) | **yuzu** → **Eden** → **Lichii** build-150 (zortos293/Lichii, tag `build-150`, commit `17baed716`) | GPL-3.0-or-later (yuzu components partly GPL-2.0-or-later, compatible) |
-| DLSS replacement (NVIDIA Streamline loader, headers only), FSR 3/3.1/4 paths, frame generation (FSR 3, Lossless Scaling), NX2 (Switch 2) experimental work | Lichii / Eden | GPL-3.0-or-later; Streamline headers MIT; NVIDIA/AMD/Lossless runtimes are *not* shipped and are loaded from the user's PC |
+| Whole emulation core: CPU (dynarmic JIT), HLE services, kernel, file system/NAND, loader, GPU (Maxwell/Ampere command processing, Vulkan and OpenGL renderers, shader recompiler), audio core, input (SDL3) | **yuzu** → **Eden** → **Lichii** build-160 (zortos293/Lichii, tag `build-160`, commit `2eb5f081c`) | GPL-3.0-or-later (yuzu components partly GPL-2.0-or-later, compatible) |
+| DLSS replacement (NVIDIA Streamline loader, headers only), FSR 3/3.1/4 paths, frame generation (FSR 3, Lossless Scaling), NX2 (Switch 2) experimental work | Lichii / Eden | GPL-3.0-or-later; Streamline headers MIT; NVIDIA/AMD/Lossless runtimes are *not* shipped and are loaded from the user's PC (NEXUS can download NVIDIA's Streamline files from NVIDIA's own GitHub release when the user accepts NVIDIA's licences) |
 | `nexus_engine` library and C interface, 0–200 % gain + limiter, explicit data folder, host-managed data folder, suspend/resume, controller layouts, packaging | NEXUS patches 0001–0011 | GPL-3.0-or-later |
 
 The full upstream history (yuzu, Eden, Lichii) is in the engine source shipped in every release
@@ -22,7 +22,7 @@ The full upstream history (yuzu, Eden, Lichii) is in the engine source shipped i
 |---|---|---|---|
 | **yuzu** | C++, GPL-2.0-or-later/GPL-3.0 | Ancestor of Eden and Lichii; discontinued in 2024. | Already the foundation of the whole engine. Nothing further to take. |
 | **Eden** | C++, GPL-3.0-or-later | Direct ancestor of Lichii; Lichii regularly ports Eden changes. | Included through Lichii. Further Eden changes can be cherry-picked as patches when they apply to the Lichii tree; each needs its own build and game testing. |
-| **Lichii** (nx2) | C++, GPL-3.0-or-later | The engine's direct upstream. | Base moved from build-130 to **build-150** in NEXUS 0.0.0 (51 upstream commits). Newer Lichii builds are adopted the same way: rebase the patches, build, test. |
+| **Lichii** (nx2) | C++, GPL-3.0-or-later | The engine's direct upstream. | Base moved from build-130 to build-150 in NEXUS 0.0.0 (51 upstream commits) and to **build-160** in NEXUS 0.3.0 (30 commits; analysis in app/NEXUS_ENGINE.md). Newer Lichii builds are adopted the same way: rebase the patches, build, test. |
 | **Ryujinx / Ryubing** | C#, MIT | Separate emulator with a different architecture (ARMeilleure CPU, its own GPU and HLE layers, .NET runtime). | **No code can be merged** into a C++ engine. Specific fixes can be re-implemented in C++ where they apply (MIT permits this with attribution); none has been in this release. NEXUS reads only Ryujinx's keys during an import. |
 | **"Raiden"** | — | No Switch emulator of that name could be verified (the name belongs to a shoot-'em-up series). | Not treated as a source. If a specific project was meant, its repository is needed. |
 

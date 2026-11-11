@@ -12,7 +12,7 @@ NEXUS's emulation development draws on the following projects and their wider up
 - **Ryujinx** — https://github.com/Ryujinx
 - **Ryubing** — a fork of Ryujinx, also part of the related emulation work referenced by NEXUS.
 
-The NEXUS Engine's code comes from yuzu, Eden and Lichii (currently Lichii build-150); no Ryujinx or Ryubing code is included. See [docs/ENGINE_SOURCES.md](docs/ENGINE_SOURCES.md).
+The NEXUS Engine's code comes from yuzu, Eden and Lichii (currently Lichii build-160); no Ryujinx or Ryubing code is included. See [docs/ENGINE_SOURCES.md](docs/ENGINE_SOURCES.md).
 
 These projects are acknowledged as part of the NEXUS emulation foundation and development. Their code, contributions and individual components remain subject to their respective upstream licences and copyright notices. The exact origin and applicable licence of each source file or component must be preserved and checked before redistribution; this summary does not replace those notices.
 
@@ -35,6 +35,10 @@ The supplied engine source package contains licence texts for third-party compon
 - zlib
 
 The exact licence applicable to each component must be checked against that component's own source and notices. Do not infer that every listed licence applies to every dependency.
+
+## NVIDIA DLSS (not distributed)
+
+NEXUS does not include NVIDIA's files. On a GeForce RTX PC, when the user asks for DLSS, NEXUS shows NVIDIA's licence texts (NVIDIA Streamline and NVIDIA DLSS) from NVIDIA's Streamline SDK release on GitHub (NVIDIA-RTX/Streamline) and, only after the user accepts, downloads `sl.interposer.dll`, `sl.common.dll`, `sl.dlss.dll` and `nvngx_dlss.dll` from that release into the user's NEXUS engine data folder, checking each file's checksum and NVIDIA code signature. Those files remain under NVIDIA's licences. The engine compiles only Streamline's MIT-licensed headers.
 
 ## NEXUS application dependencies
 

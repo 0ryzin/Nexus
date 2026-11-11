@@ -1,6 +1,50 @@
 # The NEXUS engine: investigation, architecture, status and plan
 
-## 0. NEXUS Engine 0.3.0 (NEXUS 0.2.0): the loading-screen fix and the Home key (patch 0013)
+## 0. NEXUS Engine 0.4.0 (NEXUS 0.3.0): upstream build-160 and patch 0014
+
+### Upstream: Lichii build-150 → build-160 (30 commits)
+The NEXUS patch series was rebased onto build-160 (commit 2eb5f081c) without conflicts; all 14
+NEXUS patches apply unchanged in meaning. What build-160 brings, and what it means for NEXUS:
+
+| Area | Upstream change | For NEXUS |
+|---|---|---|
+| Game fix | #1313 built-in Texture Pool ×2 patch: Ocarina of Time (remake) Castle Town guard house freeze with Max Resolution | Included; the OOT compatibility note now names it |
+| Game fix | #1332 Mario Kart World dynamic FPS skips the game's own second-vblank wait | Included |
+| Game fix | #552, #637, #828 The Duskbloods network test boots to its menus, DLSS replacement, reactive flushing | Included |
+| Vulkan | #1325 images over the texel limit, #1337 evicted pipelines rebuilt from kept SPIR-V, #1334 pipelines kept up to a RAM limit (+ option to build all cached shaders at boot), #1329 skip empty submits, #1335 AMD device-memory overallocation, #638 clear 3D colour targets past the framebuffer's layers, #1095 3D state registers in one call | Included (renderer stability and memory) |
+| Shaders | #1320 less shader compilation work, #1347 UISETP/USEL folding, #851 TLD4.B / IMAD forms, #1363 Yoshi and the Mysterious Book 3D world | Included |
+| CPU | #1331 exclusive reservations on their own cache line, #1327 plain loads for LDAR/LDAPR/LDAXR on x86 | Included (performance) |
+| Memory | #1333 read-only compute bindings sized from their size word | Included |
+| Stability | #852 core timing lateness after a pause, #889 log rotation failure keeps the previous log, #1232 nxformat linked statically (crash #1211), #1384 quieter network log, #1349 nx2 sampler stack walk | Included |
+| Display | #1326 native HDR output (Off/Auto/On) | Built in; not exposed in NEXUS settings yet |
+| Network | #1359 LAN play for local wireless games | Built in; no NEXUS interface for it yet |
+| Qt frontend only | #1365 Lichii Dark theme and dialogs, #1371 game-list layout, #1345 frame-stats overlay | Not part of the NEXUS engine (no Qt frontend is built) |
+
+No audio or controller fixes are in this range. The engine's own test suite runs in CI for every
+build.
+
+### Patch 0014 (engine 0.4)
+* **Per-game save folders.** `FileSys::NexusSaveFolders()`: the host names, per game, the folders
+  of its account and device save inside the user's save directory (request `saveFolders`), and the
+  engine reads and writes there (`<GAME_ID>-OOT`). Empty table = upstream layout. Engine test
+  `nexus_save_folders.cpp`.
+* **NEXUS Home fix.** The controller's Guide/Home button reached the emulated HOME button through
+  input_common's SDL event watch (which sees events before the session loop consumes them), so a
+  press also opened the game's return-to-HOME handling. The Home and capture buttons are now removed
+  from the game's controls when NEXUS uses them; one press = one request (500 ms, not counted while
+  NEXUS is showing or right after a resume).
+* **F11** (`fullscreenKey`) toggles fullscreen and a 16:9 window (80 % of the display it is on)
+  without stopping the game. **F12** (`screenshotKey`) and the controller's capture/share button save
+  a PNG with a unique name in `screenshotDir`. Keys used by the game controls go to the game.
+* **Controllers:** players mapped to the controllers NEXUS chose (`controllers`: GUID + port);
+  `nexus_engine_controllers` lists connected controllers (name, type, vendor/product, serial).
+* **Loading → game:** with `revealOnRequest`, the game window waits after its first frame until
+  NEXUS has faded its loading screen out (`nexus_engine_reveal`, failsafe 1.5 s); `fadeInMs` fades the
+  window in where Windows supports window opacity.
+
+Not verified on real hardware (the build machines have no GPU, controller or games).
+
+## 1. NEXUS Engine 0.3.0 (NEXUS 0.2.0): the loading-screen fix and the Home key (patch 0013)
 
 **The problem.** Between the NEXUS loading screen and the first frame of a game, a black window with
 a white frame filled the screen. The engine created its game window *visible* before loading the
@@ -21,7 +65,7 @@ Also in 0013:
 
 Not verified on real hardware: the build machines have no GPU. CI compiles and tests the engine.
 
-## 1. NEXUS Engine 0.2.0 (NEXUS 0.1.0): the configuration error
+## 2. NEXUS Engine 0.2.0 (NEXUS 0.1.0): the configuration error
 
 **What went wrong.** Lichii build-150 (#1253, "Give Lichii its own data folder with a recoverable
 Eden import") added `FrontendCommon::CheckLegacyProfileBeforeConfig()` to `Config::Initialize`. It

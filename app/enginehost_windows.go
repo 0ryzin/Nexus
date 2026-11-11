@@ -18,6 +18,7 @@ import (
 type dllEngine struct {
 	dll                                                              *syscall.DLL
 	apiVersion, info, start, status, stop, setVolume, focus, suspend *syscall.Proc
+	reveal, controllers                                              *syscall.Proc // engine 0.4 (optional)
 }
 
 func loadEngineHost(dir string) (EngineHost, error) {
@@ -41,6 +42,8 @@ func loadEngineHost(dir string) (EngineHost, error) {
 		}
 		*dst = p
 	}
+	e.reveal, _ = d.FindProc("nexus_engine_reveal")
+	e.controllers, _ = d.FindProc("nexus_engine_controllers")
 	if v, _, _ := e.apiVersion.Call(); int32(v) != engineAPIVersion {
 		return nil, fmt.Errorf("this engine build uses interface version %d; NEXUS needs %d", int32(v), engineAPIVersion)
 	}
@@ -104,6 +107,28 @@ func (e *dllEngine) Suspend(on bool) {
 		v = 1
 	}
 	_, _, _ = e.suspend.Call(v)
+}
+
+func (e *dllEngine) Reveal() {
+	if e.reveal != nil {
+		_, _, _ = e.reveal.Call()
+	}
+}
+
+func (e *dllEngine) Controllers() ([]PadInfo, error) {
+	if e.controllers == nil {
+		return nil, errors.New("this engine build cannot list controllers")
+	}
+	buf := make([]byte, 64<<10)
+	r, _, _ := e.controllers.Call(uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	if int32(r) < 0 {
+		return nil, errors.New("the engine could not list controllers")
+	}
+	var out []PadInfo
+	if err := json.Unmarshal([]byte(cstr(uintptr(unsafe.Pointer(&buf[0])))), &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // fakeEngineEnabled: the stand-in engine exists in Windows builds only for NEXUS's own test

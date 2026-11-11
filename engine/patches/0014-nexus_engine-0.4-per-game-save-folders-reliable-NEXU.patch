@@ -1,0 +1,836 @@
+From 010300a8c16146a34515dd320256811db4edd3f5 Mon Sep 17 00:00:00 2001
+From: NEXUS <nexus@localhost>
+Date: Wed, 11 Nov 2026 23:03:04 +0000
+Subject: [PATCH 14/14] nexus_engine 0.4: per-game save folders, reliable NEXUS
+ Home, F11, screenshots, controller choice, reveal after the loading screen
+
+- savedata_factory: NexusSaveFolders() maps a game's account/device save to folders NEXUS names
+  in the save directory (request "saveFolders"); empty table = upstream layout; test case
+- Home: the Guide/Home and capture buttons are removed from the game's controls (they reached
+  the emulated HOME button through input_common's SDL event watch and opened the game's
+  return-to-HOME handling); one press = one request (500 ms, not while suspended or right after
+  a resume)
+- F11 (fullscreenKey) toggles fullscreen/windowed without stopping the game; windowed at 16:9,
+  80% of the display it is on
+- F12 (screenshotKey) and the controller capture/share button save a PNG with a unique name in
+  screenshotDir
+- controllers: players mapped to the controllers NEXUS chose (guid/port); nexus_engine_controllers
+  lists connected controllers (name, type, vendor/product, serial)
+- revealOnRequest / nexus_engine_reveal: after the first frame the window waits for NEXUS to fade
+  its loading screen out (failsafe timeout); optional fadeInMs opacity fade
+- status: ready, fullscreen, screenshots, lastScreenshot
+---
+ src/core/file_sys/savedata_factory.cpp  |  22 ++
+ src/core/file_sys/savedata_factory.h    |  12 +
+ src/nexus_engine/include/nexus_engine.h |  10 +
+ src/nexus_engine/nexus_engine.cpp       | 491 ++++++++++++++++++++++--
+ src/tests/CMakeLists.txt                |   1 +
+ src/tests/core/nexus_save_folders.cpp   |  41 ++
+ 6 files changed, 536 insertions(+), 41 deletions(-)
+ create mode 100644 src/tests/core/nexus_save_folders.cpp
+
+diff --git a/src/core/file_sys/savedata_factory.cpp b/src/core/file_sys/savedata_factory.cpp
+index c756734a4..971bf9da6 100644
+--- a/src/core/file_sys/savedata_factory.cpp
++++ b/src/core/file_sys/savedata_factory.cpp
+@@ -14,6 +14,11 @@
+ 
+ namespace FileSys {
+ 
++std::map<u64, NexusSaveFolder>& NexusSaveFolders() {
++    static std::map<u64, NexusSaveFolder> folders;
++    return folders;
++}
++
+ namespace {
+ 
+ bool ShouldSaveDataBeAutomaticallyCreated(SaveDataSpaceId space, const SaveDataAttribute& attr) {
+@@ -112,6 +117,23 @@ std::string SaveDataFactory::GetFullPath(ProgramId program_id, VirtualDir dir,
+         }
+     }
+ 
++    // NEXUS: each game's account and device save live in readable folders the host named
++    if ((space == SaveDataSpaceId::User || space == SaveDataSpaceId::SdUser) &&
++        (type == SaveDataType::Account || type == SaveDataType::Device)) {
++        const auto& folders = NexusSaveFolders();
++        auto it = folders.find(title_id);
++        if (it == folders.end()) {
++            it = folders.find(title_id & ~0xFFULL);
++        }
++        if (it != folders.end()) {
++            const std::string& name =
++                type == SaveDataType::Account ? it->second.account : it->second.device;
++            if (!name.empty()) {
++                return "/" + name;
++            }
++        }
++    }
++
+     // For compat with a future impl.
+     if (std::string future_path =
+             GetFutureSaveDataPath(space, type, title_id & ~(0xFFULL), user_id);
+diff --git a/src/core/file_sys/savedata_factory.h b/src/core/file_sys/savedata_factory.h
+index c7899f023..e3b0b0644 100644
+--- a/src/core/file_sys/savedata_factory.h
++++ b/src/core/file_sys/savedata_factory.h
+@@ -6,6 +6,9 @@
+ 
+ #pragma once
+ 
++#include <map>
++#include <string>
++
+ #include <memory>
+ #include <string>
+ #include "common/common_funcs.h"
+@@ -26,6 +29,15 @@ constexpr const char* GetSaveDataSizeFileName() {
+ 
+ using ProgramId = u64;
+ 
++/// NEXUS: per-game save folders, relative to the save directory, by application ID: account save
++/// folder and device save folder (e.g. "0400486024DEC000-OOT" and "0400486024DEC000-OOT (device)").
++/// Set by the NEXUS engine host before a game loads and cleared after it; empty = upstream layout.
++struct NexusSaveFolder {
++    std::string account;
++    std::string device;
++};
++std::map<u64, NexusSaveFolder>& NexusSaveFolders();
++
+ /// File system interface to the SaveData archive
+ class SaveDataFactory {
+ public:
+diff --git a/src/nexus_engine/include/nexus_engine.h b/src/nexus_engine/include/nexus_engine.h
+index 2d6178563..3080caabd 100644
+--- a/src/nexus_engine/include/nexus_engine.h
++++ b/src/nexus_engine/include/nexus_engine.h
+@@ -64,6 +64,16 @@ NEXUS_API void nexus_engine_focus(void);
+ /// the engine thread; status reports "suspended":true/false.
+ NEXUS_API void nexus_engine_suspend(int32_t suspend);
+ 
++/// Engine 0.4 (optional exports, looked up by name):
++/// Shows the game window after its first frame when the request had "revealOnRequest":true
++/// (NEXUS fades its loading screen out first).
++NEXUS_API void nexus_engine_reveal(void);
++
++/// Writes the connected game controllers as a JSON array into buf:
++/// [{"guid","port","name","type":"xboxone|ps5|switch-pro|…|standard","vendor","product","path",
++///   "serial"}]. Returns the length needed, or -1 if controllers cannot be listed.
++NEXUS_API int32_t nexus_engine_controllers(char* buf, int32_t buf_len);
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/src/nexus_engine/nexus_engine.cpp b/src/nexus_engine/nexus_engine.cpp
+index 7535468a7..1750cf16b 100644
+--- a/src/nexus_engine/nexus_engine.cpp
++++ b/src/nexus_engine/nexus_engine.cpp
+@@ -13,6 +13,7 @@
+ #include <chrono>
+ #include <cstdio>
+ #include <cstring>
++#include <ctime>
+ #include <filesystem>
+ #include <memory>
+ #include <mutex>
+@@ -20,6 +21,7 @@
+ #include <thread>
+ 
+ #include <SDL3/SDL.h>
++#include <fmt/format.h>
+ #include <nlohmann/json.hpp>
+ 
+ #include "common/fs/fs.h"
+@@ -31,6 +33,11 @@
+ #include "core/core_timing.h"
+ #include "core/cpu_manager.h"
+ #include "core/file_sys/registered_cache.h"
++#include "core/file_sys/savedata_factory.h"
++#include "core/frontend/framebuffer_layout.h"
++#include "common/stb.h"
++#include "common/uuid.h"
++#include <fstream>
+ #include "core/file_sys/vfs/vfs_real.h"
+ #include "core/hle/kernel/k_process.h"
+ #include "hid_core/hid_core.h"
+@@ -102,6 +109,23 @@ struct Request {
+     // controller's Guide/Home button returns to NEXUS
+     std::string home_key;
+     bool home_button{true};
++    // NEXUS 0.3: per-game save folders in the save directory (see savedata_factory.h)
++    std::map<u64, FileSys::NexusSaveFolder> save_folders;
++    // window and capture shortcuts (SDL scancode names; "" = off). Keys used by the game controls
++    // are left to the game.
++    std::string fullscreen_key{"F11"};
++    std::string screenshot_key{"F12"};
++    bool capture_button{true}; // the controller's capture/share button takes a screenshot
++    std::string screenshot_dir;
++    std::string screenshot_name{"NEXUS"};
++    // controllers chosen in NEXUS, in player order: device GUID (32 hex, as input_common names
++    // it) and port among identical devices
++    std::vector<std::pair<std::string, int>> controllers;
++    // the game window waits for nexus_engine_reveal() after its first frame (NEXUS fades its
++    // loading screen out first); shown anyway after reveal_timeout_ms
++    bool reveal_on_request{false};
++    int reveal_timeout_ms{1500};
++    int fade_in_ms{0}; // fade the game window in (0 = no fade)
+ };
+ 
+ struct Engine {
+@@ -124,6 +148,12 @@ struct Engine {
+     std::atomic<std::uint64_t> home_presses{0};
+     std::atomic<bool> home_key_conflict{false};
+     std::atomic<bool> shown{false}; // the game window has been shown (first frame)
++    std::atomic<bool> ready{false}; // the first frame was drawn (window may still wait for reveal)
++    std::atomic<bool> reveal{false};
++    std::atomic<bool> fullscreen_now{false};
++    std::atomic<std::uint64_t> screenshots{0};
++    std::atomic<std::uint64_t> screenshot_failures{0};
++    std::string last_screenshot; // guarded by mutex
+     std::string code;    // guarded by mutex
+     std::string message; // guarded by mutex
+     std::string info_json;
+@@ -237,28 +267,11 @@ constexpr std::array<std::pair<const char*, Settings::NativeButton::Values>, 12>
+     {"lstick", Settings::NativeButton::LStick},   {"rstick", Settings::NativeButton::RStick},
+ }};
+ 
+-void AutoMapController(InputCommon::InputSubsystem& input, Core::System& system,
+-                       const std::map<std::string, std::string>& button_map,
+-                       const std::string& controller_type) {
+-    std::optional<Common::ParamPackage> pad;
+-    for (int attempt = 0; attempt < 25 && !pad; ++attempt) { // SDL reports pads asynchronously
+-        for (const auto& d : input.GetInputDevices()) {
+-            const auto engine = d.Get("engine", "");
+-            if (engine == "sdl" || engine == "joycon" || engine == "gcpad") {
+-                pad = d;
+-                break;
+-            }
+-        }
+-        if (!pad) {
+-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+-        }
+-    }
+-    if (!pad) {
+-        LOG_INFO(Frontend, "NEXUS: no game controller connected, keeping the keyboard mapping");
+-        return;
+-    }
+-    auto& player = Settings::values.players.GetValue()[0];
+-    const auto defaults = input.GetButtonMappingForDevice(*pad);
++void MapPlayer(InputCommon::InputSubsystem& input, std::size_t index, const Common::ParamPackage& pad,
++               const std::map<std::string, std::string>& button_map,
++               const std::string& controller_type) {
++    auto& player = Settings::values.players.GetValue()[index];
++    const auto defaults = input.GetButtonMappingForDevice(pad);
+     for (const auto& [id, param] : defaults) {
+         player.buttons[id] = param.Serialize();
+     }
+@@ -280,18 +293,234 @@ void AutoMapController(InputCommon::InputSubsystem& input, Core::System& system,
+         player.controller_type = Settings::ControllerType::ProController;
+     } else if (controller_type == "dual_joycon") {
+         player.controller_type = Settings::ControllerType::DualJoyconDetached;
+-    } else if (controller_type == "handheld") {
++    } else if (controller_type == "handheld" && index == 0) {
+         player.controller_type = Settings::ControllerType::Handheld;
++    } else if (index > 0) {
++        player.controller_type = Settings::ControllerType::ProController;
+     }
+-    for (const auto& [id, param] : input.GetAnalogMappingForDevice(*pad)) {
++    for (const auto& [id, param] : input.GetAnalogMappingForDevice(pad)) {
+         player.analogs[id] = param.Serialize();
+     }
+-    for (const auto& [id, param] : input.GetMotionMappingForDevice(*pad)) {
++    for (const auto& [id, param] : input.GetMotionMappingForDevice(pad)) {
+         player.motions[id] = param.Serialize();
+     }
+     player.connected = true;
++    LOG_INFO(Frontend, "NEXUS: player {} mapped to {}", index + 1, pad.Get("display", "controller"));
++}
++
++/// Maps players to game controllers: the controllers NEXUS chose (by GUID and port), in player
++/// order, or the first connected controller for player 1.
++void AutoMapController(InputCommon::InputSubsystem& input, Core::System& system,
++                       const std::map<std::string, std::string>& button_map,
++                       const std::string& controller_type,
++                       const std::vector<std::pair<std::string, int>>& wanted) {
++    std::vector<Common::ParamPackage> pads;
++    for (int attempt = 0; attempt < 25; ++attempt) { // SDL reports pads asynchronously
++        pads.clear();
++        for (const auto& d : input.GetInputDevices()) {
++            const auto engine = d.Get("engine", "");
++            if (engine == "sdl" || engine == "joycon" || engine == "gcpad") {
++                pads.push_back(d);
++            }
++        }
++        bool all = !pads.empty();
++        for (const auto& [guid, port] : wanted) {
++            const bool found = std::any_of(pads.begin(), pads.end(), [&](const auto& d) {
++                return d.Get("guid", "") == guid && d.Get("port", 0) == port;
++            });
++            all = all && found;
++        }
++        if (all) {
++            break;
++        }
++        std::this_thread::sleep_for(std::chrono::milliseconds(20));
++    }
++    if (pads.empty()) {
++        LOG_INFO(Frontend, "NEXUS: no game controller connected, keeping the keyboard mapping");
++        return;
++    }
++    std::vector<Common::ParamPackage> order;
++    for (const auto& [guid, port] : wanted) {
++        auto it = std::find_if(pads.begin(), pads.end(), [&](const auto& d) {
++            return d.Get("guid", "") == guid && d.Get("port", 0) == port;
++        });
++        if (it == pads.end()) {
++            it = std::find_if(pads.begin(), pads.end(),
++                              [&](const auto& d) { return d.Get("guid", "") == guid; });
++        }
++        if (it != pads.end()) {
++            order.push_back(*it);
++        } else {
++            LOG_WARNING(Frontend, "NEXUS: chosen controller {} (port {}) is not connected", guid, port);
++        }
++    }
++    if (order.empty()) {
++        order.push_back(pads.front());
++    }
++    const std::size_t players = std::min<std::size_t>(order.size(), 8);
++    for (std::size_t i = 0; i < players; ++i) {
++        MapPlayer(input, i, order[i], button_map, controller_type);
++    }
+     system.HIDCore().ReloadInputDevices();
+-    LOG_INFO(Frontend, "NEXUS: player 1 mapped to {}", pad->Get("display", "controller"));
++}
++
++/// NEXUS Home and NEXUS screenshots use the controller's Guide/Home and capture buttons: they
++/// are removed from the game's controls so a press never reaches the game (on a Switch the HOME
++/// press would open the game's/system's "return to HOME" handling).
++void ReserveSystemButtons(Core::System& system, bool home, bool capture) {
++    if (!home && !capture) {
++        return;
++    }
++    for (auto& player : Settings::values.players.GetValue()) {
++        if (home) {
++            player.buttons[Settings::NativeButton::Home].clear();
++        }
++        if (capture) {
++            player.buttons[Settings::NativeButton::Screenshot].clear();
++        }
++    }
++    system.HIDCore().ReloadInputDevices();
++}
++
++std::filesystem::path PathFromUtf8(const std::string& s) {
++    return std::filesystem::path{std::u8string{reinterpret_cast<const char8_t*>(s.data()), s.size()}};
++}
++
++std::string PathToUtf8(const std::filesystem::path& p) {
++    const std::u8string u = p.u8string();
++    return std::string{reinterpret_cast<const char*>(u.data()), u.size()};
++}
++
++/// Writes a screenshot (BGRA rows from the renderer) as a PNG with a unique name in NEXUS's
++/// screenshot folder. Never overwrites a file.
++void WriteScreenshot(std::shared_ptr<std::vector<u8>> pixels, u32 width, u32 height, bool invert_y,
++                     std::string dir, std::string name) {
++    std::vector<u8>& px = *pixels;
++    for (std::size_t i = 0; i + 3 < px.size(); i += 4) {
++        std::swap(px[i], px[i + 2]); // BGRA -> RGBA
++        px[i + 3] = 0xFF;
++    }
++    if (invert_y) {
++        const std::size_t row = std::size_t{width} * 4;
++        std::vector<u8> tmp(row);
++        for (u32 y = 0; y < height / 2; ++y) {
++            u8* a = px.data() + y * row;
++            u8* b = px.data() + (height - 1 - y) * row;
++            std::memcpy(tmp.data(), a, row);
++            std::memcpy(a, b, row);
++            std::memcpy(b, tmp.data(), row);
++        }
++    }
++    std::error_code ec;
++    const std::filesystem::path folder = PathFromUtf8(dir);
++    std::filesystem::create_directories(folder, ec);
++    const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
++    std::tm tm{};
++#ifdef _WIN32
++    localtime_s(&tm, &now);
++#else
++    localtime_r(&now, &tm);
++#endif
++    char stamp[32];
++    std::strftime(stamp, sizeof(stamp), "%Y-%m-%d %H-%M-%S", &tm);
++    std::filesystem::path target;
++    for (int n = 1; n < 1000; ++n) {
++        const std::string file = n == 1 ? fmt::format("{} {}.png", name, stamp)
++                                        : fmt::format("{} {} ({}).png", name, stamp, n);
++        target = folder / PathFromUtf8(file);
++        if (!std::filesystem::exists(target, ec)) {
++            break;
++        }
++    }
++    std::filesystem::path partial = target;
++    partial += ".part";
++    bool ok = false;
++    {
++        std::ofstream out(partial, std::ios::binary | std::ios::trunc);
++        if (out) {
++            const int written = stbi_write_png_to_func(
++                [](void* ctx, void* data, int size) {
++                    static_cast<std::ofstream*>(ctx)->write(static_cast<const char*>(data), size);
++                },
++                &out, static_cast<int>(width), static_cast<int>(height), 4, px.data(),
++                static_cast<int>(width * 4));
++            ok = written != 0 && out.good();
++        }
++    }
++    if (ok) {
++        std::filesystem::rename(partial, target, ec);
++        ok = !ec;
++    }
++    if (!ok) {
++        std::filesystem::remove(partial, ec);
++        ++E().screenshot_failures;
++        LOG_ERROR(Frontend, "NEXUS: the screenshot could not be saved in {}", dir);
++        return;
++    }
++    {
++        std::scoped_lock lk{E().mutex};
++        E().last_screenshot = PathToUtf8(target);
++    }
++    ++E().screenshots;
++    LOG_INFO(Frontend, "NEXUS: screenshot {}", PathToUtf8(target));
++}
++
++void TakeScreenshot(Core::System& system, const Request& req) {
++    if (req.screenshot_dir.empty()) {
++        return;
++    }
++    auto& renderer = system.Renderer();
++    if (renderer.IsScreenshotPending()) {
++        return;
++    }
++    const float scale = std::max(1.0f, Settings::values.resolution_info.up_factor);
++    const u32 height = static_cast<u32>((Settings::IsDockedMode() ? Layout::ScreenDocked::Height
++                                                                  : Layout::ScreenUndocked::Height) *
++                                        scale);
++    const u32 width = height * 16 / 9;
++    const auto layout = Layout::DefaultFrameLayout(width, height);
++    auto pixels = std::make_shared<std::vector<u8>>(std::size_t{width} * height * 4);
++    const std::string dir = req.screenshot_dir;
++    const std::string name = req.screenshot_name;
++    renderer.RequestScreenshot(
++        pixels->data(),
++        [pixels, width, height, dir, name](bool invert_y) {
++            std::thread(WriteScreenshot, pixels, width, height, invert_y, dir, name).detach();
++        },
++        layout);
++}
++
++/// F11: fullscreen <-> window, keeping the game running. The window comes back at 16:9 on the
++/// display it is on, at most 80% of that display.
++void ToggleFullscreen(EmuWindow_SDL3& window) {
++    SDL_Window* w = window.GetSDLWindow();
++    const bool fullscreen = (SDL_GetWindowFlags(w) & SDL_WINDOW_FULLSCREEN) != 0;
++    if (fullscreen) {
++        const SDL_DisplayID display = SDL_GetDisplayForWindow(w);
++        SDL_SetWindowFullscreen(w, false);
++        SDL_SyncWindow(w);
++        SDL_Rect area{};
++        if (display != 0 && SDL_GetDisplayUsableBounds(display, &area) && area.w > 0 && area.h > 0) {
++            int ww = area.w * 8 / 10;
++            int wh = ww * 9 / 16;
++            if (wh > area.h * 8 / 10) {
++                wh = area.h * 8 / 10;
++                ww = wh * 16 / 9;
++            }
++            SDL_SetWindowSize(w, ww, wh);
++            SDL_SetWindowPosition(w, static_cast<int>(SDL_WINDOWPOS_CENTERED_DISPLAY(display)),
++                                  static_cast<int>(SDL_WINDOWPOS_CENTERED_DISPLAY(display)));
++        }
++        E().fullscreen_now = false;
++        LOG_INFO(Frontend, "NEXUS: windowed");
++    } else {
++        if ((SDL_GetWindowFlags(w) & SDL_WINDOW_MAXIMIZED) != 0) {
++            SDL_RestoreWindow(w);
++        }
++        window.ApplyFullscreen();
++        E().fullscreen_now = (SDL_GetWindowFlags(w) & SDL_WINDOW_FULLSCREEN) != 0;
++        LOG_INFO(Frontend, "NEXUS: fullscreen");
++    }
+ }
+ 
+ void RegisterExternalContent(FileSys::ManualContentProvider& provider, Core::System& system,
+@@ -361,6 +590,9 @@ void RunSession(Request req) {
+     e.load_total = 0;
+     e.home_key_conflict = false;
+     e.shown = false;
++    e.ready = false;
++    e.reveal = false;
++    e.fullscreen_now = false;
+ 
+     // All engine data lives in the folder NEXUS chose (keys, firmware, NAND, saves, caches).
+     Common::FS::SetAppDirectory(req.data_dir);
+@@ -403,8 +635,10 @@ void RunSession(Request req) {
+         system.GetFileSystemController().CreateFactories(*system.GetFilesystem());
+         RegisterExternalContent(manual_provider, system, req.contents);
+         if (req.auto_map_controller) {
+-            AutoMapController(input, system, req.button_map, req.controller_type);
++            AutoMapController(input, system, req.button_map, req.controller_type, req.controllers);
+         }
++        ReserveSystemButtons(system, req.home_button, req.capture_button);
++        FileSys::NexusSaveFolders() = req.save_folders;
+         system.GetUserChannel().clear();
+ 
+         Service::AM::FrontendAppletParameters params{.applet_id = Service::AM::AppletId::Application};
+@@ -412,6 +646,7 @@ void RunSession(Request req) {
+         if (result != Core::SystemResultStatus::Success) {
+             const char* code = "load";
+             const std::string msg = LoadErrorMessage(result, &code);
++            FileSys::NexusSaveFolders().clear();
+             window.reset();
+             if (network) {
+                 Network::Shutdown();
+@@ -445,7 +680,11 @@ void RunSession(Request req) {
+         e.state = State::Running;
+         const auto running_since = std::chrono::steady_clock::now();
+ 
+-        // NEXUS Home on the keyboard: only when the key is not one of the game controls
++        // NEXUS shortcuts on the keyboard: only keys that are not game controls
++        const auto usable_key = [](const std::string& name) {
++            const SDL_Scancode k = name.empty() ? SDL_SCANCODE_UNKNOWN : SDL_GetScancodeFromName(name.c_str());
++            return k != SDL_SCANCODE_UNKNOWN && !KeyUsedByGameControls(k) ? k : SDL_SCANCODE_UNKNOWN;
++        };
+         const SDL_Scancode home_key =
+             req.home_key.empty() ? SDL_SCANCODE_UNKNOWN : SDL_GetScancodeFromName(req.home_key.c_str());
+         const bool home_key_usable = home_key != SDL_SCANCODE_UNKNOWN && !KeyUsedByGameControls(home_key);
+@@ -454,6 +693,22 @@ void RunSession(Request req) {
+             LOG_WARNING(Frontend, "NEXUS Engine: the Home key {} is a game control; it goes to the game",
+                         req.home_key);
+         }
++        const SDL_Scancode fullscreen_key = usable_key(req.fullscreen_key);
++        const SDL_Scancode screenshot_key = usable_key(req.screenshot_key);
++        // one press = one Home request: key repeats, the button's release, a second device for
++        // the same pad (XInput + HID) and presses while NEXUS is showing are not counted
++        auto last_home = std::chrono::steady_clock::time_point{};
++        const auto home_press = [&] {
++            const auto now = std::chrono::steady_clock::now();
++            if (e.suspended || now - last_home < std::chrono::milliseconds(500)) {
++                return;
++            }
++            last_home = now;
++            ++e.home_presses;
++        };
++        auto first_frame_at = std::chrono::steady_clock::time_point{};
++        auto fade_start = std::chrono::steady_clock::time_point{};
++        bool fading = false;
+ 
+         // Event loop: input, window events, live volume, stop requests.
+         int applied_volume = e.volume.load();
+@@ -461,37 +716,73 @@ void RunSession(Request req) {
+             SDL_Event event;
+             if (SDL_WaitEventTimeout(&event, 4)) {
+                 do {
+-                    // NEXUS Home: the configured key (when no game control uses it) and the
+-                    // controller's Guide/Home button are taken by NEXUS and not passed to the game
+-                    if (home_key_usable && (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) &&
+-                        event.key.scancode == home_key) {
+-                        if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
+-                            ++e.home_presses;
++                    const bool key = event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP;
++                    const bool key_down = event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat;
++                    const bool pad = event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN ||
++                                     event.type == SDL_EVENT_GAMEPAD_BUTTON_UP;
++                    const bool pad_down = event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN;
++                    if (key && home_key_usable && event.key.scancode == home_key) {
++                        if (key_down) {
++                            home_press();
++                        }
++                        continue;
++                    }
++                    if (pad && req.home_button && event.gbutton.button == SDL_GAMEPAD_BUTTON_GUIDE) {
++                        if (pad_down) {
++                            home_press();
+                         }
+                         continue;
+                     }
+-                    if (req.home_button && event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN &&
+-                        event.gbutton.button == SDL_GAMEPAD_BUTTON_GUIDE) {
+-                        ++e.home_presses;
++                    if (key && fullscreen_key != SDL_SCANCODE_UNKNOWN && event.key.scancode == fullscreen_key) {
++                        if (key_down && e.shown && !e.suspended) {
++                            ToggleFullscreen(*window);
++                        }
++                        continue;
++                    }
++                    if ((key && screenshot_key != SDL_SCANCODE_UNKNOWN && event.key.scancode == screenshot_key) ||
++                        (pad && req.capture_button && event.gbutton.button == SDL_GAMEPAD_BUTTON_MISC1)) {
++                        if ((key_down || pad_down) && e.shown && !e.suspended) {
++                            TakeScreenshot(system, req);
++                        }
+                         continue;
+                     }
+                     window->OnEvent(event);
+                 } while (SDL_PollEvent(&event));
+             }
+-            // show the game window with its first frame (or after 20 s if a program never
+-            // presents one), so no empty window covers the NEXUS loading screen
+-            if (!e.shown && (e.frames > 0 || std::chrono::steady_clock::now() - running_since >
+-                                                 std::chrono::seconds(20))) {
++            const auto now = std::chrono::steady_clock::now();
++            // the first frame: NEXUS fades its loading screen out, then the game window appears
++            // (or after reveal_timeout_ms, or 20 s if a program never presents a frame), so no
++            // empty window covers the NEXUS loading screen
++            if (!e.ready && e.frames > 0) {
++                e.ready = true;
++                first_frame_at = now;
++            }
++            const bool revealed = !req.reveal_on_request || e.reveal ||
++                                  now - first_frame_at > std::chrono::milliseconds(req.reveal_timeout_ms);
++            if (!e.shown && ((e.ready && revealed) || now - running_since > std::chrono::seconds(20))) {
+                 SDL_Window* sdl_window = window->GetSDLWindow();
+                 if (!e.suspended) {
++                    fading = req.fade_in_ms > 0 && SDL_SetWindowOpacity(sdl_window, 0.0f);
+                     SDL_ShowWindow(sdl_window);
+                     if (req.fullscreen) {
+                         window->ApplyFullscreen();
+                     }
++                    e.fullscreen_now = (SDL_GetWindowFlags(sdl_window) & SDL_WINDOW_FULLSCREEN) != 0;
+                     SDL_RaiseWindow(sdl_window);
++                    fade_start = now;
+                 }
+                 e.shown = true;
+             }
++            if (fading) {
++                SDL_Window* sdl_window = window->GetSDLWindow();
++                const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - fade_start).count();
++                if (ms >= req.fade_in_ms || e.suspended) {
++                    SDL_SetWindowOpacity(sdl_window, 1.0f);
++                    fading = false;
++                } else {
++                    SDL_SetWindowOpacity(sdl_window, static_cast<float>(ms) / static_cast<float>(req.fade_in_ms));
++                }
++            }
+             window->ApplyPendingTitle();
+             // Home in NEXUS: pause emulation and hide the game window; resume shows it again.
+             if (const int req_s = e.suspend_request.exchange(-1); req_s >= 0) {
+@@ -508,6 +799,7 @@ void RunSession(Request req) {
+                     SDL_RaiseWindow(sdl_window);
+                     void(system.Run());
+                     e.suspended = false;
++                    last_home = std::chrono::steady_clock::now(); // a press that resumed is not a new Home
+                     LOG_INFO(Frontend, "NEXUS Engine: resumed");
+                 }
+             }
+@@ -527,6 +819,7 @@ void RunSession(Request req) {
+         }
+         e.window_handle = nullptr;
+         window.reset();
++        FileSys::NexusSaveFolders().clear();
+     }
+     if (network) {
+         Network::Shutdown();
+@@ -614,6 +907,39 @@ NEXUS_API int32_t nexus_engine_start(const char* request_json) {
+         req.controller_type = j.value("controllerType", std::string{});
+         req.home_key = j.value("homeKey", std::string{});
+         req.home_button = j.value("homeButton", true);
++        req.fullscreen_key = j.value("fullscreenKey", std::string{"F11"});
++        req.screenshot_key = j.value("screenshotKey", std::string{"F12"});
++        req.capture_button = j.value("captureButton", true);
++        req.screenshot_dir = j.value("screenshotDir", std::string{});
++        req.screenshot_name = j.value("screenshotName", std::string{"NEXUS"});
++        req.reveal_on_request = j.value("revealOnRequest", false);
++        req.reveal_timeout_ms = std::clamp(j.value("revealTimeoutMs", 1500), 0, 10000);
++        req.fade_in_ms = std::clamp(j.value("fadeInMs", 0), 0, 2000);
++        if (const auto it = j.find("saveFolders"); it != j.end() && it->is_object()) {
++            for (const auto& [k, v] : it->items()) {
++                const u64 id = std::strtoull(k.c_str(), nullptr, 16);
++                if (id == 0 || !v.is_object()) {
++                    continue;
++                }
++                FileSys::NexusSaveFolder f;
++                f.account = v.value("account", std::string{});
++                f.device = v.value("device", std::string{});
++                // plain folder names only: never a path outside the save directory
++                const auto plain = [](const std::string& n) {
++                    return n.find_first_of("/\\:") == std::string::npos && n.find("..") == std::string::npos;
++                };
++                if (plain(f.account) && plain(f.device)) {
++                    req.save_folders[id] = f;
++                }
++            }
++        }
++        if (const auto it = j.find("controllers"); it != j.end() && it->is_array()) {
++            for (const auto& c : *it) {
++                if (c.is_object() && c.contains("guid")) {
++                    req.controllers.emplace_back(c.value("guid", std::string{}), c.value("port", 0));
++                }
++            }
++        }
+         if (const auto it = j.find("contents"); it != j.end() && it->is_array()) {
+             for (const auto& c : *it) {
+                 if (c.is_string()) {
+@@ -662,6 +988,10 @@ NEXUS_API int32_t nexus_engine_status(char* buf, int32_t buf_len) {
+     j["shown"] = e.shown.load();
+     j["homePresses"] = e.home_presses.load();
+     j["homeKeyConflict"] = e.home_key_conflict.load();
++    j["ready"] = e.ready.load();
++    j["fullscreen"] = e.fullscreen_now.load();
++    j["screenshots"] = e.screenshots.load();
++    j["screenshotFailures"] = e.screenshot_failures.load();
+     if (const int st = e.load_stage.load(); st != 0) {
+         j["loadStage"] = st == 2 ? "shaders" : "preparing";
+         j["loadDone"] = e.load_done.load();
+@@ -676,6 +1006,9 @@ NEXUS_API int32_t nexus_engine_status(char* buf, int32_t buf_len) {
+             j["code"] = e.code;
+             j["message"] = e.message;
+         }
++        if (!e.last_screenshot.empty()) {
++            j["lastScreenshot"] = e.last_screenshot;
++        }
+     }
+     const std::string text = j.dump();
+     if (buf != nullptr && buf_len > 0) {
+@@ -704,6 +1037,82 @@ NEXUS_API void nexus_engine_suspend(int32_t suspend) {
+     E().suspend_request = suspend != 0 ? 1 : 0;
+ }
+ 
++NEXUS_API void nexus_engine_reveal(void) {
++    E().reveal = true;
++}
++
++NEXUS_API int32_t nexus_engine_controllers(char* buf, int32_t buf_len) {
++    Engine& e = E();
++    json list = json::array();
++    const State s = e.state.load();
++    const bool session = s == State::Starting || s == State::Running || s == State::Stopping;
++    // outside a session SDL's game controller subsystem is opened just for the listing
++    // (reference-counted; the session's input layer starts its own afterwards)
++    if (!session && SDL_InitSubSystem(SDL_INIT_GAMEPAD)) {
++        for (int i = 0; i < 3; ++i) {
++            SDL_UpdateGamepads();
++            std::this_thread::sleep_for(std::chrono::milliseconds(15));
++        }
++    } else if (!session) {
++        return -1;
++    }
++    int count = 0;
++    SDL_JoystickID* ids = SDL_GetGamepads(&count);
++    std::map<std::string, int> ports;
++    for (int i = 0; ids != nullptr && i < count; ++i) {
++        const SDL_JoystickID id = ids[i];
++        json pad = json::object();
++        const SDL_GUID guid = SDL_GetJoystickGUIDForID(id);
++        Common::UUID uuid{};
++        std::memcpy(uuid.uuid.data(), guid.data, sizeof(guid.data));
++        const std::string g = uuid.RawString();
++        pad["guid"] = g;
++        pad["port"] = ports[g]++;
++        if (const char* name = SDL_GetGamepadNameForID(id)) {
++            pad["name"] = name;
++        }
++        pad["vendor"] = SDL_GetJoystickVendorForID(id);
++        pad["product"] = SDL_GetJoystickProductForID(id);
++        if (const char* path = SDL_GetJoystickPathForID(id)) {
++            pad["path"] = path;
++        }
++        const char* type = "standard";
++        switch (SDL_GetGamepadTypeForID(id)) {
++        case SDL_GAMEPAD_TYPE_XBOX360: type = "xbox360"; break;
++        case SDL_GAMEPAD_TYPE_XBOXONE: type = "xboxone"; break;
++        case SDL_GAMEPAD_TYPE_PS3: type = "ps3"; break;
++        case SDL_GAMEPAD_TYPE_PS4: type = "ps4"; break;
++        case SDL_GAMEPAD_TYPE_PS5: type = "ps5"; break;
++        case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO: type = "switch-pro"; break;
++        case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT: type = "joycon-left"; break;
++        case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT: type = "joycon-right"; break;
++        case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR: type = "joycon-pair"; break;
++        default: break;
++        }
++        pad["type"] = type;
++        if (!session) { // the serial number needs the device opened (not during a game)
++            if (SDL_Gamepad* gp = SDL_OpenGamepad(id)) {
++                if (const char* serial = SDL_GetGamepadSerial(gp)) {
++                    pad["serial"] = serial;
++                }
++                SDL_CloseGamepad(gp);
++            }
++        }
++        list.push_back(pad);
++    }
++    SDL_free(ids);
++    if (!session) {
++        SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
++    }
++    const std::string text = list.dump();
++    if (buf != nullptr && buf_len > 0) {
++        const auto n = std::min<std::size_t>(text.size(), static_cast<std::size_t>(buf_len - 1));
++        std::memcpy(buf, text.data(), n);
++        buf[n] = '\0';
++    }
++    return static_cast<int32_t>(text.size());
++}
++
+ NEXUS_API void nexus_engine_focus(void) {
+ #ifdef _WIN32
+     if (void* hwnd = E().window_handle.load()) {
+diff --git a/src/tests/CMakeLists.txt b/src/tests/CMakeLists.txt
+index c9f73cace..702ab5f99 100644
+--- a/src/tests/CMakeLists.txt
++++ b/src/tests/CMakeLists.txt
+@@ -61,6 +61,7 @@ add_executable(tests
+     frontend_common/nx_archive.cpp
+     core/vfs_vector.cpp
+     core/file_sys_parsers.cpp
++    core/nexus_save_folders.cpp
+     input_common/calibration_lifetime.cpp
+     video_core/ampere_logged_numeric.cpp
+     video_core/ampere_logged_textures.cpp
+diff --git a/src/tests/core/nexus_save_folders.cpp b/src/tests/core/nexus_save_folders.cpp
+new file mode 100644
+index 000000000..7d5f54715
+--- /dev/null
++++ b/src/tests/core/nexus_save_folders.cpp
+@@ -0,0 +1,41 @@
++// SPDX-FileCopyrightText: 2026 NEXUS project
++// SPDX-License-Identifier: GPL-3.0-or-later
++
++// NEXUS save folders: when the host names a game's save folders, account and device saves of
++// that game resolve to them (by application ID, also for a program index of that application);
++// every other save keeps the upstream path, and an empty table changes nothing.
++
++#include <catch2/catch_test_macros.hpp>
++
++#include "core/file_sys/savedata_factory.h"
++#include "core/file_sys/vfs/vfs_vector.h"
++
++using FileSys::NexusSaveFolders;
++using FileSys::SaveDataFactory;
++using FileSys::SaveDataSpaceId;
++using FileSys::SaveDataType;
++
++TEST_CASE("NEXUS: game saves resolve to the folders NEXUS named", "[nexus][savedata]") {
++    const u128 user{0x1122334455667788ULL, 0x99AABBCCDDEEFF00ULL};
++    constexpr u64 oot = 0x0400486024DEC000ULL;
++    const FileSys::VirtualDir root = std::make_shared<FileSys::VectorVfsDirectory>();
++    const auto path = [&](SaveDataSpaceId space, SaveDataType type, u64 title) {
++        return SaveDataFactory::GetFullPath(oot, root, space, type, title, user, 0);
++    };
++    NexusSaveFolders().clear();
++    const std::string upstream = path(SaveDataSpaceId::User, SaveDataType::Account, oot);
++    REQUIRE(upstream.find("/user/save/0000000000000000/") == 0);
++
++    NexusSaveFolders()[oot] = {"0400486024DEC000-OOT", "0400486024DEC000-OOT (device)"};
++    CHECK(path(SaveDataSpaceId::User, SaveDataType::Account, oot) == "/0400486024DEC000-OOT");
++    CHECK(path(SaveDataSpaceId::User, SaveDataType::Account, 0) == "/0400486024DEC000-OOT"); // current program
++    CHECK(path(SaveDataSpaceId::User, SaveDataType::Device, oot) == "/0400486024DEC000-OOT (device)");
++    CHECK(path(SaveDataSpaceId::User, SaveDataType::Account, oot + 1) == "/0400486024DEC000-OOT"); // program index
++    // other games, other save types and spaces keep the upstream layout
++    CHECK(path(SaveDataSpaceId::User, SaveDataType::Account, 0x0100AAAA00010000ULL).find("/user/save/") == 0);
++    CHECK(path(SaveDataSpaceId::User, SaveDataType::Cache, oot).find("/user/save/cache/") == 0);
++    CHECK(path(SaveDataSpaceId::Temporary, SaveDataType::Temporary, oot).find("/temp/") == 0);
++
++    NexusSaveFolders().clear();
++    CHECK(path(SaveDataSpaceId::User, SaveDataType::Account, oot) == upstream);
++}

@@ -112,7 +112,7 @@ func TestMakeV16Fixtures(t *testing.T) {
 	writeKeys(t, sys, k)
 	os.WriteFile(filepath.Join(sys, "bad.keys"), []byte("hello\nthis is not a keys file\n"), 0o644)
 	writeTestFirmware(t, filepath.Join(sys, "Firmware 19.0.1"), k, "19.0.1", true, 40)
-	zipDir(t, filepath.Join(sys, "Firmware 19.0.1"), filepath.Join(sys, "Firmware 19.0.1.zip"))
+	zipFirmwareDir(t, filepath.Join(sys, "Firmware 19.0.1"), filepath.Join(sys, "Firmware 19.0.1.zip"))
 	writeTestFirmware(t, filepath.Join(sys, "incomplete"), k, "", false, 3)
 }
 

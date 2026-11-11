@@ -3,10 +3,8 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,6 +30,8 @@ type RunState struct {
 	Volume    int    `json:"volume"`
 	// Suspended: the game is paused and hidden while NEXUS Home is shown (session kept).
 	Suspended bool `json:"suspended,omitempty"`
+	// Fullscreen: the game window is fullscreen (F11 switches)
+	Fullscreen bool `json:"fullscreen,omitempty"`
 	// Stage, while starting: preparing (NEXUS writes the session) | loading (the engine reads the
 	// game) | starting (the game runs, first frame not shown yet). Shown on the loading screen.
 	Stage string `json:"stage,omitempty"`
@@ -238,7 +238,10 @@ func (e *Emulator) writeSessionConfig(g *Game, pr *Profile) (string, error) {
 			ini.SetSetting("Renderer", "nx2_frame_rate_limit", strconv.Itoa(int(clampF(float64(hz), 30, 240))))
 		}
 	}
-	if s.Emulator.ManageSaves && pr != nil {
+	if g != nil && g.TitleID != "" {
+		writeDisabledAddOns(ini, g.TitleID, e.app.Content.DisabledMods(g.TitleID)) // mods switched off for this game
+	}
+	if pr != nil { // every user has their own saves (saves.go)
 		dir := e.app.Profiles.SaveDir(pr.ID)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return "", fmt.Errorf("cannot create the user's save folder: %w", err)
@@ -271,6 +274,7 @@ func (e *Emulator) extraContents(g *Game) []string {
 			out = append(out, o.Path)
 		}
 	}
+	out = append(out, e.app.Content.EnabledUpdateFiles(g.TitleID)...) // Game Updates added in NEXUS
 	return out
 }
 
@@ -356,26 +360,25 @@ func (e *Emulator) Launch(g *Game, profileID string) error {
 	req := EngineRequest{Game: g.Path, DataDir: e.DataDir(), ConfigFile: cfg, Title: "NEXUS — " + g.Title,
 		Fullscreen: s.Emulator.Fullscreen, Volume: vol, OwnerWindow: e.app.UI.WindowHandle(),
 		Contents: e.extraContents(g), AutoMapController: e.inputProfileFor(g, pr) == "",
-		HomeKey: s.Emulator.HomeKey, HomeButton: s.Emulator.HomeButton}
+		HomeKey: s.Emulator.HomeKey, HomeButton: s.Emulator.HomeButton,
+		FullscreenKey: s.Emulator.FullscreenKey, ScreenshotKey: s.Emulator.ScreenshotKey, CaptureButton: s.Emulator.CaptureButton,
+		ScreenshotDir: e.app.Media.ScreenshotsDir(), ScreenshotName: captureName(g),
+		RevealOnRequest: true, RevealTimeoutMs: 1500, Controllers: e.app.Controllers.ForSession(pr)}
+	if s.Emulator.FadeIn {
+		req.FadeInMs = 300
+	}
 	if req.AutoMapController {
 		layout, _, _ := e.EffectiveLayout(g, pr)
 		req.ButtonMap, req.ControllerType = layout.Resolve(), layout.ControllerType
 	}
 	_ = os.MkdirAll(e.DataDir(), 0o755)
 	e.app.Log.Printf("engine: start %s (%s)", g.Title, g.Path)
-	manage := s.Emulator.ManageSaves && pr != nil
-	if manage {
-		// readable save folders -> the title-ID paths the engine uses (moved back afterwards)
-		if n, err := e.app.Saves.Assemble(profileID); err != nil {
-			e.app.Log.Printf("saves: %v", err)
-		} else if n > 0 {
-			e.app.Log.Printf("saves: %d game folder(s) ready for the engine", n)
-		}
+	if pr != nil {
+		// the engine reads and writes each game's save directly in the user's game folders
+		e.app.Saves.Tidy(profileID)
+		req.SaveFolders = e.app.Saves.SaveFolders(profileID)
 	}
 	if err := host.Start(req); err != nil {
-		if manage {
-			_, _ = e.app.Saves.Organize(profileID)
-		}
 		return &LaunchError{Code: "start-failed", Message: "The NEXUS engine could not start the game.", Detail: err.Error()}
 	}
 	st := RunState{Running: true, Phase: "starting", Stage: "preparing", Started: nowUnix(), ProfileID: profileID, Mode: "game",
@@ -404,6 +407,8 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 	guideWas := false
 	homeSeen := uint64(0)
 	lastHome := time.Time{}
+	shotsSeen := uint64(0)
+	revealAsked := time.Time{}
 	checkpoint := func() {
 		if st.Phase != "playing" {
 			return
@@ -467,20 +472,43 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 				e.app.Events.Emit("emulator.home", st)
 			}
 		}
-		// NEXUS Home: the Xbox Guide button (read here through XInput), or the Home key / a
-		// controller's Home button seen by the game window (counted by the engine). Either one
-		// toggles between the game and NEXUS Home; presses close together count once.
+		// NEXUS Home: one press while playing suspends the game and shows NEXUS Home — it never
+		// switches back (Resume Game does that), so presses seen twice (the engine's count and
+		// the Xbox Guide button read here through XInput, or a held button) cannot flicker
+		// between the game and NEXUS. While NEXUS is showing, a press just goes to the Home screen.
 		g := guidePressed() && s.Emulator.HomeButton
-		home := g && !guideWas
-		if es.HomePresses > homeSeen {
-			home = true
-		}
-		homeSeen = es.HomePresses
-		if home && st.Phase == "playing" && time.Since(lastHome) > 400*time.Millisecond {
+		home := (g && !guideWas) || es.HomePresses > homeSeen
+		homeSeen, guideWas = es.HomePresses, g
+		if home && st.Phase == "playing" && time.Since(lastHome) > 500*time.Millisecond {
 			lastHome = time.Now()
-			host.Suspend(!st.Suspended)
+			if !st.Suspended && !es.Suspended {
+				host.Suspend(true)
+			} else {
+				e.app.Events.Emit("input.home", nil)
+			}
 		}
-		guideWas = g
+		// the first frame is ready: NEXUS fades its loading screen out, then the game appears
+		// (the interface asks for the reveal; this is the safety net if it does not)
+		if es.Ready && !es.Shown {
+			if revealAsked.IsZero() {
+				revealAsked = time.Now()
+				e.app.Events.Emit("launch.reveal", map[string]any{"gameKey": st.GameKey})
+			} else if time.Since(revealAsked) > 900*time.Millisecond {
+				host.Reveal()
+			}
+		}
+		if es.Fullscreen != st.Fullscreen {
+			st.Fullscreen = es.Fullscreen
+			e.setState(st)
+		}
+		// screenshots saved by the engine (F12 / capture button)
+		if es.Screenshots > shotsSeen {
+			shotsSeen = es.Screenshots
+			if es.LastScreenshot != "" {
+				e.app.Media.Record(es.LastScreenshot, MediaInfo{GameKey: st.GameKey, TitleID: e.app.Library.TitleIDOf(st.GameKey), Title: st.Title, ProfileID: st.ProfileID})
+				e.app.Events.Emit("media.added", map[string]any{"type": "screenshot", "title": st.Title, "id": e.app.Media.rel(es.LastScreenshot)})
+			}
+		}
 		if final.State != "" {
 			break
 		}
@@ -517,9 +545,7 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 	}
 	e.app.Profiles.Checkpoint(nil)
 	e.setState(RunState{Volume: e.Volume()}) // session over: allows the save organiser to run
-	if _, err := e.app.Saves.Organize(st.ProfileID); err != nil {
-		e.app.Log.Printf("saves: %v", err)
-	}
+	e.app.Saves.Tidy(st.ProfileID)           // saves an older engine wrote in its own layout
 	e.app.Compat.Record(st.GameKey, st.Title, gameSystem, sawGame, crashed, secs, final.Code)
 	e.app.Log.Printf("engine: session ended state=%s code=%s after %s (played %ds)", final.State, final.Code,
 		time.Since(start).Round(time.Second), secs)
@@ -604,70 +630,6 @@ func (e *Emulator) SetVolume(p int) error {
 		e.setState(st)
 	}
 	return nil
-}
-
-// ---------- saves from an earlier emulator installation
-
-// PreviousSaveDirs are save folders of emulators the user may have used before NEXUS, offered
-// for a one-time copy into a NEXUS user (never moved or deleted).
-func (e *Emulator) PreviousSaveDirs() []string {
-	var out []string
-	// the emulator imported from first, then any other emulator found on this PC
-	imported := e.readImportRecord().Source
-	srcs := e.LegacySources()
-	sort.SliceStable(srcs, func(i, j int) bool { return srcs[i].ID == imported && srcs[j].ID != imported })
-	for _, s := range srcs {
-		if s.ID != "ryujinx" {
-			out = append(out, filepath.Join(s.Path, "nand", "user", "save"))
-		}
-	}
-	out = append(out, filepath.Join(e.app.Paths.Root, "Emulator", "Lichii", "user", "nand", "user", "save"),
-		filepath.Join(e.DataDir(), "nand", "user", "save"))
-	return out
-}
-
-func (e *Emulator) NandSaveDir() string {
-	for _, d := range e.PreviousSaveDirs() {
-		if dirHasFiles(d) {
-			return d
-		}
-	}
-	return ""
-}
-
-func (e *Emulator) ImportNandSaves(profileID string, overwrite bool) (int, error) {
-	src := e.NandSaveDir()
-	if src == "" {
-		return 0, errors.New("No existing saves were found to import.")
-	}
-	dst := filepath.Join(e.app.Profiles.SaveDir(profileID), "user", "save")
-	if !overwrite && dirHasFiles(dst) {
-		conflict := ""
-		_ = filepath.Walk(src, func(p string, info os.FileInfo, err error) error {
-			if err == nil && !info.IsDir() {
-				rel, _ := filepath.Rel(src, p)
-				if fileExists(filepath.Join(dst, rel)) {
-					conflict = rel
-					return io.EOF
-				}
-			}
-			return nil
-		})
-		if conflict != "" {
-			return 0, fmt.Errorf("%w (%s). Confirm overwrite to replace this profile's copy.", errExists, conflict)
-		}
-	}
-	if overwrite && dirHasFiles(dst) {
-		bak := filepath.Join(e.app.Paths.Trash, "save-backups", profileID+"-"+time.Now().Format("20060102-150405"))
-		if _, err := copyTree(dst, bak, false); err != nil {
-			return 0, fmt.Errorf("backup before overwrite failed, nothing changed: %w", err)
-		}
-	}
-	n, err := copyTree(src, dst, overwrite)
-	if err == nil {
-		_, _ = e.app.Saves.Organize(profileID) // into readable game folders (never overwriting)
-	}
-	return n, err
 }
 
 // Status summarises the engine for the UI.

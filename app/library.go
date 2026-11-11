@@ -178,9 +178,6 @@ func (l *Library) keyPaths() []string {
 		paths = append(paths, l.app.Sys.ProdKeys(), l.app.Sys.TitleKeys())
 	}
 	paths = append(paths, filepath.Join(l.app.Emu.KeysDir(), "prod.keys"))
-	if ad := os.Getenv("APPDATA"); ad != "" {
-		paths = append(paths, filepath.Join(ad, "eden", "keys", "prod.keys"))
-	}
 	return paths
 }
 
@@ -295,11 +292,14 @@ func (l *Library) scan(force bool, onlyPath string) error {
 		if ok && ce.V < 2 && ce.Source == "nca" {
 			redo = true // re-read once to learn the publisher (artwork database matching)
 		}
+		if ok && ce.V < 3 && !ce.HasIcon {
+			redo = true // 0.3.0 reads NUP packages and larger/other-format icons: look again once
+		}
 		if redo || !ok || ce.Size != fi.Size() || ce.ModTime != fi.ModTime().Unix() || ce.KeysRev != krev {
 			info, ierr := IdentifyFile(path, ks)
 			ce = cacheEntry{Size: fi.Size(), ModTime: fi.ModTime().Unix(), TitleID: info.TitleID, FullID: info.FullID,
 				Kind: info.Kind, Name: info.Name, Version: info.Version, Source: info.Source, KeysRev: krev,
-				Publisher: info.Publisher, V: 2}
+				Publisher: info.Publisher, V: 3}
 			if ierr != nil {
 				ce.Err = ierr.Error()
 			}
@@ -694,4 +694,12 @@ func (l *Library) RefreshArt() {
 	for i := range l.games {
 		l.decorateLocked(&l.games[i])
 	}
+}
+
+// TitleIDOf: the base title ID of a library game ("" if unknown).
+func (l *Library) TitleIDOf(key string) string {
+	if g, ok := l.Get(key); ok {
+		return g.TitleID
+	}
+	return ""
 }

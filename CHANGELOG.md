@@ -4,6 +4,23 @@ All notable NEXUS changes will be recorded here.
 
 The project is in preview. Releases are numbered from **0.0.0**; the first intended stable release is **1.0.0**. Every release, with its notes and download, is on the [Releases page](https://github.com/0ryzin/Nexus/releases).
 
+## 0.3.0 — Windows x64 (preview)
+
+- NEXUS Engine 0.4.0: upstream Lichii build-160 (30 commits: Ocarina of Time guard-house freeze fix, Vulkan pipeline/memory fixes, shader and CPU performance work, stability fixes) + patch 0014.
+- Fixed: the controller Home button opened the game's "return to HOME" prompt and could flicker between the game and NEXUS. The button no longer reaches the game, and one press only ever goes to NEXUS Home.
+- Fixed: Switch 2 games in NUP packages (such as the Ocarina of Time remake) had no title or icon from their own files; NEXUS now reads NUP metadata, and NSP/XCI icons are read more tolerantly.
+- Compatibility: problems recorded with an older engine are history, not the current status; known engine fixes are named.
+- Save Data overhaul: `UserData\Saves\<PLAYER_ID>-<name>\<GAME_ID>-<SHORT>`, read and written by the engine directly; import with player/game identification (folder IDs, Ryujinx metadata), export, backup, restore, delete; one-time migration from 0.2 with a backup first.
+- Media tab: screenshots (F12 / controller capture button) with game and date; recordings placed in the Media folder are shown and played.
+- F11: fullscreen/window while playing. Smoother loading-to-game transition (the loading screen fades out before the game window appears).
+- Controllers: remembered by serial number where available, chosen per user and player, own layouts.
+- Game Updates and Mods per game, checked by content; disabled mods passed to the engine.
+- NVIDIA DLSS files: detection, consent with NVIDIA's licences, download from NVIDIA's Streamline release, checksum and signature check.
+- Automatic NEXUS updates: check, download, SHA-256 check, staged install, rollback if the new version does not start. A read-only access token is needed while the repository is private.
+- Removed: importing other emulators' system files and data (Lichii, Eden, Ryujinx …). NEXUS manages its own system files.
+- Light theme: white background with light-grey panels; selected and hovered states use the accent in both themes.
+- Release notes: [docs/releases/v0.3.0.md](docs/releases/v0.3.0.md).
+
 ## 0.2.0 — Windows x64 (preview)
 
 - Fixed: a black window with a white frame covered the screen while a game loaded. NEXUS Engine 0.3.0 (patch 0013) keeps the game window hidden until its first frame.

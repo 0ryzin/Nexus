@@ -52,6 +52,7 @@ type Controls struct {
 
 type Profile struct {
 	ID        string   `json:"id"`
+	PlayerID  string   `json:"playerId,omitempty"` // 32-hex player identifier: names the save folder, never changes
 	Name      string   `json:"name"`
 	Avatar    Avatar   `json:"avatar"`
 	CreatedAt int64    `json:"createdAt"`
@@ -256,13 +257,13 @@ func (st *ProfileStore) Create(name string, av Avatar) (Profile, error) {
 	if av.Kind == "" {
 		av = Avatar{Kind: "preset", Preset: avatarGlyphs[n%len(avatarGlyphs)], Color: avatarColors[n%len(avatarColors)]}
 	}
-	pr := &Profile{ID: newID(), Name: name, Avatar: av, CreatedAt: nowUnix(),
+	pr := &Profile{ID: newID(), PlayerID: newPlayerID(), Name: name, Avatar: av, CreatedAt: nowUnix(),
 		Theme: DefaultTheme(), Controls: DefaultControls(), Sort: "recent"}
 	st.normalise(pr)
 	if err := os.MkdirAll(st.profileDir(pr.ID), 0o755); err != nil {
 		return Profile{}, err
 	}
-	if err := os.MkdirAll(st.saveDirNamed(pr.ID, pr.Name), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(st.p.Saves, playerFolderName(pr.PlayerID, pr.Name)), 0o755); err != nil {
 		return Profile{}, err
 	}
 	st.Profiles = append(st.Profiles, pr)
@@ -292,6 +293,7 @@ func (st *ProfileStore) Update(id string, patch json.RawMessage) (Profile, error
 		}
 		next.Name = name
 		next.ID = p.ID
+		next.PlayerID = p.PlayerID
 		next.CreatedAt = p.CreatedAt
 		st.normalise(&next)
 		*p = next
@@ -320,7 +322,7 @@ func (st *ProfileStore) Delete(id string) (string, error) {
 	if err := os.MkdirAll(archive, 0o755); err != nil {
 		return "", err
 	}
-	if sd := st.saveDirNamed(id, pr.Name); dirExists(sd) {
+	if sd := st.SaveDir(id); dirExists(sd) {
 		if err := os.Rename(sd, filepath.Join(archive, "Saves")); err != nil {
 			return "", fmt.Errorf("could not archive saves: %w", err)
 		}
@@ -338,28 +340,44 @@ func (st *ProfileStore) Delete(id string) (string, error) {
 
 func (st *ProfileStore) profileDir(id string) string { return filepath.Join(st.p.Profiles, id) }
 
-// SaveDir is the user's save folder, "<profile id> - <profile name>" in NEXUS data\Saves (older
-// versions used "<profile id>"; such folders are found and renamed by the save organiser). The
-// engine gets this folder as its save directory.
+// SaveDir is the user's save folder, "<PLAYER_ID>-<name>" in UserData\Saves (see saves.go). It
+// is found by the player ID, so a renamed folder name is still found.
 func (st *ProfileStore) SaveDir(id string) string {
-	name := ""
-	if p, ok := st.Get(id); ok {
-		name = p.Name
+	p, ok := st.Get(id)
+	if !ok {
+		return filepath.Join(st.p.Saves, "_unknown-"+safeFolderName(id))
 	}
-	return st.saveDirNamed(id, name)
-}
-
-func (st *ProfileStore) saveDirNamed(id, name string) string {
+	if p.PlayerID == "" { // not migrated yet (Migrate assigns one)
+		return filepath.Join(st.p.Saves, safeFolderName(id))
+	}
 	entries, _ := os.ReadDir(st.p.Saves)
 	for _, e := range entries {
-		if e.IsDir() && (e.Name() == id || strings.HasPrefix(e.Name(), id+" - ")) {
+		if m := rePlayerDir.FindStringSubmatch(e.Name()); e.IsDir() && m != nil && strings.EqualFold(m[1], p.PlayerID) {
 			return filepath.Join(st.p.Saves, e.Name())
 		}
 	}
-	if strings.TrimSpace(name) == "" {
-		return filepath.Join(st.p.Saves, id)
+	return filepath.Join(st.p.Saves, playerFolderName(p.PlayerID, p.Name))
+}
+
+// SetPlayerID gives a user their player ID (once; used by the save migration).
+func (st *ProfileStore) SetPlayerID(id, playerID string) error {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	for _, p := range st.Profiles {
+		if p.ID == id {
+			if p.PlayerID != "" {
+				return nil
+			}
+			for _, o := range st.Profiles {
+				if strings.EqualFold(o.PlayerID, playerID) {
+					playerID = newPlayerID() // two users never share a player ID
+				}
+			}
+			p.PlayerID = strings.ToUpper(playerID)
+			return st.saveLocked()
+		}
 	}
-	return filepath.Join(st.p.Saves, id+" - "+safeFolderName(name))
+	return errors.New("Profile not found.")
 }
 
 func (st *ProfileStore) AvatarPath(id string) string {

@@ -22,7 +22,7 @@ See [Third-party notices, licences and acknowledgements](../THIRD_PARTY_NOTICES.
 ## Current implementation status (NEXUS 2.2)
 
 **The engine is compiled, tested and shipped in the NEXUS ZIP.** The repository's Windows build
-(`.github/workflows/nexus-build.yml`) checks out upstream Lichii build-150, applies the NEXUS patch
+(`.github/workflows/nexus-build.yml`) checks out upstream Lichii build-160, applies the NEXUS patch
 series in `engine/patches`, and builds `nexus_engine.dll` with clang-cl. Every build then:
 
 - runs the engine's test suite (all passing);

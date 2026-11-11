@@ -62,7 +62,7 @@ type GameInfo struct {
 	Name      string
 	Publisher string
 	Version   string
-	Icon      []byte // JPEG
+	Icon      []byte // JPEG (Switch control data) or another image format (NUP metadata)
 	Source    string // how the ID was obtained
 }
 
@@ -563,6 +563,12 @@ func IdentifyFile(path string, ks KeySet) (GameInfo, error) {
 	switch ext {
 	case "nro":
 		return identifyNRO(f, info)
+	case "nup":
+		fi, err := f.Stat()
+		if err != nil {
+			return info, err
+		}
+		return identifyNUP(f, fi.Size(), info)
 	case "nsp", "nsz":
 		entries, err := parsePartition(f, 0)
 		if err != nil {
@@ -642,10 +648,15 @@ func identifyEntries(f io.ReaderAt, entries []pfsEntry, ks KeySet, info GameInfo
 		rom, err := control.openRomFS(f, controlOff, ks, tickets)
 		if err == nil {
 			files, err := romfsFiles(rom, func(n string) bool {
-				return n == "control.nacp" || strings.HasPrefix(n, "icon_")
-			}, 1<<20)
+				ln := strings.ToLower(n)
+				return ln == "control.nacp" || strings.HasPrefix(ln, "icon_")
+			}, 8<<20)
 			if err == nil {
-				if nacp, ok := files["control.nacp"]; ok {
+				nacp, ok := files["control.nacp"]
+				if !ok {
+					nacp, ok = files["Control.nacp"]
+				}
+				if ok {
 					if n, v := parseNACPName(nacp); n != "" {
 						info.Name = n
 						info.Publisher = parseNACPPublisher(nacp)
@@ -655,14 +666,14 @@ func identifyEntries(f io.ReaderAt, entries []pfsEntry, ks KeySet, info GameInfo
 					}
 				}
 				for _, lang := range []string{"AmericanEnglish", "BritishEnglish", "Japanese", "French", "German"} {
-					if ic, ok := files["icon_"+lang+".dat"]; ok {
+					if ic, ok := files["icon_"+lang+".dat"]; ok && isImage(ic) {
 						info.Icon = ic
 						break
 					}
 				}
 				if info.Icon == nil {
 					for n, d := range files {
-						if strings.HasPrefix(n, "icon_") {
+						if strings.HasPrefix(strings.ToLower(n), "icon_") && isImage(d) {
 							info.Icon = d
 							break
 						}

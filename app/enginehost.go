@@ -14,6 +14,28 @@ type EngineHost interface {
 	Focus()
 	// Suspend pauses the game and hides its window (NEXUS Home); false resumes it.
 	Suspend(on bool)
+	// Reveal shows the game window after its first frame (engine 0.4; no-op for older builds).
+	Reveal()
+	// Controllers lists connected game controllers (engine 0.4; error for older builds).
+	Controllers() ([]PadInfo, error)
+}
+
+// PadInfo is one connected game controller as the engine (SDL) sees it.
+type PadInfo struct {
+	GUID    string `json:"guid"`
+	Port    int    `json:"port"`
+	Name    string `json:"name"`
+	Type    string `json:"type"` // xbox360 | xboxone | ps3 | ps4 | ps5 | switch-pro | joycon-* | standard
+	Vendor  int    `json:"vendor"`
+	Product int    `json:"product"`
+	Path    string `json:"path,omitempty"`
+	Serial  string `json:"serial,omitempty"`
+}
+
+// EnginePad is a controller chosen for a player (request "controllers").
+type EnginePad struct {
+	GUID string `json:"guid"`
+	Port int    `json:"port"`
 }
 
 // EngineRequest is the JSON sent to nexus_engine_start.
@@ -36,8 +58,25 @@ type EngineRequest struct {
 	ControllerType string            `json:"controllerType,omitempty"`
 	// NEXUS Home: keyboard key (SDL key name, "" = none; the engine leaves it to the game when a
 	// game control uses it) and the controller's Guide/Home button
-	HomeKey    string `json:"homeKey"`
-	HomeButton bool   `json:"homeButton"`
+	// SaveFolders: for each game (base title ID), the folder of its account and device save
+	// inside the user's save directory: {"0400…":{"account":"0400…-OOT","device":"0400…-OOT (device)"}}
+	SaveFolders map[string]map[string]string `json:"saveFolders,omitempty"`
+	HomeKey     string                       `json:"homeKey"`
+	HomeButton  bool                         `json:"homeButton"`
+	// F11 / F12 by default ("" = off); keys used by the game controls go to the game
+	FullscreenKey string `json:"fullscreenKey"`
+	ScreenshotKey string `json:"screenshotKey"`
+	CaptureButton bool   `json:"captureButton"` // controller capture/share button: screenshot
+	ScreenshotDir string `json:"screenshotDir,omitempty"`
+	// ScreenshotName starts the screenshot file name (the game's short name)
+	ScreenshotName string `json:"screenshotName,omitempty"`
+	// Controllers chosen for players 1, 2, … (empty: the first connected controller)
+	Controllers []EnginePad `json:"controllers,omitempty"`
+	// RevealOnRequest: after its first frame the game window waits for Reveal (NEXUS fades its
+	// loading screen out first), at most RevealTimeoutMs; FadeInMs fades the window in
+	RevealOnRequest bool `json:"revealOnRequest,omitempty"`
+	RevealTimeoutMs int  `json:"revealTimeoutMs,omitempty"`
+	FadeInMs        int  `json:"fadeInMs,omitempty"`
 }
 
 // EngineStatus is the JSON returned by nexus_engine_status.
@@ -59,6 +98,12 @@ type EngineStatus struct {
 	LoadStage string `json:"loadStage,omitempty"`
 	LoadDone  uint64 `json:"loadDone,omitempty"`
 	LoadTotal uint64 `json:"loadTotal,omitempty"`
+	// engine 0.4
+	Ready              bool   `json:"ready,omitempty"` // first frame drawn (window may wait for Reveal)
+	Fullscreen         bool   `json:"fullscreen,omitempty"`
+	Screenshots        uint64 `json:"screenshots,omitempty"`
+	ScreenshotFailures uint64 `json:"screenshotFailures,omitempty"`
+	LastScreenshot     string `json:"lastScreenshot,omitempty"`
 }
 
 // EngineBuildInfo is nexus_engine_info plus what NEXUS knows about the installed build.

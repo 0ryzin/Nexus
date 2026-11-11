@@ -8,6 +8,9 @@ import (
 )
 
 func main() {
+	if len(os.Args) >= 2 && os.Args[1] == "--apply-update" {
+		os.Exit(applyUpdate(os.Args[2:])) // the new NEXUS.exe installing itself (updater.go)
+	}
 	root := resolveRoot()
 	if len(os.Args) >= 3 && os.Args[1] == "--engine-check" {
 		os.Exit(engineCheck(root, os.Args[2]))
@@ -42,8 +45,26 @@ func main() {
 		app.Library = NewLibrary(app)
 	}
 
-	// readable save folders: brings back folders of a crashed session, migrates old "<id>" folders
-	app.Saves.OrganizeAll()
+	// saves: one-time conversion to the 0.3.0 layout (with a backup first), then adopt saves an
+	// older engine wrote in its own layout
+	if err := app.Saves.Migrate(); err != nil {
+		app.Log.Printf("saves: %v", err)
+		app.saveMigrationErr = err.Error()
+	}
+	app.Saves.TidyAll()
+	app.Emu.cleanDLSSPartials() // an interrupted DLSS download leaves no half files
+	// started by the updater (updater.go): use the engine that came with the update and report a
+	// good start, or show why an update was rolled back
+	for i := 1; i+1 < len(os.Args); i++ {
+		switch os.Args[i] {
+		case "--update-applied":
+			app.preferBundledEngine()
+			app.confirmUpdateStart(os.Args[i+1])
+		case "--update-failed":
+			app.updateFailed = os.Args[i+1]
+			app.Log.Printf("update: rolled back (%s)", os.Args[i+1])
+		}
+	}
 
 	// play time from a session interrupted by a crash of NEXUS or the PC
 	if rec := app.Profiles.RecoverLiveSession(); rec != nil {
@@ -54,7 +75,7 @@ func main() {
 			if err := app.Library.Scan(); err != nil {
 				app.Log.Printf("initial scan: %v", err)
 			}
-			app.Saves.OrganizeAll() // names for games found by the scan
+			app.Saves.TidyAll() // names for games found by the scan
 		}()
 	}
 	// Profile icons: extract the console's own icons from the user's firmware
@@ -92,6 +113,7 @@ func main() {
 	app.Log.Printf("UI server at %s", srv.ln.Addr())
 	// Load and verify the bundled engine in the background while the interface starts, so the
 	// first game launch does not wait for it and the engine status is ready on the home screen.
+	app.Updater.CheckInBackground()
 	app.StartPerfOverlay() // in-game performance bar (idle unless a game is in front and it is on)
 	app.Emu.CheckEngineInBackground(func(ok bool, msg string) {
 		if !ok {

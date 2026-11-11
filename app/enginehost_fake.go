@@ -1,10 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"math"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +26,8 @@ type fakeEngine struct {
 	stop    chan bool
 	volume  int
 	samples []int16 // last audio buffer "played"
+	reveal  bool
+	readyAt time.Time
 }
 
 func newFakeEngine() *fakeEngine { return &fakeEngine{st: EngineStatus{State: "idle"}, volume: 100} }
@@ -43,6 +51,7 @@ func (f *fakeEngine) Start(req EngineRequest) error {
 	}
 	f.req, f.volume = req, req.Volume
 	f.st = EngineStatus{State: "starting", Volume: req.Volume}
+	fakeLast = f
 	f.stop = make(chan bool, 1)
 	go f.run(req)
 	return nil
@@ -110,6 +119,15 @@ func (f *fakeEngine) run(req EngineRequest) {
 			}
 			f.st.Frames += 3
 			f.samples = toneBuffer(f.volume)
+			// like engine 0.4: ready with the first frame, shown at once or after Reveal
+			if !f.st.Ready {
+				f.st.Ready, f.readyAt = true, time.Now()
+			}
+			timeout := time.Duration(max(f.req.RevealTimeoutMs, 0)) * time.Millisecond
+			if !f.st.Shown && (!f.req.RevealOnRequest || f.reveal || time.Since(f.readyAt) > timeout) {
+				f.st.Shown = true
+				f.st.Fullscreen = f.req.Fullscreen
+			}
 			f.mu.Unlock()
 			if strings.Contains(req.Game, "crash") && f.Status().Frames > 15 {
 				f.set(func(s *EngineStatus) {
@@ -209,4 +227,68 @@ var _ = json.Marshal
 // fakeLast is the stand-in engine of the current session (development: simulate a Home press).
 var fakeLast *fakeEngine
 
-func (f *fakeEngine) PressHome() { f.set(func(s *EngineStatus) { s.HomePresses++ }) }
+func (f *fakeEngine) PressHome() {
+	f.set(func(s *EngineStatus) {
+		if !s.Suspended { // like the engine: presses while NEXUS is showing are not counted
+			s.HomePresses++
+		}
+	})
+}
+
+func (f *fakeEngine) Reveal() {
+	f.mu.Lock()
+	f.reveal = true
+	f.mu.Unlock()
+}
+
+// Controllers: NEXUS_FAKE_PADS (JSON) or an Xbox and a DualSense controller.
+func (f *fakeEngine) Controllers() ([]PadInfo, error) {
+	if v := os.Getenv("NEXUS_FAKE_PADS"); v != "" {
+		var out []PadInfo
+		err := json.Unmarshal([]byte(v), &out)
+		return out, err
+	}
+	return []PadInfo{
+		{GUID: "030000005e040000e002000000007801", Name: "Xbox Wireless Controller", Type: "xboxone", Vendor: 0x045e, Product: 0x02e0, Serial: "XB-0001"},
+		{GUID: "050000004c050000e60c000000006801", Name: "DualSense Wireless Controller", Type: "ps5", Vendor: 0x054c, Product: 0x0ce6, Serial: "a4:ae:12:00:00:01"},
+	}, nil
+}
+
+// PressScreenshot: like the engine's F12 / capture button, a PNG with a unique name.
+func (f *fakeEngine) PressScreenshot() error {
+	f.mu.Lock()
+	req, shown := f.req, f.st.Shown
+	f.mu.Unlock()
+	if req.ScreenshotDir == "" || !shown {
+		return errors.New("no screenshot folder or game window")
+	}
+	_ = os.MkdirAll(req.ScreenshotDir, 0o755)
+	stamp := time.Now().Format("2006-01-02 15-04-05")
+	name := req.ScreenshotName + " " + stamp + ".png"
+	path := filepath.Join(req.ScreenshotDir, name)
+	for n := 2; fileExists(path); n++ {
+		path = filepath.Join(req.ScreenshotDir, fmt.Sprintf("%s %s (%d).png", req.ScreenshotName, stamp, n))
+	}
+	if err := os.WriteFile(path, fakePNG(), 0o644); err != nil {
+		return err
+	}
+	f.set(func(s *EngineStatus) { s.Screenshots++; s.LastScreenshot = path })
+	return nil
+}
+
+// ToggleFullscreen: like F11.
+func (f *fakeEngine) ToggleFullscreen() {
+	f.set(func(s *EngineStatus) { s.Fullscreen = !s.Fullscreen })
+}
+
+func fakePNG() []byte {
+	img := image.NewRGBA(image.Rect(0, 0, 320, 180))
+	for y := 0; y < 180; y++ {
+		for x := 0; x < 320; x++ {
+			img.Set(x, y, color.RGBA{uint8(x * 255 / 320), uint8(y * 255 / 180), 160, 255})
+		}
+	}
+	var b bytes.Buffer
+	_ = png.Encode(&b, img)
+	return b.Bytes()
+}

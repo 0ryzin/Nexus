@@ -1,9 +1,32 @@
 package main
 
+// Save data (NEXUS 0.3.0 layout).
+//
+//	<data>\UserData\Saves\
+//	  <PLAYER_ID>-<Profile name>\        one folder per NEXUS user; PLAYER_ID is that user's
+//	                                      32-hex player identifier (the engine's user ID form)
+//	    <GAME_ID>-<SHORT>\                the game's save, exactly as the game wrote it
+//	      slot_00\ … account.sav option.sav
+//	    <GAME_ID>-<SHORT> (device)\       the game's device save, if it has one
+//	    user\                             engine caches and temporary data (hidden)
+//
+// The NEXUS engine is told, for every library game, which folder holds its account and device
+// save (request "saveFolders"), and reads and writes there directly: nothing is moved before or
+// after a session. Each NEXUS user has their own folder, given to the engine as its save
+// directory, so users never see each other's saves.
+//
+// Save data is never deleted or overwritten without the user's confirmation, and never without a
+// backup first (UserData\Backups\Saves). Saves written by an older engine in its own layout
+// (user\save\0000000000000000\<user>\<game>) are adopted into the layout above at the end of a
+// session or at start-up; a game folder that already has data is never replaced by them — the
+// other copy is kept next to it as "<GAME_ID>-<SHORT> (other copy N)" and shown in Save Data.
+
 import (
 	"archive/zip"
 	"bytes"
+	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,59 +38,24 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
-// Save organisation.
-//
-// Every NEXUS user has one save folder, named "<profile id> - <profile name>", in NEXUS data\Saves.
-// Inside it each game's saves live in a readable folder such as "BOTW - The Legend of Zelda
-// Breath of the Wild". The engine itself stores saves under title-ID paths
-// (user/save/0000000000000000/<console user>/<title id>); NEXUS keeps a mapping
-// (.nexus-saves.json in the user's folder) between the readable folders and those paths:
-//
-//   - before a game starts, the user's readable folders are moved (renamed, same drive, instant)
-//     to the paths the engine expects;
-//   - when the session ends — or at the next start after a crash — they are moved back.
-//
-// Nothing is ever deleted or overwritten: name clashes get a " (2)" suffix and conflicts are left
-// where they are and logged. Profile IDs, console user IDs and title IDs are never changed.
-
-const saveMapFile = ".nexus-saves.json"
-
-type saveEntry struct {
-	TitleID    string `json:"titleId"`
-	Game       string `json:"game"`
-	EnginePath string `json:"enginePath,omitempty"` // slash path relative to the user's save folder ("" = not created by the engine yet)
-	Kind       string `json:"kind"`                 // account | device | future-account | future-device | pending
-}
-
-type saveMap struct {
-	Version int                   `json:"version"`
-	Folders map[string]*saveEntry `json:"folders"` // readable folder name -> entry
-	Session []string              `json:"session,omitempty"`
-}
-
-type SaveFolder struct {
-	Folder  string `json:"folder"`
-	Path    string `json:"path"`
-	TitleID string `json:"titleId"`
-	Game    string `json:"game"`
-	Bytes   int64  `json:"bytes"`
-	Files   int    `json:"files"`
-	Kind    string `json:"kind"`
-}
-
-type SaveOrganizer struct {
-	app *App
-	mu  sync.Mutex
-}
-
-func NewSaveOrganizer(a *App) *SaveOrganizer { return &SaveOrganizer{app: a} }
+const (
+	saveLayoutFile   = ".nexus-layout.json" // in the Saves root: layout version
+	saveLayoutV      = 2
+	oldSaveMapFile   = ".nexus-saves.json" // 0.2.x readable-folder mapping (kept, renamed)
+	saveExportMarker = "nexus-saves.json"  // in exported ZIPs
+)
 
 var (
 	reTitleDir   = regexp.MustCompile(`^[0-9A-Fa-f]{16}$`)
 	reUserDir    = regexp.MustCompile(`^[0-9A-Fa-f]{32}$`)
 	reBadWinChar = regexp.MustCompile(`[<>:"/\\|?*\x00-\x1f]`)
+	reGameFolder = regexp.MustCompile(`^([0-9A-Fa-f]{16})(-[^()]*)?( \(device\))?$`)
+	reOtherCopy  = regexp.MustCompile(`^([0-9A-Fa-f]{16})(-[^()]*)?( \(device\))? \(other copy \d+\)$`)
+	rePlayerDir  = regexp.MustCompile(`^([0-9A-Fa-f]{32})(-.*)?$`)
+	reSlotDir    = regexp.MustCompile(`(?i)^slot_?(\d+)$`)
 	winReserved  = map[string]bool{"CON": true, "PRN": true, "AUX": true, "NUL": true, "COM1": true, "COM2": true, "COM3": true,
 		"COM4": true, "COM5": true, "COM6": true, "COM7": true, "COM8": true, "COM9": true, "LPT1": true, "LPT2": true, "LPT3": true}
 )
@@ -86,7 +74,7 @@ func safeFolderName(s string) string {
 	return s
 }
 
-// gameCodes: well-known short names. Games not listed use their full name.
+// gameCodes: well-known short names.
 var gameCodes = []struct {
 	re   *regexp.Regexp
 	code string
@@ -112,98 +100,150 @@ var gameCodes = []struct {
 	{regexp.MustCompile(`(?i)xenoblade chronicles 3`), "XC3"},
 	{regexp.MustCompile(`(?i)xenoblade chronicles 2`), "XC2"},
 	{regexp.MustCompile(`(?i)fire emblem:? three houses`), "FE3H"},
-	{regexp.MustCompile(`(?i)pok[eé]mon (scarlet|violet)`), "PKMN SV"},
+	{regexp.MustCompile(`(?i)pok[eé]mon (scarlet|violet)`), "PKMNSV"},
 	{regexp.MustCompile(`(?i)pok[eé]mon legends:? arceus`), "PLA"},
 	{regexp.MustCompile(`(?i)kirby and the forgotten land`), "KATFL"},
 	{regexp.MustCompile(`(?i)luigi'?s mansion 3`), "LM3"},
+	{regexp.MustCompile(`(?i)donkey kong bananza`), "DKB"},
 }
 
-func gameCode(title string) string {
+var smallWords = map[string]bool{"the": true, "of": true, "and": true, "a": true, "an": true, "to": true, "in": true, "for": true, "on": true, "at": true, "de": true, "la": true, "le": true}
+
+// GameShortName is the short identifier used in save folder names: a well-known code (OOT,
+// BOTW…) or the initials of the title ("Cloud Garden" → "CG", "Mario Kart 8" → "MK8").
+func GameShortName(title string) string {
 	for _, g := range gameCodes {
 		if g.re.MatchString(title) {
 			return g.code
 		}
 	}
-	return ""
+	var b strings.Builder
+	for _, w := range strings.FieldsFunc(title, func(r rune) bool {
+		return !(r >= '0' && r <= '9' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r > 127)
+	}) {
+		if smallWords[strings.ToLower(w)] {
+			continue
+		}
+		r := []rune(w)
+		if r[0] >= '0' && r[0] <= '9' {
+			b.WriteString(w)
+		} else {
+			b.WriteString(strings.ToUpper(string(r[0])))
+		}
+		if b.Len() >= 8 {
+			break
+		}
+	}
+	s := safeFolderName(b.String())
+	if s == "" || strings.HasPrefix(s, "_") || strings.ContainsAny(s, "()") {
+		return ""
+	}
+	return s
 }
 
-// GameFolderName is the readable folder for a game: "CODE - Name", or just the name.
-func GameFolderName(title, titleID string) string {
-	name := strings.TrimSpace(title)
-	if name == "" {
-		name = "Unknown game " + strings.ToUpper(titleID)
+// GameSaveFolderName is "<GAME_ID>-<SHORT>" (or "<GAME_ID>" when the game is unknown).
+func GameSaveFolderName(titleID, title string) string {
+	id := strings.ToUpper(titleID)
+	if sh := GameShortName(title); sh != "" {
+		return id + "-" + sh
 	}
-	if c := gameCode(name); c != "" {
-		name = c + " - " + name
-	}
-	return safeFolderName(name)
+	return id
 }
 
-func (o *SaveOrganizer) savesRoot() string { return o.app.Paths.Saves }
+// itemLabel names a file or folder of a game's save for people: slot_00 → "Slot 00",
+// account.sav → "Account Data".
+func itemLabel(name string, dir bool) string {
+	if m := reSlotDir.FindStringSubmatch(name); m != nil && dir {
+		n, _ := strconv.Atoi(m[1])
+		return fmt.Sprintf("Slot %02d", n)
+	}
+	if !dir && strings.EqualFold(filepath.Ext(name), ".sav") {
+		base := strings.TrimSuffix(name, filepath.Ext(name))
+		base = strings.ReplaceAll(strings.ReplaceAll(base, "_", " "), "-", " ")
+		if base != "" {
+			return strings.ToUpper(base[:1]) + base[1:] + " Data"
+		}
+	}
+	return name
+}
+
+// ---------- types shown in Save Data
+
+type SaveItem struct {
+	Name     string `json:"name"`
+	Label    string `json:"label"`
+	Dir      bool   `json:"dir"`
+	Bytes    int64  `json:"bytes"`
+	Modified int64  `json:"modified"`
+}
+
+type SaveGame struct {
+	TitleID  string     `json:"titleId"`
+	Title    string     `json:"title"`
+	InLib    bool       `json:"inLibrary"`
+	Folder   string     `json:"folder"`
+	Kind     string     `json:"kind"` // account | device | other-copy
+	Bytes    int64      `json:"bytes"`
+	Files    int        `json:"files"`
+	Modified int64      `json:"modified"`
+	Items    []SaveItem `json:"items"`
+}
+
+type SavePlayer struct {
+	ProfileID string     `json:"profileId"`
+	Name      string     `json:"name"`
+	PlayerID  string     `json:"playerId"`
+	Folder    string     `json:"folder"`
+	Path      string     `json:"path"`
+	Games     []SaveGame `json:"games"`
+	Other     []string   `json:"otherFolders"` // folders NEXUS cannot place (no game ID)
+}
+
+type SaveBackup struct {
+	File    string `json:"file"`
+	TitleID string `json:"titleId,omitempty"`
+	Reason  string `json:"reason"`
+	Created int64  `json:"created"`
+	Bytes   int64  `json:"bytes"`
+}
+
+// ---------- organiser
+
+type SaveOrganizer struct {
+	app *App
+	mu  sync.Mutex
+}
+
+func NewSaveOrganizer(a *App) *SaveOrganizer { return &SaveOrganizer{app: a} }
+
+func (o *SaveOrganizer) root() string { return o.app.Paths.Saves }
+func (o *SaveOrganizer) backupsRoot() string {
+	return filepath.Join(o.app.Paths.UserData, "Backups", "Saves")
+}
 
 // ProfileDir is the user's save folder (see ProfileStore.SaveDir).
 func (o *SaveOrganizer) ProfileDir(id string) string { return o.app.Profiles.SaveDir(id) }
 
-func (o *SaveOrganizer) desiredProfileName(id string) string {
-	name := ""
-	if o.app.Profiles != nil {
-		if p, ok := o.app.Profiles.Get(id); ok {
-			name = p.Name
-		}
-	}
-	if strings.TrimSpace(name) == "" {
-		return id
-	}
-	return id + " - " + safeFolderName(name)
+// busy: a game of this user is running (or suspended) — their saves are not touched meanwhile.
+func (o *SaveOrganizer) busy(profileID string) bool {
+	st := o.app.Emu.State()
+	return st.Running && (profileID == "" || st.ProfileID == profileID)
 }
 
-// SyncProfileName renames the user's save folder after a name change (never while that user is
-// playing). The profile ID stays at the start of the name, which is how NEXUS finds it.
-func (o *SaveOrganizer) SyncProfileName(id string) {
-	if st := o.app.Emu.State(); st.Running && st.ProfileID == id {
-		return
-	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	cur := o.ProfileDir(id)
-	want := filepath.Join(o.savesRoot(), o.desiredProfileName(id))
-	if cur == want || !dirExists(cur) || fileExists(want) || dirExists(want) {
-		return
-	}
-	if err := os.Rename(cur, want); err != nil {
-		o.app.Log.Printf("saves: could not rename %s: %v", cur, err)
-	}
-}
+var errSavesBusy = errors.New("Close the game this user is playing first.")
 
-func (o *SaveOrganizer) loadMap(dir string) *saveMap {
-	m := &saveMap{Version: 1, Folders: map[string]*saveEntry{}}
-	_ = readJSON(filepath.Join(dir, saveMapFile), m)
-	if m.Folders == nil {
-		m.Folders = map[string]*saveEntry{}
-	}
-	return m
-}
-
-func (o *SaveOrganizer) saveMapTo(dir string, m *saveMap) {
-	_ = os.MkdirAll(dir, 0o755)
-	data, err := json.MarshalIndent(m, "", "  ")
-	if err != nil {
-		return
-	}
-	p := filepath.Join(dir, saveMapFile)
-	tmp := p + ".tmp"
-	if os.WriteFile(tmp, data, 0o644) == nil {
-		clearHidden(p) // Windows refuses to replace a hidden file by rename
-		if os.Rename(tmp, p) != nil {
-			_ = os.Remove(tmp)
-		}
-	}
-	setHidden(p)
+func newPlayerID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return strings.ToUpper(hex.EncodeToString(b))
 }
 
 // titleNames: library titles by base title ID.
 func (o *SaveOrganizer) titleNames() map[string]string {
 	out := map[string]string{}
+	if o.app.Library == nil {
+		return out
+	}
 	for _, g := range o.app.Library.Games() {
 		if g.TitleID != "" && g.Kind != "update" && g.Kind != "dlc" {
 			out[strings.ToUpper(g.TitleID)] = g.Title
@@ -212,68 +252,57 @@ func (o *SaveOrganizer) titleNames() map[string]string {
 	return out
 }
 
-func gameNameFor(names map[string]string, titleID string) string {
-	id := strings.ToUpper(titleID)
-	if n := names[id]; n != "" {
-		return n
-	}
+func baseTitleOf(id string) string {
+	id = strings.ToUpper(id)
 	if v, err := strconv.ParseUint(id, 16, 64); err == nil {
-		if base, _ := classifyID(v); base != v {
-			if n := names[fmt.Sprintf("%016X", base)]; n != "" {
-				return n
-			}
+		if b, _ := classifyID(v); b != v {
+			return fmt.Sprintf("%016X", b)
+		}
+	}
+	return id
+}
+
+// gameDir finds a game's save folder in a user folder (by its ID, whatever follows it).
+func gameDir(dir, titleID string, device bool) string {
+	entries, _ := os.ReadDir(dir)
+	id := strings.ToUpper(titleID)
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		m := reGameFolder.FindStringSubmatch(e.Name())
+		if m != nil && strings.ToUpper(m[1]) == id && (m[3] != "") == device {
+			return e.Name()
 		}
 	}
 	return ""
 }
 
-func uniqueFolder(dir, name string, m *saveMap) string {
-	cand := name
-	for i := 2; ; i++ {
-		_, mapped := m.Folders[cand]
-		if !mapped && !fileExists(filepath.Join(dir, cand)) && !dirExists(filepath.Join(dir, cand)) {
-			return cand
-		}
-		cand = fmt.Sprintf("%s (%d)", name, i)
+func (o *SaveOrganizer) wantGameFolder(titleID, title string, device bool) string {
+	n := GameSaveFolderName(titleID, title)
+	if device {
+		n += " (device)"
 	}
+	return n
 }
 
-// engineUnits finds the engine's per-game save folders inside a user's save folder.
-func engineUnits(dir string) []struct{ rel, title, kind string } {
-	var out []struct{ rel, title, kind string }
-	base := filepath.Join(dir, "user", "save")
-	users, _ := os.ReadDir(filepath.Join(base, "0000000000000000"))
-	for _, u := range users {
-		if !u.IsDir() || !reUserDir.MatchString(u.Name()) {
-			continue
+// SaveFolders is what the engine is told for a session: for each library game, the folder of
+// its account save and of its device save in the user's folder (existing ones, or the names
+// to create).
+func (o *SaveOrganizer) SaveFolders(profileID string) map[string]map[string]string {
+	dir := o.ProfileDir(profileID)
+	out := map[string]map[string]string{}
+	for id, title := range o.titleNames() {
+		acc := gameDir(dir, id, false)
+		if acc == "" {
+			acc = o.wantGameFolder(id, title, false)
 		}
-		titles, _ := os.ReadDir(filepath.Join(base, "0000000000000000", u.Name()))
-		for _, t := range titles {
-			if t.IsDir() && reTitleDir.MatchString(t.Name()) {
-				kind := "account"
-				if strings.Trim(u.Name(), "0") == "" {
-					kind = "device"
-				}
-				out = append(out, struct{ rel, title, kind string }{"user/save/0000000000000000/" + u.Name() + "/" + t.Name(), strings.ToUpper(t.Name()), kind})
-			}
+		dev := gameDir(dir, id, true)
+		if dev == "" {
+			dev = o.wantGameFolder(id, title, true)
 		}
+		out[id] = map[string]string{"account": acc, "device": dev}
 	}
-	accts, _ := os.ReadDir(filepath.Join(base, "account"))
-	for _, a := range accts {
-		titles, _ := os.ReadDir(filepath.Join(base, "account", a.Name()))
-		for _, t := range titles {
-			if t.IsDir() && reTitleDir.MatchString(t.Name()) {
-				out = append(out, struct{ rel, title, kind string }{"user/save/account/" + a.Name() + "/" + t.Name(), strings.ToUpper(t.Name()), "future-account"})
-			}
-		}
-	}
-	devs, _ := os.ReadDir(filepath.Join(base, "device"))
-	for _, t := range devs {
-		if t.IsDir() && reTitleDir.MatchString(t.Name()) {
-			out = append(out, struct{ rel, title, kind string }{"user/save/device/" + t.Name(), strings.ToUpper(t.Name()), "future-device"})
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].rel < out[j].rel })
 	return out
 }
 
@@ -282,387 +311,1359 @@ func dirEmpty(p string) bool {
 	return err == nil && len(es) == 0
 }
 
-// Organize moves the engine's title-ID save folders of one user into readable folders.
-// Safe to run at any time the user is not playing; it never overwrites or deletes saves.
-func (o *SaveOrganizer) Organize(profileID string) (moved int, err error) {
-	if st := o.app.Emu.State(); st.Running && st.ProfileID == profileID {
-		return 0, nil
-	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	dir := o.ProfileDir(profileID)
-	if !dirExists(dir) {
-		return 0, nil
-	}
-	m := o.loadMap(dir)
-	names := o.titleNames()
-	// reverse index: engine path -> folder
-	byPath := map[string]string{}
-	for f, e := range m.Folders {
-		if e.EnginePath != "" {
-			byPath[e.EnginePath] = f
-		}
-	}
-	units := engineUnits(dir)
-	counts := map[string]int{}
-	for _, u := range units {
-		counts[u.title]++
-	}
-	for _, u := range units {
-		src := filepath.Join(dir, filepath.FromSlash(u.rel))
-		if dirEmpty(src) {
-			continue // the engine creates empty folders for games without saves yet
-		}
-		game := gameNameFor(names, u.title)
-		folder, known := byPath[u.rel]
-		if known {
-			dst := filepath.Join(dir, folder)
-			if dirExists(dst) && dirEmpty(dst) {
-				_ = os.Remove(dst)
-			} else if dirExists(dst) || fileExists(dst) {
-				// the readable folder has other data (e.g. copied in meanwhile): keep both
-				m.Folders[folder].EnginePath, m.Folders[folder].Kind = "", "pending"
-				known = false
-			}
-		}
-		if !known {
-			name := GameFolderName(game, u.title)
-			if counts[u.title] > 1 && (u.kind == "device" || u.kind == "future-device") {
-				name += " (shared device save)"
-			}
-			if e := m.Folders[name]; e != nil && e.EnginePath == "" && e.TitleID == u.title && dirExists(filepath.Join(dir, name)) && dirEmpty(filepath.Join(dir, name)) {
-				_ = os.Remove(filepath.Join(dir, name)) // the empty placeholder made for this game
-				folder = name
-			} else {
-				folder = uniqueFolder(dir, name, m)
-			}
-		}
-		dst := filepath.Join(dir, folder)
-		if err := os.Rename(src, dst); err != nil {
-			o.app.Log.Printf("saves: could not move %s: %v", src, err)
-			continue
-		}
-		e := m.Folders[folder]
-		if e == nil {
-			e = &saveEntry{}
-			m.Folders[folder] = e
-		}
-		e.EnginePath, e.Kind, e.TitleID = u.rel, u.kind, u.title
-		if game != "" {
-			e.Game = game
-		}
-		moved++
-	}
-	m.Session = nil
-	o.saveMapTo(dir, m)
-	o.pruneEmpty(filepath.Join(dir, "user"))
-	if dirExists(filepath.Join(dir, "user")) {
-		setHidden(filepath.Join(dir, "user"))
-	}
-	if moved > 0 {
-		o.app.Log.Printf("saves: organised %d game folder(s) for %s", moved, profileID)
-	}
-	return moved, nil
-}
-
-// pruneEmpty removes empty directories under root (never files).
-func (o *SaveOrganizer) pruneEmpty(root string) {
-	var dirs []string
-	_ = filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
-		if err == nil && info.IsDir() {
-			dirs = append(dirs, p)
+// hasSaveData: the folder holds at least one file (engine bookkeeping files excluded).
+func hasSaveData(p string) bool {
+	found := false
+	_ = filepath.Walk(p, func(q string, info os.FileInfo, err error) error {
+		if err == nil && info.Mode().IsRegular() && !strings.HasPrefix(info.Name(), ".yuzu") && !strings.HasPrefix(info.Name(), ".nexus") {
+			found = true
+			return io.EOF
 		}
 		return nil
 	})
-	for i := len(dirs) - 1; i >= 0; i-- {
-		if dirEmpty(dirs[i]) {
-			_ = os.Remove(dirs[i])
+	return found
+}
+
+func otherCopyName(dir, base string) string {
+	for i := 1; ; i++ {
+		n := fmt.Sprintf("%s (other copy %d)", base, i)
+		if !fileExists(filepath.Join(dir, n)) && !dirExists(filepath.Join(dir, n)) {
+			return n
 		}
 	}
 }
 
-// EnsureGameFolders creates empty readable folders for the library's games, so a user can drop
-// save files into the right place. Empty folders are ignored when a game starts.
-func (o *SaveOrganizer) EnsureGameFolders(profileID string) {
-	if st := o.app.Emu.State(); st.Running && st.ProfileID == profileID {
-		return
+// placeGameSave moves src (a game's save folder) to the game's folder in dir: into it when that
+// folder is missing or empty, otherwise next to it as an "other copy" (never merged or replaced).
+func (o *SaveOrganizer) placeGameSave(dir, src, titleID, title string, device bool) (string, error) {
+	name := gameDir(dir, titleID, device)
+	if name == "" {
+		name = o.wantGameFolder(titleID, title, device)
 	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	dir := o.ProfileDir(profileID)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return
+	dst := filepath.Join(dir, name)
+	if dirExists(dst) && hasSaveData(dst) {
+		name = otherCopyName(dir, name)
+		dst = filepath.Join(dir, name)
+		o.app.Log.Printf("saves: %s already has data; the other save is kept as %q", filepath.Base(filepath.Join(dir, gameDir(dir, titleID, device))), name)
+	} else if dirExists(dst) {
+		if err := os.RemoveAll(dst); err != nil { // empty (no save files): safe to replace
+			return "", err
+		}
 	}
-	m := o.loadMap(dir)
-	have := map[string]bool{}
-	for _, e := range m.Folders {
-		have[e.TitleID] = true
+	if err := os.Rename(src, dst); err != nil {
+		return "", err
 	}
-	for id, title := range o.titleNames() {
-		if have[id] {
+	return name, nil
+}
+
+// adoptEngineLayout moves saves the engine wrote in its own layout (an older engine, or a game
+// not in the library) into the NEXUS layout. Returns the number of saves moved.
+func (o *SaveOrganizer) adoptEngineLayout(dir string) int {
+	names := o.titleNames()
+	moved := 0
+	base := filepath.Join(dir, "user", "save")
+	type unit struct {
+		path, title string
+		device      bool
+	}
+	var units []unit
+	users, _ := os.ReadDir(filepath.Join(base, "0000000000000000"))
+	for _, u := range users {
+		if !u.IsDir() || !reUserDir.MatchString(u.Name()) {
 			continue
 		}
-		name := GameFolderName(title, id)
-		if _, used := m.Folders[name]; used || dirExists(filepath.Join(dir, name)) {
+		titles, _ := os.ReadDir(filepath.Join(base, "0000000000000000", u.Name()))
+		for _, t := range titles {
+			if t.IsDir() && reTitleDir.MatchString(t.Name()) {
+				units = append(units, unit{filepath.Join(base, "0000000000000000", u.Name(), t.Name()), strings.ToUpper(t.Name()), strings.Trim(u.Name(), "0") == ""})
+			}
+		}
+	}
+	accts, _ := os.ReadDir(filepath.Join(base, "account"))
+	for _, a := range accts {
+		titles, _ := os.ReadDir(filepath.Join(base, "account", a.Name()))
+		for _, t := range titles {
+			if t.IsDir() && reTitleDir.MatchString(t.Name()) {
+				units = append(units, unit{filepath.Join(base, "account", a.Name(), t.Name()), strings.ToUpper(t.Name()), false})
+			}
+		}
+	}
+	devs, _ := os.ReadDir(filepath.Join(base, "device"))
+	for _, t := range devs {
+		if t.IsDir() && reTitleDir.MatchString(t.Name()) {
+			units = append(units, unit{filepath.Join(base, "device", t.Name()), strings.ToUpper(t.Name()), true})
+		}
+	}
+	sort.Slice(units, func(i, j int) bool { return units[i].path < units[j].path })
+	for _, u := range units {
+		if !hasSaveData(u.path) {
+			continue // empty folders the engine creates for games without saves yet
+		}
+		tid := baseTitleOf(u.title)
+		if _, err := o.placeGameSave(dir, u.path, tid, names[tid], u.device); err != nil {
+			o.app.Log.Printf("saves: could not move %s: %v", u.path, err)
 			continue
 		}
-		if os.MkdirAll(filepath.Join(dir, name), 0o755) == nil {
-			m.Folders[name] = &saveEntry{TitleID: id, Game: title, Kind: "pending"}
-		}
+		moved++
 	}
-	o.saveMapTo(dir, m)
+	if moved > 0 {
+		o.app.Log.Printf("saves: %d save(s) in %s moved to the NEXUS layout", moved, filepath.Base(dir))
+	}
+	if dirExists(filepath.Join(dir, "user")) {
+		setHidden(filepath.Join(dir, "user"))
+	}
+	return moved
 }
 
-// consoleUser returns the engine's first console user as its save-path folder name
-// (from NAND system save 8000000000000010 profiles.dat), "" if it does not exist yet.
-func (o *SaveOrganizer) consoleUser() string {
-	p := filepath.Join(o.app.Emu.DataDir(), "nand", "system", "save", "8000000000000010", "su", "avators", "profiles.dat")
-	data, err := os.ReadFile(p)
-	if err != nil || len(data) < 0x10+0xC8 {
-		return ""
-	}
-	for off := 0x10; off+0xC8 <= len(data) && off < 0x10+8*0xC8; off += 0xC8 {
-		lo := binary.LittleEndian.Uint64(data[off:])
-		hi := binary.LittleEndian.Uint64(data[off+8:])
-		if lo != 0 || hi != 0 {
-			return fmt.Sprintf("%016X%016X", hi, lo)
+// nameGameFolders gives "<GAME_ID>" folders their short name once the game is known.
+func (o *SaveOrganizer) nameGameFolders(dir string) {
+	names := o.titleNames()
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		m := reGameFolder.FindStringSubmatch(e.Name())
+		if !e.IsDir() || m == nil || m[2] != "" {
+			continue
+		}
+		id := strings.ToUpper(m[1])
+		title := names[id]
+		if title == "" {
+			continue
+		}
+		want := o.wantGameFolder(id, title, m[3] != "")
+		if want != e.Name() && !fileExists(filepath.Join(dir, want)) && !dirExists(filepath.Join(dir, want)) {
+			_ = os.Rename(filepath.Join(dir, e.Name()), filepath.Join(dir, want))
 		}
 	}
-	return ""
 }
 
-// Assemble puts the user's readable folders where the engine expects them, right before a game
-// starts. Folders that the engine has not created yet (dropped in by the user) go to the first
-// console user's path. Returns the number of folders placed.
-func (o *SaveOrganizer) Assemble(profileID string) (int, error) {
+// Tidy runs for one user when they are not playing: adopts engine-layout saves and names
+// game folders. Never deletes or overwrites save data.
+func (o *SaveOrganizer) Tidy(profileID string) {
+	if o.busy(profileID) {
+		return
+	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	dir := o.ProfileDir(profileID)
 	if !dirExists(dir) {
-		return 0, nil
+		return
 	}
-	m := o.loadMap(dir)
-	// folders created by the user by hand, named after a library game
-	names := o.titleNames()
-	byName := map[string]string{}
-	for id, t := range names {
-		byName[strings.ToLower(GameFolderName(t, id))] = id
-	}
-	entries, _ := os.ReadDir(dir)
-	for _, en := range entries {
-		if !en.IsDir() || en.Name() == "user" || strings.HasPrefix(en.Name(), ".") {
-			continue
-		}
-		if _, ok := m.Folders[en.Name()]; ok {
-			continue
-		}
-		if id := byName[strings.ToLower(en.Name())]; id != "" {
-			m.Folders[en.Name()] = &saveEntry{TitleID: id, Game: names[id], Kind: "pending"}
-		} else if t := reTitleID.FindString(en.Name()); t != "" {
-			m.Folders[en.Name()] = &saveEntry{TitleID: strings.ToUpper(t), Kind: "pending"}
-		}
-	}
-	user := o.consoleUser()
-	placed := 0
-	var session []string
-	for folder, e := range m.Folders {
-		src := filepath.Join(dir, folder)
-		if !dirExists(src) || dirEmpty(src) || (e.TitleID == "" && e.EnginePath == "") {
-			continue
-		}
-		rel := e.EnginePath
-		if rel == "" {
-			if user == "" {
-				o.app.Log.Printf("saves: %q waits until the game has been started once in NEXUS (no console user yet)", folder)
-				continue
-			}
-			rel = "user/save/0000000000000000/" + user + "/" + e.TitleID
-			e.EnginePath, e.Kind = rel, "account"
-		}
-		dst := filepath.Join(dir, filepath.FromSlash(rel))
-		if dirExists(dst) && !dirEmpty(dst) {
-			o.app.Log.Printf("saves: %q not placed: %s already has data", folder, rel)
-			continue
-		}
-		_ = os.Remove(dst) // empty placeholder left by the engine
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			continue
-		}
-		if err := os.Rename(src, dst); err != nil {
-			o.app.Log.Printf("saves: could not place %q: %v", folder, err)
-			continue
-		}
-		session = append(session, folder)
-		placed++
-	}
-	m.Session = session
-	o.saveMapTo(dir, m)
-	return placed, nil
+	o.adoptEngineLayout(dir)
+	o.nameGameFolders(dir)
 }
 
-// OrganizeAll runs at startup: brings back folders of a session that ended with a crash,
-// migrates "<id>" folders to "<id> - <name>" and organises title-ID folders.
-func (o *SaveOrganizer) OrganizeAll() {
+// TidyAll runs at start-up (after the layout migration).
+func (o *SaveOrganizer) TidyAll() {
 	if o.app.Profiles == nil {
 		return
 	}
 	for _, p := range o.app.Profiles.List() {
 		o.SyncProfileName(p.ID)
-		if _, err := o.Organize(p.ID); err != nil {
-			o.app.Log.Printf("saves: %v", err)
-		}
+		o.Tidy(p.ID)
 	}
 }
 
-// List returns a user's readable save folders (with data).
-func (o *SaveOrganizer) List(profileID string) []SaveFolder {
-	dir := o.ProfileDir(profileID)
-	m := o.loadMap(dir)
-	out := []SaveFolder{}
-	entries, _ := os.ReadDir(dir)
-	for _, en := range entries {
-		if !en.IsDir() || en.Name() == "user" || strings.HasPrefix(en.Name(), ".") {
-			continue
-		}
-		p := filepath.Join(dir, en.Name())
-		b, n := dirSize(p)
-		sf := SaveFolder{Folder: en.Name(), Path: p, Bytes: b, Files: n}
-		if e := m.Folders[en.Name()]; e != nil {
-			sf.TitleID, sf.Game, sf.Kind = e.TitleID, e.Game, e.Kind
-		}
-		if n > 0 {
-			out = append(out, sf)
-		}
+// SyncProfileName renames the user's save folder after a name change (never while that user is
+// playing). The player ID stays at the start of the name, which is how NEXUS finds it.
+func (o *SaveOrganizer) SyncProfileName(id string) {
+	if o.busy(id) {
+		return
 	}
-	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].Folder) < strings.ToLower(out[j].Folder) })
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	p, ok := o.app.Profiles.Get(id)
+	if !ok || p.PlayerID == "" {
+		return
+	}
+	cur := o.ProfileDir(id)
+	want := filepath.Join(o.root(), playerFolderName(p.PlayerID, p.Name))
+	if cur == want || !dirExists(cur) || fileExists(want) || dirExists(want) {
+		return
+	}
+	if err := os.Rename(cur, want); err != nil {
+		o.app.Log.Printf("saves: could not rename %s: %v", cur, err)
+	}
+}
+
+func playerFolderName(playerID, name string) string {
+	n := strings.TrimSpace(name)
+	if n == "" {
+		return playerID
+	}
+	return playerID + "-" + safeFolderName(n)
+}
+
+// ---------- listing
+
+func dirStat(p string) (bytes int64, files int, modified int64) {
+	_ = filepath.Walk(p, func(q string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		if strings.HasPrefix(info.Name(), ".yuzu") || strings.HasPrefix(info.Name(), ".nexus") {
+			return nil
+		}
+		bytes += info.Size()
+		files++
+		if t := info.ModTime().Unix(); t > modified {
+			modified = t
+		}
+		return nil
+	})
+	return
+}
+
+func saveItems(p string) []SaveItem {
+	out := []SaveItem{}
+	entries, _ := os.ReadDir(p)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".") {
+			continue // engine bookkeeping (.yuzu_save_size)
+		}
+		it := SaveItem{Name: e.Name(), Dir: e.IsDir(), Label: itemLabel(e.Name(), e.IsDir())}
+		if e.IsDir() {
+			it.Bytes, _, it.Modified = dirStat(filepath.Join(p, e.Name()))
+		} else if fi, err := e.Info(); err == nil {
+			it.Bytes, it.Modified = fi.Size(), fi.ModTime().Unix()
+		}
+		out = append(out, it)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		si, sj := reSlotDir.MatchString(out[i].Name) && out[i].Dir, reSlotDir.MatchString(out[j].Name) && out[j].Dir
+		if si != sj {
+			return si
+		}
+		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+	})
 	return out
 }
 
-// Export writes a ZIP of the user's readable save folders and the mapping file.
-func (o *SaveOrganizer) Export(profileID string, w io.Writer) error {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	dir := o.app.Profiles.SaveDir(profileID)
-	zw := zip.NewWriter(w)
-	err := filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
+// Player lists a user's saves: one entry per game, with the slots and files that exist.
+func (o *SaveOrganizer) Player(profileID string) (SavePlayer, error) {
+	p, ok := o.app.Profiles.Get(profileID)
+	if !ok {
+		return SavePlayer{}, errors.New("User not found.")
+	}
+	o.Tidy(profileID)
+	dir := o.ProfileDir(profileID)
+	sp := SavePlayer{ProfileID: p.ID, Name: p.Name, PlayerID: p.PlayerID, Folder: filepath.Base(dir), Path: dir, Games: []SaveGame{}, Other: []string{}}
+	names := o.titleNames()
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if !e.IsDir() || e.Name() == "user" || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		var id, kind string
+		if m := reGameFolder.FindStringSubmatch(e.Name()); m != nil {
+			id, kind = strings.ToUpper(m[1]), "account"
+			if m[3] != "" {
+				kind = "device"
+			}
+		} else if m := reOtherCopy.FindStringSubmatch(e.Name()); m != nil {
+			id, kind = strings.ToUpper(m[1]), "other-copy"
+		} else {
+			sp.Other = append(sp.Other, e.Name())
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		b, n, mod := dirStat(path)
+		if n == 0 {
+			continue // empty folder: no save yet
+		}
+		title, in := names[id]
+		if !in {
+			title = "Game " + id
+		}
+		sp.Games = append(sp.Games, SaveGame{TitleID: id, Title: title, InLib: in, Folder: e.Name(), Kind: kind, Bytes: b, Files: n, Modified: mod, Items: saveItems(path)})
+	}
+	sort.SliceStable(sp.Games, func(i, j int) bool {
+		if sp.Games[i].Title != sp.Games[j].Title {
+			return strings.ToLower(sp.Games[i].Title) < strings.ToLower(sp.Games[j].Title)
+		}
+		return sp.Games[i].Folder < sp.Games[j].Folder
+	})
+	return sp, nil
+}
+
+// folderFor resolves a game folder of a user from a folder name given by the interface (only
+// names that are game folders of that user are accepted).
+func (o *SaveOrganizer) folderFor(profileID, folder string) (string, error) {
+	if folder == "" || strings.ContainsAny(folder, `/\:`) || strings.Contains(folder, "..") || !(reGameFolder.MatchString(folder) || reOtherCopy.MatchString(folder)) {
+		return "", errors.New("That is not a game save folder.")
+	}
+	p := filepath.Join(o.ProfileDir(profileID), folder)
+	if !dirExists(p) {
+		return "", errors.New("That save no longer exists. It may have been moved or deleted outside NEXUS.")
+	}
+	return p, nil
+}
+
+// ---------- backups
+
+// zipDir writes dir (recursively) into zw under prefix.
+func zipDir(zw *zip.Writer, dir, prefix string) error {
+	return filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
-			return nil
+			return err
 		}
 		rel, _ := filepath.Rel(dir, p)
+		name := filepath.ToSlash(filepath.Join(prefix, rel))
 		if rel == "." {
-			return nil
-		}
-		rel = filepath.ToSlash(rel)
-		if rel == "user" || strings.HasPrefix(rel, "user/") { // engine cache/temp, not saves
-			if info.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
+			name = filepath.ToSlash(prefix)
 		}
 		if info.IsDir() {
-			_, err := zw.Create(rel + "/")
+			if name == "" || name == "." {
+				return nil
+			}
+			_, err := zw.Create(name + "/")
 			return err
+		}
+		if !info.Mode().IsRegular() {
+			return nil
 		}
 		f, err := os.Open(p)
 		if err != nil {
 			return err
 		}
 		defer f.Close()
-		hw, err := zw.CreateHeader(&zip.FileHeader{Name: rel, Method: zip.Deflate, Modified: info.ModTime()})
+		hw, err := zw.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Deflate, Modified: info.ModTime()})
 		if err != nil {
 			return err
 		}
 		_, err = io.Copy(hw, f)
 		return err
 	})
+}
+
+// writeZipAtomic writes a ZIP through a temporary file and checks it can be read back.
+func writeZipAtomic(path string, fill func(zw *zip.Writer) error) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp := path + ".nexus-tmp"
+	f, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+	zw := zip.NewWriter(f)
+	err = fill(zw)
 	if cerr := zw.Close(); err == nil {
 		err = cerr
 	}
-	return err
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		var zr *zip.ReadCloser
+		if zr, err = zip.OpenReader(tmp); err == nil {
+			zr.Close()
+		}
+	}
+	if err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
-// ImportZip adds the game folders from an exported ZIP to the user. Existing folders are never
-// replaced: an imported folder whose name is taken is added as "<name> (2)".
-func (o *SaveOrganizer) ImportZip(profileID string, data []byte) (int, error) {
-	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
-	if err != nil {
-		return 0, errors.New("This is not a ZIP file.")
+// Backup zips one game's save (or, with folder "", all of the user's saves) into
+// UserData\Backups\Saves\<player folder>\. reason: "manual", "before-import", "before-restore",
+// "before-delete", "migration".
+func (o *SaveOrganizer) Backup(profileID, folder, reason string) (SaveBackup, error) {
+	dir := o.ProfileDir(profileID)
+	src := dir
+	tid := ""
+	if folder != "" {
+		p, err := o.folderFor(profileID, folder)
+		if err != nil {
+			return SaveBackup{}, err
+		}
+		src = p
+		if m := reGameFolder.FindStringSubmatch(folder); m != nil {
+			tid = strings.ToUpper(m[1])
+		} else if m := reOtherCopy.FindStringSubmatch(folder); m != nil {
+			tid = strings.ToUpper(m[1])
+		}
 	}
-	var src saveMap
+	stamp := time.Now().Format("2006-01-02 15-04-05")
+	name := fmt.Sprintf("%s %s - %s.zip", stamp, reason, safeFolderName(firstNonEmpty(folder, "all saves")))
+	out := filepath.Join(o.backupsRoot(), filepath.Base(dir), name)
+	for i := 2; fileExists(out); i++ {
+		out = filepath.Join(o.backupsRoot(), filepath.Base(dir), fmt.Sprintf("%s %s (%d) - %s.zip", stamp, reason, i, safeFolderName(firstNonEmpty(folder, "all saves"))))
+	}
+	err := writeZipAtomic(out, func(zw *zip.Writer) error {
+		if folder == "" {
+			entries, _ := os.ReadDir(dir)
+			for _, e := range entries {
+				if e.IsDir() && e.Name() != "user" && !strings.HasPrefix(e.Name(), ".") {
+					if err := zipDir(zw, filepath.Join(dir, e.Name()), e.Name()); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		}
+		return zipDir(zw, src, folder)
+	})
+	if err != nil {
+		return SaveBackup{}, fmt.Errorf("the backup could not be written: %w", err)
+	}
+	fi, _ := os.Stat(out)
+	o.app.Log.Printf("saves: backup %s", out)
+	return SaveBackup{File: filepath.Base(out), TitleID: tid, Reason: reason, Created: time.Now().Unix(), Bytes: fi.Size()}, nil
+}
+
+func firstNonEmpty(v ...string) string {
+	for _, s := range v {
+		if s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+// Backups lists a user's backups, newest first; with titleID, only that game's.
+func (o *SaveOrganizer) Backups(profileID, titleID string) []SaveBackup {
+	dir := filepath.Join(o.backupsRoot(), filepath.Base(o.ProfileDir(profileID)))
+	entries, _ := os.ReadDir(dir)
+	out := []SaveBackup{}
+	reName := regexp.MustCompile(`^(\d{4}-\d\d-\d\d \d\d-\d\d-\d\d) ([a-z-]+)(?: \(\d+\))? - (.*)\.zip$`)
+	for _, e := range entries {
+		m := reName.FindStringSubmatch(e.Name())
+		if e.IsDir() || m == nil {
+			continue
+		}
+		fi, _ := e.Info()
+		t, _ := time.ParseInLocation("2006-01-02 15-04-05", m[1], time.Local)
+		b := SaveBackup{File: e.Name(), Reason: m[2], Created: t.Unix(), Bytes: fi.Size()}
+		if g := reGameFolder.FindStringSubmatch(m[3]); g != nil {
+			b.TitleID = strings.ToUpper(g[1])
+		} else if g := reOtherCopy.FindStringSubmatch(m[3]); g != nil {
+			b.TitleID = strings.ToUpper(g[1])
+		}
+		if titleID != "" && !strings.EqualFold(b.TitleID, titleID) {
+			continue
+		}
+		out = append(out, b)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].File > out[j].File })
+	return out
+}
+
+// Restore replaces a game's save with a backup (the current save is backed up first).
+func (o *SaveOrganizer) Restore(profileID, file string) error {
+	if o.busy(profileID) {
+		return errSavesBusy
+	}
+	if strings.ContainsAny(file, `/\:`) || strings.Contains(file, "..") {
+		return errors.New("invalid backup")
+	}
+	src := filepath.Join(o.backupsRoot(), filepath.Base(o.ProfileDir(profileID)), file)
+	zr, err := zip.OpenReader(src)
+	if err != nil {
+		return errors.New("That backup cannot be read.")
+	}
+	defer zr.Close()
+	// a game backup holds one top folder; an "all saves" backup holds several
+	tops := map[string]bool{}
 	for _, f := range zr.File {
-		if f.Name == saveMapFile {
-			if rc, err := f.Open(); err == nil {
-				_ = json.NewDecoder(rc).Decode(&src)
-				rc.Close()
+		top, _, _ := strings.Cut(strings.ReplaceAll(f.Name, "\\", "/"), "/")
+		if top != "" {
+			tops[top] = true
+		}
+	}
+	for top := range tops {
+		if !(reGameFolder.MatchString(top) || reOtherCopy.MatchString(top)) {
+			return fmt.Errorf("The backup contains %q, which is not a game save folder.", top)
+		}
+	}
+	dir := o.ProfileDir(profileID)
+	for top := range tops {
+		if dirExists(filepath.Join(dir, top)) && hasSaveData(filepath.Join(dir, top)) {
+			if _, err := o.Backup(profileID, top, "before-restore"); err != nil {
+				return err
 			}
 		}
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	dir := o.app.Profiles.SaveDir(profileID)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return 0, err
+	for top := range tops {
+		if err := extractTopFolder(&zr.Reader, top, filepath.Join(dir, top)); err != nil {
+			return err
+		}
 	}
-	m := o.loadMap(dir)
-	rename := map[string]string{} // top folder in zip -> folder here
-	n := 0
+	o.app.Log.Printf("saves: restored %s", file)
+	return nil
+}
+
+// extractTopFolder extracts the files under top/ in a ZIP into a staging folder, then swaps it
+// with dst (the old dst is removed only after the new one is complete).
+func extractTopFolder(zr *zip.Reader, top, dst string) error {
+	stage := dst + ".nexus-new"
+	_ = os.RemoveAll(stage)
+	if err := os.MkdirAll(stage, 0o755); err != nil {
+		return err
+	}
 	for _, f := range zr.File {
 		name := strings.ReplaceAll(f.Name, "\\", "/")
-		if name == saveMapFile || strings.Contains(name, "..") || strings.HasPrefix(name, "/") || strings.Contains(name, ":") {
+		rest, ok := strings.CutPrefix(name, top+"/")
+		if !ok || rest == "" {
 			continue
 		}
-		top, rest, _ := strings.Cut(name, "/")
-		if top == "" || top == "user" || strings.HasPrefix(top, ".") {
+		if strings.Contains(rest, "..") || strings.HasPrefix(rest, "/") || strings.Contains(rest, ":") {
+			os.RemoveAll(stage)
+			return errors.New("The backup contains an invalid path.")
+		}
+		target := filepath.Join(stage, filepath.FromSlash(rest))
+		if strings.HasSuffix(name, "/") {
+			_ = os.MkdirAll(target, 0o755)
 			continue
 		}
-		dst, ok := rename[top]
-		if !ok {
-			dst = uniqueFolder(dir, safeFolderName(top), m)
-			rename[top] = dst
-			e := &saveEntry{Kind: "pending"}
-			if se := src.Folders[top]; se != nil {
-				e.TitleID, e.Game = se.TitleID, se.Game // console user paths differ between PCs: placed at the next launch
-			} else if t := reTitleID.FindString(top); t != "" {
-				e.TitleID = strings.ToUpper(t)
+		if err := extractZipFile(f, target); err != nil {
+			os.RemoveAll(stage)
+			return err
+		}
+	}
+	return swapDir(stage, dst)
+}
+
+func extractZipFile(f *zip.File, target string) error {
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	rc, err := f.Open()
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+	out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(out, rc)
+	if cerr := out.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil && !f.Modified.IsZero() {
+		_ = os.Chtimes(target, f.Modified, f.Modified)
+	}
+	return err
+}
+
+// swapDir puts the complete folder stage at dst. An existing dst is moved aside first and only
+// removed after stage is in place (its contents were backed up by the caller).
+func swapDir(stage, dst string) error {
+	old := ""
+	if dirExists(dst) {
+		old = dst + ".nexus-old"
+		_ = os.RemoveAll(old)
+		if err := os.Rename(dst, old); err != nil {
+			os.RemoveAll(stage)
+			return fmt.Errorf("the current save could not be replaced (is a file open?): %w", err)
+		}
+	}
+	if err := os.Rename(stage, dst); err != nil {
+		if old != "" {
+			_ = os.Rename(old, dst)
+		}
+		os.RemoveAll(stage)
+		return err
+	}
+	if old != "" {
+		_ = os.RemoveAll(old)
+	}
+	return nil
+}
+
+// Delete removes one game's save after backing it up.
+func (o *SaveOrganizer) Delete(profileID, folder string) (SaveBackup, error) {
+	if o.busy(profileID) {
+		return SaveBackup{}, errSavesBusy
+	}
+	p, err := o.folderFor(profileID, folder)
+	if err != nil {
+		return SaveBackup{}, err
+	}
+	b, err := o.Backup(profileID, folder, "before-delete")
+	if err != nil {
+		return SaveBackup{}, err
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if err := os.RemoveAll(p); err != nil {
+		return b, err
+	}
+	o.app.Log.Printf("saves: deleted %s (backup %s)", p, b.File)
+	return b, nil
+}
+
+// UseOtherCopy makes an "other copy" the game's save: the current save becomes an other copy.
+func (o *SaveOrganizer) UseOtherCopy(profileID, folder string) error {
+	if o.busy(profileID) {
+		return errSavesBusy
+	}
+	m := reOtherCopy.FindStringSubmatch(folder)
+	if m == nil {
+		return errors.New("That is not another copy of a save.")
+	}
+	src, err := o.folderFor(profileID, folder)
+	if err != nil {
+		return err
+	}
+	dir := o.ProfileDir(profileID)
+	device := m[3] != ""
+	if _, err := o.Backup(profileID, "", "before-restore"); err != nil {
+		return err
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	id := strings.ToUpper(m[1])
+	cur := gameDir(dir, id, device)
+	want := cur
+	if want == "" {
+		want = o.wantGameFolder(id, o.titleNames()[id], device)
+	}
+	if cur != "" {
+		if err := os.Rename(filepath.Join(dir, cur), filepath.Join(dir, otherCopyName(dir, cur))); err != nil {
+			return err
+		}
+	}
+	return os.Rename(src, filepath.Join(dir, want))
+}
+
+// ---------- export
+
+type saveExportDoc struct {
+	App      string `json:"app"`
+	Version  string `json:"version"`
+	PlayerID string `json:"playerId"`
+	Profile  string `json:"profile"`
+	Games    []struct {
+		TitleID string `json:"titleId"`
+		Title   string `json:"title"`
+		Folder  string `json:"folder"`
+	} `json:"games"`
+}
+
+// Export writes a ZIP with one game's save (folder) or all of the user's saves:
+// "<PLAYER_ID>-<name>/<GAME_ID>-<SHORT>/…" plus nexus-saves.json describing them.
+func (o *SaveOrganizer) Export(profileID, folder string, w io.Writer) error {
+	sp, err := o.Player(profileID)
+	if err != nil {
+		return err
+	}
+	doc := saveExportDoc{App: "NEXUS", Version: AppVersion, PlayerID: sp.PlayerID, Profile: sp.Name}
+	zw := zip.NewWriter(w)
+	for _, g := range sp.Games {
+		if folder != "" && g.Folder != folder {
+			continue
+		}
+		doc.Games = append(doc.Games, struct {
+			TitleID string `json:"titleId"`
+			Title   string `json:"title"`
+			Folder  string `json:"folder"`
+		}{g.TitleID, g.Title, g.Folder})
+		if err := zipDir(zw, filepath.Join(sp.Path, g.Folder), sp.Folder+"/"+g.Folder); err != nil {
+			zw.Close()
+			return err
+		}
+	}
+	if folder != "" && len(doc.Games) == 0 {
+		zw.Close()
+		return errors.New("That save no longer exists.")
+	}
+	data, _ := json.MarshalIndent(doc, "", "  ")
+	if hw, err := zw.Create(saveExportMarker); err == nil {
+		_, _ = hw.Write(data)
+	}
+	return zw.Close()
+}
+
+// ---------- import: inspect, then import what the user confirmed
+
+// SaveCandidate is one game save found in what the user selected.
+type SaveCandidate struct {
+	ID        string     `json:"id"`        // reference within the inspection
+	PlayerID  string     `json:"playerId"`  // from the folder structure or save metadata ("" = unknown)
+	ProfileID string     `json:"profileId"` // NEXUS user with that player ID ("" = none)
+	TitleID   string     `json:"titleId"`   // "" = could not be identified
+	Title     string     `json:"title"`
+	InLib     bool       `json:"inLibrary"`
+	Device    bool       `json:"device"`
+	Confident bool       `json:"confident"` // the game ID comes from the save's structure or metadata
+	Evidence  string     `json:"evidence"`
+	Items     []SaveItem `json:"items"`
+	Bytes     int64      `json:"bytes"`
+	Files     int        `json:"files"`
+	path      string     // inside the source (folder path, or ZIP prefix)
+}
+
+type SaveInspection struct {
+	Token      string          `json:"token"`
+	Source     string          `json:"source"`
+	Format     string          `json:"format"`
+	Candidates []SaveCandidate `json:"candidates"`
+	Note       string          `json:"note,omitempty"`
+}
+
+type saveSource struct {
+	dir  string      // a folder on disk, or
+	zr   *zip.Reader // a ZIP (kept in memory until imported)
+	data []byte
+	insp SaveInspection
+	at   time.Time
+}
+
+var (
+	inspMu   sync.Mutex
+	inspList = map[string]*saveSource{}
+)
+
+func (o *SaveOrganizer) remember(src *saveSource) string {
+	inspMu.Lock()
+	defer inspMu.Unlock()
+	for k, v := range inspList { // keep memory bounded
+		if time.Since(v.at) > 30*time.Minute {
+			delete(inspList, k)
+		}
+	}
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	tok := hex.EncodeToString(b)
+	src.at = time.Now()
+	inspList[tok] = src
+	return tok
+}
+
+// vfs: a minimal read-only view over a folder or a ZIP, so both are inspected the same way.
+type saveVFS interface {
+	list(dir string) []os.FileInfo
+	read(path string, max int) []byte
+}
+
+type osVFS struct{ root string }
+
+func (v osVFS) list(dir string) []os.FileInfo {
+	es, _ := os.ReadDir(filepath.Join(v.root, filepath.FromSlash(dir)))
+	var out []os.FileInfo
+	for _, e := range es {
+		if fi, err := e.Info(); err == nil {
+			out = append(out, fi)
+		}
+	}
+	return out
+}
+
+func (v osVFS) read(p string, max int) []byte {
+	f, err := os.Open(filepath.Join(v.root, filepath.FromSlash(p)))
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	b, _ := io.ReadAll(io.LimitReader(f, int64(max)))
+	return b
+}
+
+type zipVFS struct {
+	files map[string]*zip.File
+	dirs  map[string]map[string]os.FileInfo
+}
+
+type zfi struct {
+	name string
+	dir  bool
+	size int64
+	mod  time.Time
+}
+
+func (z zfi) Name() string { return z.name }
+func (z zfi) Size() int64  { return z.size }
+func (z zfi) Mode() os.FileMode {
+	return map[bool]os.FileMode{true: os.ModeDir | 0o755, false: 0o644}[z.dir]
+}
+func (z zfi) ModTime() time.Time { return z.mod }
+func (z zfi) IsDir() bool        { return z.dir }
+func (z zfi) Sys() any           { return nil }
+
+func newZipVFS(zr *zip.Reader) *zipVFS {
+	v := &zipVFS{files: map[string]*zip.File{}, dirs: map[string]map[string]os.FileInfo{}}
+	add := func(parent, name string, fi os.FileInfo) {
+		if v.dirs[parent] == nil {
+			v.dirs[parent] = map[string]os.FileInfo{}
+		}
+		if _, ok := v.dirs[parent][name]; !ok || !fi.IsDir() {
+			v.dirs[parent][name] = fi
+		}
+	}
+	for _, f := range zr.File {
+		name := strings.Trim(strings.ReplaceAll(f.Name, "\\", "/"), "/")
+		if name == "" || strings.Contains(name, "..") || strings.Contains(name, ":") {
+			continue
+		}
+		isDir := strings.HasSuffix(f.Name, "/")
+		parts := strings.Split(name, "/")
+		for i := 0; i < len(parts)-1; i++ {
+			add(strings.Join(parts[:i], "/"), parts[i], zfi{name: parts[i], dir: true})
+		}
+		add(strings.Join(parts[:len(parts)-1], "/"), parts[len(parts)-1], zfi{name: parts[len(parts)-1], dir: isDir, size: int64(f.UncompressedSize64), mod: f.Modified})
+		if !isDir {
+			v.files[name] = f
+		}
+	}
+	return v
+}
+
+func (v *zipVFS) list(dir string) []os.FileInfo {
+	var out []os.FileInfo
+	for _, fi := range v.dirs[strings.Trim(dir, "/")] {
+		out = append(out, fi)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name() < out[j].Name() })
+	return out
+}
+
+func (v *zipVFS) read(p string, max int) []byte {
+	f := v.files[strings.Trim(p, "/")]
+	if f == nil {
+		return nil
+	}
+	rc, err := f.Open()
+	if err != nil {
+		return nil
+	}
+	defer rc.Close()
+	b, _ := io.ReadAll(io.LimitReader(rc, int64(max)))
+	return b
+}
+
+func vfsStat(v saveVFS, dir string) (items []SaveItem, bytes int64, files int) {
+	var walk func(d string) (int64, int, int64)
+	walk = func(d string) (int64, int, int64) {
+		var b, mod int64
+		n := 0
+		for _, fi := range v.list(d) {
+			if fi.IsDir() {
+				bb, nn, mm := walk(strings.TrimPrefix(d+"/"+fi.Name(), "/"))
+				b, n = b+bb, n+nn
+				if mm > mod {
+					mod = mm
+				}
+				continue
 			}
-			m.Folders[dst] = e
-			if err := os.MkdirAll(filepath.Join(dir, dst), 0o755); err != nil {
-				return n, err
+			if strings.HasPrefix(fi.Name(), ".yuzu") || strings.HasPrefix(fi.Name(), ".nexus") {
+				continue
 			}
+			b += fi.Size()
 			n++
+			if t := fi.ModTime().Unix(); t > mod {
+				mod = t
+			}
 		}
-		if rest == "" || strings.HasSuffix(name, "/") {
-			_ = os.MkdirAll(filepath.Join(dir, dst, filepath.FromSlash(rest)), 0o755)
+		return b, n, mod
+	}
+	items = []SaveItem{}
+	for _, fi := range v.list(dir) {
+		if strings.HasPrefix(fi.Name(), ".") {
 			continue
 		}
-		target := filepath.Join(dir, dst, filepath.FromSlash(rest))
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return n, err
+		it := SaveItem{Name: fi.Name(), Dir: fi.IsDir(), Label: itemLabel(fi.Name(), fi.IsDir())}
+		if fi.IsDir() {
+			it.Bytes, _, it.Modified = walk(strings.TrimPrefix(dir+"/"+fi.Name(), "/"))
+		} else {
+			it.Bytes, it.Modified = fi.Size(), fi.ModTime().Unix()
 		}
-		rc, err := f.Open()
-		if err != nil {
-			return n, err
+		items = append(items, it)
+	}
+	bytes, files, _ = walk(dir)
+	return
+}
+
+// ryujinxExtra reads a Ryujinx save's ExtraData0/1: the SaveDataAttribute starts with the
+// program ID (u64) and the user ID (u128).
+func ryujinxExtra(b []byte) (titleID, userID string, ok bool) {
+	if len(b) < 0x18 {
+		return "", "", false
+	}
+	pid := binary.LittleEndian.Uint64(b[0:])
+	lo, hi := binary.LittleEndian.Uint64(b[8:]), binary.LittleEndian.Uint64(b[16:])
+	if pid == 0 {
+		return "", "", false
+	}
+	if lo != 0 || hi != 0 {
+		userID = fmt.Sprintf("%016X%016X", hi, lo)
+	}
+	return fmt.Sprintf("%016X", pid), userID, true
+}
+
+// inspect finds game saves in a folder or ZIP. Rules, most specific first:
+//   - an engine user folder: <user 32 hex>/<game 16 hex>/… (Lichii, Eden, yuzu and the NEXUS
+//     engine), also with the user/save/0000000000000000 parents;
+//   - NEXUS folders: <PLAYER_ID>-<name>/<GAME_ID>-<SHORT>/…, or a single <GAME_ID>-<SHORT>;
+//   - a single game folder named by its 16-hex game ID (its parent may be a 32-hex user);
+//   - a Ryujinx save folder (0/, 1/, ExtraData0): game and user from its metadata;
+//   - otherwise, if it contains files, a save whose game cannot be identified.
+func (o *SaveOrganizer) inspect(v saveVFS, rootName string) ([]SaveCandidate, string) {
+	var out []SaveCandidate
+	format := ""
+	add := func(path, player, tid string, device, confident bool, evidence string) {
+		items, b, n := vfsStat(v, path)
+		if n == 0 {
+			return
 		}
-		out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o644)
-		if err != nil {
-			rc.Close()
-			return n, err
+		c := SaveCandidate{ID: strconv.Itoa(len(out) + 1), PlayerID: strings.ToUpper(player), TitleID: strings.ToUpper(tid), Device: device,
+			Confident: confident && tid != "", Evidence: evidence, Items: items, Bytes: b, Files: n, path: path}
+		out = append(out, c)
+	}
+	isUser := func(n string) bool { return reUserDir.MatchString(n) || rePlayerDir.MatchString(n) }
+	playerOf := func(n string) string {
+		if m := rePlayerDir.FindStringSubmatch(n); m != nil {
+			return m[1]
 		}
-		_, err = io.Copy(out, rc)
-		rc.Close()
-		if cerr := out.Close(); err == nil {
-			err = cerr
+		return ""
+	}
+	var scan func(dir, name, parent string, depth int)
+	scan = func(dir, name, parent string, depth int) {
+		if depth > 6 || len(out) > 500 {
+			return
 		}
-		if err != nil {
-			return n, err
+		join := func(n string) string { return strings.TrimPrefix(dir+"/"+n, "/") }
+		entries := v.list(dir)
+		// Ryujinx save: 0/ and ExtraData0
+		var extra []byte
+		hasZero := false
+		for _, fi := range entries {
+			if fi.Name() == "ExtraData0" && !fi.IsDir() {
+				extra = v.read(join(fi.Name()), 0x40)
+			}
+			if fi.Name() == "0" && fi.IsDir() {
+				hasZero = true
+			}
+		}
+		if hasZero && extra != nil {
+			if tid, uid, ok := ryujinxExtra(extra); ok {
+				if format == "" {
+					format = "Ryujinx save"
+				}
+				add(join("0"), uid, baseTitleOf(tid), false, true, "Game and player read from the save's Ryujinx metadata (ExtraData0).")
+				return
+			}
+		}
+		// a NEXUS game folder or a 16-hex game folder: this is one game's save
+		if m := reGameFolder.FindStringSubmatch(name); m != nil && depth > 0 && strings.Trim(m[1], "0") != "" {
+			ev := "The folder is named after the game's ID (" + strings.ToUpper(m[1]) + ")."
+			f := "Save folder"
+			switch {
+			case m[2] != "":
+				ev, f = "NEXUS save folder of game "+strings.ToUpper(m[1])+".", "NEXUS saves"
+			case reUserDir.MatchString(parent):
+				f = "Lichii / Eden / yuzu save folder"
+			}
+			if format == "" {
+				format = f
+			}
+			pl := playerOf(parent)
+			add(dir, pl, baseTitleOf(m[1]), m[3] != "" || (pl != "" && strings.Trim(pl, "0") == ""), true, ev)
+			return
+		}
+		if isUser(name) || depth == 0 {
+			for _, fi := range entries {
+				if fi.IsDir() && reGameFolder.MatchString(fi.Name()) {
+					scan(join(fi.Name()), fi.Name(), name, depth+1)
+				}
+			}
+			if len(out) > 0 {
+				return
+			}
+		}
+		for _, fi := range entries {
+			if fi.IsDir() && fi.Name() != "user" || fi.IsDir() && depth == 0 {
+				scan(join(fi.Name()), fi.Name(), name, depth+1)
+			}
 		}
 	}
-	// folders without a known game cannot be placed for the engine; keep them, but say so
-	for k, e := range m.Folders {
-		if e.TitleID == "" {
-			o.app.Log.Printf("saves: imported folder %q has no known game; it is kept but not used by games", k)
+	scan("", rootName, "", 0)
+	if len(out) == 0 {
+		// no structure: the selection itself is one save (game to be chosen by the user)
+		if m := reGameFolder.FindStringSubmatch(rootName); m != nil {
+			add("", "", baseTitleOf(m[1]), m[3] != "", true, "The folder is named after the game's ID ("+strings.ToUpper(m[1])+").")
+		} else {
+			add("", "", "", false, false, "No game ID was found in the folder names or save metadata.")
+		}
+		format = "Save files"
+	}
+	return out, format
+}
+
+// Inspect looks at a folder or ZIP the user selected and reports what it contains.
+func (o *SaveOrganizer) Inspect(path string, zipData []byte, displayName string) (SaveInspection, error) {
+	src := &saveSource{}
+	var v saveVFS
+	rootName := ""
+	switch {
+	case zipData != nil:
+		zr, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
+		if err != nil {
+			return SaveInspection{}, errors.New("That file is not a ZIP archive.")
+		}
+		src.zr, src.data = zr, zipData
+		v = newZipVFS(zr)
+		rootName = strings.TrimSuffix(displayName, filepath.Ext(displayName))
+		src.insp.Source = displayName
+	case path != "":
+		fi, err := os.Stat(path)
+		if err != nil {
+			return SaveInspection{}, errors.New("That location cannot be read.")
+		}
+		if !fi.IsDir() {
+			if strings.EqualFold(filepath.Ext(path), ".zip") {
+				data, err := os.ReadFile(path)
+				if err != nil {
+					return SaveInspection{}, err
+				}
+				return o.Inspect("", data, filepath.Base(path))
+			}
+			return SaveInspection{}, errors.New("Choose a save folder or a ZIP archive of one.")
+		}
+		src.dir = path
+		v = osVFS{root: path}
+		rootName = filepath.Base(path)
+		src.insp.Source = path
+	default:
+		return SaveInspection{}, errors.New("Nothing selected.")
+	}
+	cands, format := o.inspect(v, rootName)
+	names := o.titleNames()
+	players := map[string]string{}
+	for _, p := range o.app.Profiles.List() {
+		if p.PlayerID != "" {
+			players[strings.ToUpper(p.PlayerID)] = p.ID
 		}
 	}
-	o.saveMapTo(dir, m)
-	return n, nil
+	for i := range cands {
+		c := &cands[i]
+		if c.TitleID != "" {
+			c.Title, c.InLib = names[c.TitleID], names[c.TitleID] != ""
+			if !c.InLib {
+				c.Title = "Game " + c.TitleID + " (not in your library)"
+			}
+		}
+		c.ProfileID = players[c.PlayerID]
+	}
+	src.insp.Format = format
+	src.insp.Candidates = cands
+	if len(cands) == 0 {
+		src.insp.Note = "No save data was found there."
+	}
+	src.insp.Token = o.remember(src)
+	return src.insp, nil
+}
+
+// SaveImportPick is one save the user confirmed: the game it goes to (always confirmed by the
+// user when it could not be identified), whether it is the device save, and whether existing
+// data may be replaced (after a backup).
+type SaveImportPick struct {
+	ID      string `json:"id"`
+	TitleID string `json:"titleId"`
+	Device  bool   `json:"device"`
+	Replace bool   `json:"replace"`
+}
+
+type SaveConflict struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Folder string `json:"folder"`
+}
+
+var errSaveConflict = errors.New("Some games already have save data for this user.")
+
+// Import copies the confirmed saves into a user's game folders. A game that already has data is
+// only replaced when the pick says so, and then only after a backup.
+func (o *SaveOrganizer) Import(token, profileID string, picks []SaveImportPick) ([]SaveConflict, error) {
+	if _, ok := o.app.Profiles.Get(profileID); !ok {
+		return nil, errors.New("User not found.")
+	}
+	if o.busy(profileID) {
+		return nil, errSavesBusy
+	}
+	inspMu.Lock()
+	src := inspList[token]
+	inspMu.Unlock()
+	if src == nil {
+		return nil, errors.New("Select the saves again (the selection expired).")
+	}
+	byID := map[string]SaveCandidate{}
+	for _, c := range src.insp.Candidates {
+		byID[c.ID] = c
+	}
+	names := o.titleNames()
+	dir := o.ProfileDir(profileID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	// check first: never guess a game, report conflicts before changing anything
+	var conflicts []SaveConflict
+	for _, p := range picks {
+		c, ok := byID[p.ID]
+		if !ok {
+			return nil, errors.New("unknown save in the selection")
+		}
+		tid := strings.ToUpper(p.TitleID)
+		if !reTitleDir.MatchString(tid) {
+			return nil, fmt.Errorf("Choose the game for %q.", firstNonEmpty(c.Title, "the save"))
+		}
+		if c.Confident && c.TitleID != "" && tid != c.TitleID {
+			return nil, fmt.Errorf("That save belongs to game %s, not %s.", c.TitleID, tid)
+		}
+		if name := gameDir(dir, tid, p.Device); name != "" && hasSaveData(filepath.Join(dir, name)) && !p.Replace {
+			conflicts = append(conflicts, SaveConflict{ID: p.ID, Title: firstNonEmpty(names[tid], tid), Folder: name})
+		}
+	}
+	if len(conflicts) > 0 {
+		return conflicts, errSaveConflict
+	}
+	for _, p := range picks {
+		c := byID[p.ID]
+		tid := strings.ToUpper(p.TitleID)
+		name := gameDir(dir, tid, p.Device)
+		if name != "" && hasSaveData(filepath.Join(dir, name)) {
+			if _, err := o.Backup(profileID, name, "before-import"); err != nil {
+				return nil, err
+			}
+		}
+		if name == "" {
+			name = o.wantGameFolder(tid, names[tid], p.Device)
+		}
+		stage := filepath.Join(dir, name+".nexus-new")
+		_ = os.RemoveAll(stage)
+		var err error
+		if src.dir != "" {
+			from := filepath.Join(src.dir, filepath.FromSlash(c.path))
+			err = backupTree(from, stage)
+		} else {
+			err = extractPrefix(src.zr, c.path, stage)
+		}
+		if err != nil {
+			os.RemoveAll(stage)
+			return nil, fmt.Errorf("the save could not be copied: %w", err)
+		}
+		o.mu.Lock()
+		err = swapDir(stage, filepath.Join(dir, name))
+		o.mu.Unlock()
+		if err != nil {
+			return nil, err
+		}
+		o.app.Log.Printf("saves: imported %s into %s/%s", firstNonEmpty(c.path, src.insp.Source), filepath.Base(dir), name)
+	}
+	return nil, nil
+}
+
+func extractPrefix(zr *zip.Reader, prefix, dst string) error {
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return err
+	}
+	prefix = strings.Trim(prefix, "/")
+	for _, f := range zr.File {
+		name := strings.Trim(strings.ReplaceAll(f.Name, "\\", "/"), "/")
+		rest := name
+		if prefix != "" {
+			var ok bool
+			if rest, ok = strings.CutPrefix(name, prefix+"/"); !ok {
+				continue
+			}
+		}
+		if rest == "" || name == saveExportMarker || strings.Contains(rest, "..") || strings.Contains(rest, ":") {
+			continue
+		}
+		target := filepath.Join(dst, filepath.FromSlash(rest))
+		if strings.HasSuffix(f.Name, "/") {
+			_ = os.MkdirAll(target, 0o755)
+			continue
+		}
+		if err := extractZipFile(f, target); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ---------- migration from the 0.2.x layout
+
+type saveLayoutDoc struct {
+	Version  int    `json:"version"`
+	Migrated int64  `json:"migrated,omitempty"`
+	Backup   string `json:"backup,omitempty"`
+}
+
+// oldSavesDir is where 0.2.x kept saves (<data>\Saves).
+func (o *SaveOrganizer) oldSavesDir() string { return filepath.Join(o.app.Paths.System, "Saves") }
+
+// Migrate converts 0.2.x saves to the 0.3.0 layout once. Everything is backed up into one ZIP
+// first; if that fails nothing is changed. Folders are renamed (same drive), never copied and
+// deleted. Returns an error to show in Save Data when the migration could not run.
+func (o *SaveOrganizer) Migrate() error {
+	var doc saveLayoutDoc
+	_ = readJSON(filepath.Join(o.root(), saveLayoutFile), &doc)
+	if doc.Version >= saveLayoutV {
+		return nil
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	old := o.oldSavesDir()
+	if dirExists(old) && !sameDir(old, o.root()) {
+		if hasSaveData(old) {
+			bk := filepath.Join(o.backupsRoot(), fmt.Sprintf("%s migration - all users (NEXUS 0.2 layout).zip", time.Now().Format("2006-01-02 15-04-05")))
+			if err := writeZipAtomic(bk, func(zw *zip.Writer) error { return zipDir(zw, old, "Saves") }); err != nil {
+				return fmt.Errorf("Your saves were not converted to the new layout because the backup failed (%v). They are untouched in %s.", err, old)
+			}
+			doc.Backup = bk
+			o.app.Log.Printf("saves: backed up the 0.2 save folders to %s", bk)
+		}
+		if err := os.MkdirAll(filepath.Dir(o.root()), 0o755); err != nil {
+			return err
+		}
+		if !dirExists(o.root()) || dirEmpty(o.root()) {
+			_ = os.Remove(o.root())
+			if err := os.Rename(old, o.root()); err != nil {
+				return fmt.Errorf("Your saves could not be moved to %s (%v). They are untouched in %s.", o.root(), err, old)
+			}
+		} else {
+			// both exist: move each user folder across, keeping anything already there
+			entries, _ := os.ReadDir(old)
+			for _, e := range entries {
+				dst := filepath.Join(o.root(), e.Name())
+				if !fileExists(dst) && !dirExists(dst) {
+					_ = os.Rename(filepath.Join(old, e.Name()), dst)
+				}
+			}
+		}
+	}
+	_ = os.MkdirAll(o.root(), 0o755)
+	// user folders: "<id> - <name>" / "<id>" → "<PLAYER_ID>-<name>"
+	for _, p := range o.app.Profiles.List() {
+		cur := o.findOldProfileDir(p.ID)
+		pid := p.PlayerID
+		if pid == "" {
+			pid = o.playerIDFromSaves(cur)
+			if pid == "" {
+				pid = newPlayerID()
+			}
+			if err := o.app.Profiles.SetPlayerID(p.ID, pid); err != nil {
+				return err
+			}
+		}
+		want := filepath.Join(o.root(), playerFolderName(pid, p.Name))
+		if cur != "" && cur != want && !dirExists(want) {
+			if err := os.Rename(cur, want); err != nil {
+				return fmt.Errorf("the save folder of %s could not be renamed: %v", p.Name, err)
+			}
+		}
+		if dirExists(want) {
+			o.migrateReadableFolders(want)
+			o.adoptEngineLayout(want)
+			o.nameGameFolders(want)
+		}
+	}
+	doc.Version, doc.Migrated = saveLayoutV, time.Now().Unix()
+	if err := writeJSONAtomic(filepath.Join(o.root(), saveLayoutFile), doc); err != nil {
+		return err
+	}
+	setHidden(filepath.Join(o.root(), saveLayoutFile))
+	o.app.Log.Printf("saves: layout version %d", saveLayoutV)
+	return nil
+}
+
+func (o *SaveOrganizer) findOldProfileDir(id string) string {
+	entries, _ := os.ReadDir(o.root())
+	for _, e := range entries {
+		if e.IsDir() && (e.Name() == id || strings.HasPrefix(e.Name(), id+" - ")) {
+			return filepath.Join(o.root(), e.Name())
+		}
+	}
+	return ""
+}
+
+// playerIDFromSaves: the engine user ID the user's saves were written with, if any.
+func (o *SaveOrganizer) playerIDFromSaves(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	if u := o.consoleUserIn(filepath.Join(dir, "user", "save", "0000000000000000")); u != "" {
+		return u
+	}
+	var m struct {
+		Folders map[string]struct{ EnginePath string } `json:"folders"`
+	}
+	_ = readJSON(filepath.Join(dir, oldSaveMapFile), &m)
+	for _, f := range m.Folders {
+		parts := strings.Split(f.EnginePath, "/")
+		for _, p := range parts {
+			if reUserDir.MatchString(p) && strings.Trim(p, "0") != "" {
+				return strings.ToUpper(p)
+			}
+		}
+	}
+	return ""
+}
+
+func (o *SaveOrganizer) consoleUserIn(dir string) string {
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if e.IsDir() && reUserDir.MatchString(e.Name()) && strings.Trim(e.Name(), "0") != "" {
+			return strings.ToUpper(e.Name())
+		}
+	}
+	return ""
+}
+
+// migrateReadableFolders renames 0.2.x readable folders ("OOT - The Legend of Zelda…") to
+// "<GAME_ID>-<SHORT>" using the 0.2.x mapping file, which is then kept as .v02.json.
+func (o *SaveOrganizer) migrateReadableFolders(dir string) {
+	var m struct {
+		Folders map[string]struct {
+			TitleID    string `json:"titleId"`
+			Game       string `json:"game"`
+			EnginePath string `json:"enginePath"`
+			Kind       string `json:"kind"`
+		} `json:"folders"`
+	}
+	mp := filepath.Join(dir, oldSaveMapFile)
+	if readJSON(mp, &m) != nil {
+		return
+	}
+	names := o.titleNames()
+	keys := make([]string, 0, len(m.Folders))
+	for k := range m.Folders {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, folder := range keys {
+		e := m.Folders[folder]
+		src := filepath.Join(dir, folder)
+		if e.TitleID == "" || !dirExists(src) {
+			continue
+		}
+		if !hasSaveData(src) {
+			_ = os.Remove(src) // an empty placeholder folder made by 0.2.x
+			continue
+		}
+		tid := baseTitleOf(e.TitleID)
+		device := strings.Contains(e.Kind, "device")
+		if _, err := o.placeGameSave(dir, src, tid, firstNonEmpty(names[tid], e.Game), device); err != nil {
+			o.app.Log.Printf("saves: could not convert %q: %v", folder, err)
+		}
+	}
+	clearHidden(mp)
+	_ = os.Rename(mp, filepath.Join(dir, ".nexus-saves.v02.json"))
+}
+
+// ---------- NEXUS engine storage (saves written when per-user saves were off)
+
+// SharedEngineSaves is the engine's own save folder (used before every user had their own);
+// offered in the import, never assigned automatically.
+func (o *SaveOrganizer) SharedEngineSaves() string {
+	p := filepath.Join(o.app.Emu.DataDir(), "nand", "user", "save")
+	if hasSaveData(p) {
+		return p
+	}
+	return ""
 }

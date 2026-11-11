@@ -3,6 +3,6 @@
 # same ZIP as NEXUS.exe. The engine package records the base and the series' SHA-256.
 # The engine has its own version (engine-v namespace), separate from the NEXUS version in VERSION.
 upstream=zortos293/Lichii
-upstreamCommit=17baed716da04fd743fbd8f9604bec96eab0a123
-upstreamBase=build-150
-version=0.3.0
+upstreamCommit=2eb5f081c8734affd272466f89133aa4e3e56e18
+upstreamBase=build-160
+version=0.4.0

@@ -67,3 +67,36 @@ func TestPerfMonitorSelectionAndFormat(t *testing.T) {
 		t.Fatalf("unavailable metrics must read N/A, not a made-up value: %q", out)
 	}
 }
+
+// TestCompatEvidenceFollowsEngine: problems seen with an older engine are history once the engine
+// changes; a known fix is named; good results are kept with their engine; nothing becomes
+// "works" without evidence.
+func TestCompatEvidenceFollowsEngine(t *testing.T) {
+	c := NewCompatStore(t.TempDir())
+	ver := "0.3.0"
+	c.SetEngine(func() string { return ver })
+	oot, other := "t-0400486024dec000", "t-0100aaaa00010000"
+	c.Record(oot, "OOT", "switch2", true, true, 300, "crash")
+	c.Rate(other, "Other", "issues", "audio crackles")
+	c.Record("t-good", "Good", "switch1", true, false, 400, "")
+	c.Record("t-good", "Good", "switch1", true, false, 400, "")
+	if c.Get(oot).Status != "issues" || c.Get(other).Status != "issues" || c.Get("t-good").Status != "works" {
+		t.Fatal("before update")
+	}
+	ver = "0.4.0"
+	v := c.Get(oot)
+	if v.Status != "untested" || !strings.Contains(v.Why, "guard house") || !strings.Contains(v.Why, "0.3.0") {
+		t.Fatalf("OOT after update: %+v", v)
+	}
+	if v := c.Get(other); v.Status != "untested" || strings.Contains(v.Why, "guard house") {
+		t.Fatalf("other after update: %+v", v)
+	}
+	if v := c.Get("t-good"); v.Status != "works" || !strings.Contains(v.Why, "0.3.0") {
+		t.Fatalf("good after update: %+v", v)
+	}
+	// new evidence with the new engine decides again (and a crash is reported again)
+	c.Record(oot, "OOT", "switch2", true, true, 60, "crash")
+	if c.Get(oot).Status != "issues" {
+		t.Fatal("new crash not reported")
+	}
+}

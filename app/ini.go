@@ -121,6 +121,21 @@ func (f *IniFile) Set(section, key, value string) {
 	}
 }
 
+// DeleteSection removes a section and its keys.
+func (f *IniFile) DeleteSection(section string) {
+	var out []string
+	in := false
+	for _, l := range f.lines {
+		if s, ok := sectionOf(l); ok {
+			in = s == section
+		}
+		if !in {
+			out = append(out, l)
+		}
+	}
+	f.lines = out
+}
+
 // SetSetting writes a Lichii "SwitchableSetting" so it is honoured: the value
 // plus "\default=false" (otherwise Lichii ignores the value and uses its default).
 func (f *IniFile) SetSetting(section, key, value string) {

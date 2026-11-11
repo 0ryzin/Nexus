@@ -79,6 +79,7 @@ function accentTextFor(hex, light) {
 
 // ------------------------------------------------------------------ icons
 const I = {
+  media: 'M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm0 2v10h16V7Zm3 8 3-4 2.2 2.7L15 10l4 5Zm1-6.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Z',
   grid: 'M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z',
   person: 'M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0 2c-5 0-9 2.5-9 5.5V22h18v-2.5C21 16.5 17 14 12 14Z',
   pad: 'M7 6h10a5 5 0 0 1 4.9 6l-1 5.2a3 3 0 0 1-5.4 1.2L14 16h-4l-1.5 2.4a3 3 0 0 1-5.4-1.2L2.1 12A5 5 0 0 1 7 6Zm0 2.5V10H5.5v2H7v1.5h2V12h1.5v-2H9V8.5Zm9 0a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Zm-2 2.6a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Zm4 0a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Z',
@@ -771,7 +772,7 @@ async function refreshEmu() { S.emulator = (await api('/api/state')).emulator; }
 // ------------------------------------------------------------------ screens
 const Screens = {};
 function show(name, { initial, anim = true } = {}) {
-  for (const s of ['who', 'home', 'library', 'settings', 'controllers', 'playing']) $('#' + s).hidden = s !== name;
+  for (const s of ['who', 'home', 'library', 'settings', 'controllers', 'playing', 'media']) $('#' + s).hidden = s !== name;
   S.screen = name;
   const root = $('#' + name);
   if (anim && S.anim !== 'off') { root.classList.remove('screen-enter'); void root.offsetWidth; root.classList.add('screen-enter'); }
@@ -864,60 +865,6 @@ async function selectProfile(id) {
   S.settings.lastProfileId = id;
   await loadGames();
   goHome();
-  maybeOfferEngineImport();
-}
-
-// ---------- data from other emulators (NEXUS's own import; nothing is needed from those programs)
-let engineImportAsked = false;
-function describeSource(src) {
-  const items = src.items.map(i => `• ${i.label} — ${i.files} file${i.files === 1 ? '' : 's'}, ${fmtBytes(i.bytes)}`);
-  if (src.saves) items.push(`• Saves (${src.saves} files) — offered afterwards for each user, in User settings`);
-  return `${src.name}: ${src.path}\n` + items.join('\n');
-}
-async function maybeOfferEngineImport(force = false) {
-  if (engineImportAsked && !force) return;
-  let st; try { st = await api('/api/engine-data'); } catch { return; }
-  if (!st.ask && !force) return;
-  engineImportAsked = true;
-  if (!st.sources.length) { alertDlg('Nothing to import', 'No data from other Switch emulators was found on this PC. NEXUS has set up its own engine data folder and configuration.'); return; }
-  const interrupted = st.record.state === 'interrupted' || st.record.state === 'error';
-  const src = st.sources.find(x => x.id === st.record.source) || st.sources[0];
-  const text = (interrupted
-    ? `The last import from ${src.name} did not finish${st.record.error ? ' (' + st.record.error + ')' : ''}. Nothing was lost: what was copied is kept, and trying again copies only what is missing.\n\n`
-    : 'NEXUS found data from another Switch emulator on this PC. NEXUS can copy it into its own engine data, so your keys, firmware and installed updates work in NEXUS straight away.\n\n')
-    + describeSource(src)
-    + '\n\nThe original files are only read, never changed or moved. Files NEXUS already has are kept (and backed up). You can also start fresh and import later in Settings › System files.';
-  const buttons = [{ label: 'Later', value: 'later' }, { label: 'Start fresh', value: 'fresh' }];
-  if (st.sources.length > 1) buttons.push({ label: 'Choose another…', value: 'choose' });
-  buttons.push({ label: interrupted ? 'Try again' : `Import from ${src.name}`, value: 'import', primary: true });
-  const v = await dialog({ title: interrupted ? 'Finish importing your emulator data?' : 'Bring in your emulator data?', text, buttons, cancelValue: 'later' });
-  if (v === 'fresh') { await api('/api/engine-data/fresh', { body: {} }).catch(e => toast(e.message, I.warn)); toast('NEXUS starts fresh. You can import later in System files.', I.check, 3500); }
-  if (v === 'import') startEngineImport(src.id);
-  if (v === 'choose') {
-    const pick = await dialog({ title: 'Import from', text: st.sources.map(describeSource).join('\n\n'), buttons: [{ label: 'Cancel', value: null }, ...st.sources.map(x => ({ label: x.name, value: x.id }))] });
-    if (pick) startEngineImport(pick);
-  }
-}
-async function startEngineImport(id) {
-  try { await api('/api/engine-data/import', { body: { source: id } }); toast('Importing… you can keep using NEXUS.', I.info, 2500); }
-  catch (e) { alertDlg('Could not import', e.message); }
-}
-function engineDataSection(p) {
-  const box = h('div'); p.append(h('h3', {}, 'Data from other emulators'), box);
-  api('/api/engine-data').then(st => {
-    const r = st.record;
-    const state = st.running ? `Importing… ${Math.round(st.progress * 100)}%` : r.state === 'interrupted' ? 'Import interrupted — can be retried'
-      : r.state === 'error' ? 'Import failed — can be retried' : r.decision === 'imported' ? `Imported from ${st.sources.find(x => x.id === r.source)?.name || r.source}${r.copied ? ` (${r.copied} files)` : ''}`
-      : r.decision === 'fresh' ? 'Started fresh (nothing imported)' : st.sources.length ? 'Not decided yet' : 'None found on this PC';
-    box.append(infoRow('NEXUS engine data', st.ready ? 'Set up' : 'Not set up', st.dataDir));
-    box.append(infoRow('Import', state, r.error || (r.backup ? `Backup of what NEXUS had: ${r.backup}` : '')));
-    for (const src of st.sources) {
-      box.append(rowButton(`Import from ${src.name}…`, { sub: `${src.path} · ${src.items.map(i => i.label.split(' (')[0]).join(', ') || 'saves only'}`, disabled: st.running, onClick: async () => {
-        if (await confirmDlg(`Import from ${src.name}?`, describeSource(src) + '\n\nOriginals are only read. Files NEXUS already has are kept.', 'Import')) { await startEngineImport(src.id); rebuildPanel(); }
-      } }));
-    }
-    if (st.sources.length && r.decision !== 'fresh' && !st.running) box.append(rowButton('Start fresh', { sub: 'Use NEXUS without importing. Nothing is deleted; you can import later.', onClick: async () => { await api('/api/engine-data/fresh', { body: {} }); rebuildPanel(); } }));
-  }).catch(e => box.append(h('p', { class: 'note warn' }, e.message)));
 }
 
 async function createProfileFlow() {
@@ -1043,16 +990,6 @@ function setupWizard({ first }) {
   draw();
 }
 
-async function maybeOfferSaveImport(pid) {
-  try {
-    const s = await api(`/api/profiles/${pid}/saves`);
-    if (s.managed && s.nandSaves && s.nandSaves.length && !s.titles.length) {
-      const ok = await confirmDlg('Existing saves found', `Save data for ${s.nandSaves.length} game(s) was found from the emulator NEXUS used before. Copy those saves into this user? The originals are kept untouched.`, 'Copy saves');
-      if (ok) { const r = await api(`/api/profiles/${pid}/import-saves`, { body: { overwrite: false } }); toast(`Copied ${r.files} save file(s)`, I.check); }
-    }
-  } catch { }
-}
-
 function editProfile(id) {
   const p0 = profileById(id); if (!p0) return;
   const l = sheet('User settings', (body, layer, rebuild) => {
@@ -1072,21 +1009,7 @@ function editProfile(id) {
       try { await api(`/api/profiles/${id}/avatar`, { body: f }); await loadState(); rebuild(); refreshTop(); } catch (e) { alertDlg('Could not use that picture', e.message); }
     } }));
     body.append(h('h3', {}, 'Save data'));
-    const saveRow = rowButton('Save data', { sub: 'Loading…' });
-    body.append(saveRow);
-    api(`/api/profiles/${id}/saves`).then(s => {
-      saveRow.querySelector('small').textContent = s.managed ? `${s.titles.length} game(s), ${fmtBytes(s.bytes)} — NEXUS data\\Saves\\${s.folderName}` : 'Per-user saves are turned off (Settings › Game sessions & saves).';
-      if (s.nandSaves?.length) {
-        const imp = rowButton('Copy earlier saves into this user', { sub: `${s.nandSaves.length} game(s) found in the save folder of the emulator NEXUS used before. Originals are never removed.`, onClick: () => importSaves(id) });
-        saveRow.after(imp);
-      }
-    }).catch(() => { });
-    body.append(rowButton('Open save folder', { sub: 'One folder per game, named after the game. You can drop your own save files into them.', onClick: () => api(`/api/profiles/${id}/saves/open`, { body: {} }).catch(e => toast(e.message, I.warn)) }));
-    body.append(rowButton('Export saves…', { sub: 'Downloads a ZIP of this user’s game folders.', onClick: () => { const a = h('a', { href: `/api/profiles/${id}/saves/export`, download: '' }); document.body.append(a); a.click(); a.remove(); toast('Export started', I.check); } }));
-    body.append(rowButton('Import saves from a ZIP…', { sub: 'Adds the game folders from an export. Existing saves are never replaced.', onClick: async () => {
-      const f = await pickFile('.zip,application/zip'); if (!f) return;
-      try { const r = await api(`/api/profiles/${id}/saves/import`, { body: f }); toast(`${r.folders} game folder(s) imported`, I.check); rebuild(); } catch (e) { alertDlg('Could not import', e.message); }
-    } }));
+    body.append(rowButton('Save Data…', { sub: 'This user’s saves: view slots, import from a folder or ZIP, export, back up, restore or delete.', onClick: () => saveDataPage(id) }));
     body.append(h('h3', {}, ''));
     body.append(rowButton('Delete this user', { danger: true, sub: 'The user and their saves are moved to NEXUS data\\Archived, not erased.', onClick: () => deleteProfile(id, layer) }));
   }, { onClose: () => { if (S.screen === 'who') showWho(); else refreshTop(); } });
@@ -1389,17 +1312,6 @@ function pickFile(accept) {
   });
 }
 
-async function importSaves(id, overwrite = false) {
-  try {
-    const r = await api(`/api/profiles/${id}/import-saves`, { body: { overwrite } });
-    toast(`Copied ${r.files} save file(s)`, I.check);
-  } catch (e) {
-    if (e.status === 409 && !overwrite) {
-      const ok = await confirmDlg('Replace existing saves?', `${e.message}\n\nThis user's current saves will be backed up to NEXUS data\\Archived first.`, 'Replace', true);
-      if (ok) return importSaves(id, true);
-    } else alertDlg('Could not copy saves', e.message);
-  }
-}
 
 async function deleteProfile(id, layer) {
   const p = profileById(id);
@@ -1540,6 +1452,7 @@ function renderHome() {
   const items = [
     ['Library', I.grid, '#ff4f4f', () => showLibrary()],
     ['Users', I.person, '#ff9f0a', () => showWho()],
+    ['Media', I.media, '#ffd60a', () => Media.show()],
     ['Controllers', I.pad, '#30d158', () => Controllers.show()],
     ['Themes', I.palette, '#bf5af2', () => showSettings('appearance')],
     ['System & Emulation', I.chip, '#64d2ff', () => showSettings('sysfiles')],
@@ -1957,6 +1870,8 @@ async function gameConfig(key, startSection = 'general') {
   const g = gameByKey(key); if (!g) return;
   let view;
   try { view = await api(`/api/games/${key}/settings`); } catch (e) { alertDlg('Could not load game settings', e.message); return; }
+  const withContent = v => { if (g.titleId && g.kind !== 'homebrew' && !v.sections.some(x => x.v === 'updates')) v.sections = [...v.sections, { v: 'updates', l: 'Game Updates' }, { v: 'mods', l: 'Mods' }]; return v; };
+  withContent(view);
   let section = startSection;
   const root = h('div', { class: 'cfg-page' });
   const layer = openLayer(root, { name: 'gameconfig', onTab: d => { const i = view.sections.findIndex(x => x.v === section); section = view.sections[(i + d + view.sections.length) % view.sections.length].v; draw(true); } });
@@ -1967,7 +1882,7 @@ async function gameConfig(key, startSection = 'general') {
   let saving = null;
   const save = async patch => {
     try {
-      view = await api(`/api/games/${key}/settings`, { body: patch });
+      view = withContent(await api(`/api/games/${key}/settings`, { body: patch }));
       clearTimeout(saving); saving = setTimeout(() => toast('Saved', I.check, 1200), 150);
       await loadGames(); const ng = gameByKey(key); if (ng) Object.assign(g, ng); refreshViews();
       draw(false);
@@ -2010,7 +1925,7 @@ async function gameConfig(key, startSection = 'general') {
       body.append(compatRow(view.compat, g, r => { view.compat = r; drawBody(); }));
       body.append(h('h3', {}, 'Optimise for my device'));
       body.append(rowButton('Optimise this game…', { sub: 'Settings for this game only, from your hardware and what is known about the game. Other games are not changed.', onClick: () => {
-        sheet(`Optimise ${g.title}`, (sb) => { const ob = h('div'); sb.append(ob); optimiserPanel(ob, key, async () => { view = await api(`/api/games/${key}/settings`); draw(false); }); });
+        sheet(`Optimise ${g.title}`, (sb) => { const ob = h('div'); sb.append(ob); optimiserPanel(ob, key, async () => { view = withContent(await api(`/api/games/${key}/settings`)); draw(false); }); });
       } }));
       if (!S.engine?.installed) body.append(h('p', { class: 'note warn' }, 'The NEXUS engine is not installed yet. Install it in Settings › NEXUS Engine.'));
       if (!view.perGameOk) body.append(h('p', { class: 'note warn' }, view.perGameReason));
@@ -2028,6 +1943,7 @@ async function gameConfig(key, startSection = 'general') {
       } }));
       return;
     }
+    if (section === 'updates' || section === 'mods') { const cb = h('div'); body.append(cb); gameContentPanel(cb, g, section, () => drawBody()); return; }
     if (!view.perGameOk) { body.append(h('p', { class: 'note warn' }, view.perGameReason)); return; }
     const note = { enhance: 'Applies only to this game. Frame generation suits games that already run at a steady frame rate.', graphics: 'Applies only to this game. “Use global” follows Settings › Emulation settings.', advanced: 'For advanced users. If a game misbehaves, use Restore defaults on the General page.',
       audio: '', controls: '', system: '' }[section];
@@ -2203,15 +2119,21 @@ const Launch = {
     if (st.phase === 'playing') this.enter();
   },
   // Stage D: the engine shows the game — the loading screen fades and NEXUS steps aside
+  // The game's first frame is ready: the loading screen's content fades out over the artwork
+  // backdrop, then NEXUS asks the engine to show the game (which fades in on top). The loading
+  // screen stays underneath until the game covers it, so there is never an empty or black frame.
   enter() {
-    const el = this.el; if (!el || el.classList.contains('out')) return;
+    const el = this.el; if (!el || el.classList.contains('revealing')) return;
     const wait = Math.max(0, (S.anim === 'off' ? 0 : 1500) - (performance.now() - this.t0)); // let the opening finish
     setTimeout(() => {
+      if (this.el !== el) return;
       $('.lx-status', el).textContent = 'Have fun!';
       $$('.lx-steps span', el).forEach(s => { s.classList.add('done'); s.classList.remove('on'); });
-      el.classList.add('out');
-      showPlaying(true);
-      setTimeout(() => this.close(), S.anim === 'off' ? 0 : 520);
+      el.classList.add('revealing');
+      setTimeout(() => {
+        api('/api/emulator/reveal', { body: {} }).catch(() => { });
+        setTimeout(() => { showPlaying(true); this.close(); }, S.anim === 'off' ? 200 : 900);
+      }, S.anim === 'off' ? 0 : 320);
     }, wait);
   },
   async cancel() {
@@ -2244,7 +2166,7 @@ function showPlaying(justLaunched = false) {
   $('#play-title').textContent = st.title || 'NEXUS';
   $('#play-sub').textContent = st.phase === 'playing' ? `Playing as ${S.profile?.name || ''} · NEXUS Engine` : 'Starting the NEXUS engine…';
   const hk = S.settings.emulator?.homeKey;
-  $('#play-tip').textContent = (hk && !st.homeKeyConflict ? `Press ${hk} or the controller\u2019s Home button` : 'Press the controller\u2019s Home button') + ' to go back to NEXUS Home; the game keeps running.' + (st.homeKeyConflict ? ` (${hk} is one of this game\u2019s controls, so it goes to the game. You can choose another Home key in Settings \u203a Game sessions.)` : '') + (S.settings.emulator?.quitCombo ? ' Hold View + Menu (Back + Start) to close the game.' : '');
+  $('#play-tip').textContent = (hk && !st.homeKeyConflict ? `Press ${hk} or the controller\u2019s Home button` : 'Press the controller\u2019s Home button') + ' to go back to NEXUS Home; the game keeps running.' + (S.settings.emulator?.fullscreenKey ? ` ${S.settings.emulator.fullscreenKey}: full screen / window.` : '') + (S.settings.emulator?.screenshotKey ? ` ${S.settings.emulator.screenshotKey}: screenshot.` : '') + (st.homeKeyConflict ? ` (${hk} is one of this game\u2019s controls, so it goes to the game. You can choose another Home key in Settings \u203a Game sessions.)` : '') + (S.settings.emulator?.quitCombo ? ' Hold View + Menu (Back + Start) to close the game.' : '');
   $('#play-close').textContent = 'Close game';
   $('#play-perf').textContent = perfOn(st.gameKey) ? 'Hide performance monitor' : 'Show performance monitor';
   const vh = $('#play-volume'); let sl = vh.firstChild;
@@ -2275,7 +2197,7 @@ $('#play-close').addEventListener('click', async () => {
 
 // ---------- settings
 const CATS = [
-  ['appearance', 'Appearance'], ['startup', 'Startup'], ['library', 'Game library'], ['controllers', 'Controllers'], ['users', 'Users & saves'], ['system', 'System'],
+  ['appearance', 'Appearance'], ['startup', 'Startup'], ['library', 'Game library'], ['controllers', 'Controllers'], ['users', 'Users'], ['savedata', 'Save Data'], ['system', 'System'], ['updates', 'Updates'],
   ['-', 'System & Emulation'], ['engine', 'NEXUS Engine'], ['sysfiles', 'System files'], ['emusettings', 'Emulation settings'], ['emulator', 'Game sessions & saves'], ['perf', 'Performance Monitor'],
 ];
 const NAVCATS = () => catList().filter(c => c[0] !== '-' && c[0] !== 'controllers');
@@ -2491,17 +2413,25 @@ const Panels = {
       const k = await captureKey(); if (k === undefined) return;
       saveSettings({ emulator: { homeKey: k } }).then(rebuildPanel);
     } }));
-    p.append(rowToggle('Controller Home button', es.homeButton !== false, v => saveSettings({ emulator: { homeButton: v } }), 'The Xbox Guide button, the PlayStation button or a controller\u2019s Home button returns to NEXUS Home where Windows lets applications read it. Press it again (or choose Resume) to go back to the game.'));
+    p.append(rowToggle('Controller Home button', es.homeButton !== false, v => saveSettings({ emulator: { homeButton: v } }), 'The Xbox Guide button, the PlayStation button or a controller\u2019s Home button takes you straight to NEXUS Home (the game never sees it). Choose Resume Game to go back. If Steam or Windows uses the button for itself, use the Home key instead.'));
+    p.append(h('h3', {}, 'While playing'));
+    p.append(rowButton('Fullscreen / window key', { value: es.fullscreenKey || 'Off', sub: 'Switches the game between full screen and a window without stopping it. If the key is one of the game\u2019s controls, it stays with the game.', onClick: async () => {
+      const k = await captureKey(); if (k === undefined) return;
+      saveSettings({ emulator: { fullscreenKey: k } }).then(rebuildPanel);
+    } }));
+    p.append(rowButton('Screenshot key', { value: es.screenshotKey || 'Off', sub: 'Saves a screenshot to Media (NEXUS data\\Media\\Screenshots).', onClick: async () => {
+      const k = await captureKey(); if (k === undefined) return;
+      saveSettings({ emulator: { screenshotKey: k } }).then(rebuildPanel);
+    } }));
+    p.append(rowToggle('Controller Share / Capture button takes screenshots', es.captureButton !== false, v => saveSettings({ emulator: { captureButton: v } }), 'The Xbox Share button, the Switch Pro Controller\u2019s Capture button or a similar button.'));
+    p.append(rowToggle('Fade into the game', es.fadeIn !== false, v => saveSettings({ emulator: { fadeIn: v } }), 'The loading screen fades out and the game fades in. Turn off if the game window stays dark or flickers with your graphics driver.'));
     p.append(rowToggle('Start games in full screen', es.fullscreen, v => saveSettings({ emulator: { fullscreen: v } }), 'The game window belongs to NEXUS; when the game ends you are back on the NEXUS home screen.'));
     p.append(rowToggle('Quit shortcut: hold View + Menu', es.quitCombo, v => saveSettings({ emulator: { quitCombo: v } }), 'Hold Back + Start for 2 seconds on an XInput controller to close the game.'));
-    p.append(rowToggle('Separate saves for each user', es.manageSaves, async v => {
-      if (!v && !(await confirmDlg('Share saves between users?', 'All users will share the engine’s save folder. Per-user saves stay in NEXUS data\\Saves and come back if you turn this on again.', 'Turn off'))) { rebuildPanel(); return; }
-      saveSettings({ emulator: { manageSaves: v } });
-    }, 'Points the engine’s save folder at NEXUS data\\Saves\\<user> for every game the user starts.'));
+    p.append(rowButton('Save Data…', { sub: 'Every user has their own saves.', onClick: () => selectCat('savedata', true) }));
     p.append(rowButton('Keys and firmware…', { sub: 'Install or replace prod.keys and firmware.', onClick: () => selectCat('sysfiles', true) }));
   },
   users(p) {
-    p.append(h('h2', {}, 'Users & saves'));
+    p.append(h('h2', {}, 'Users'));
     for (const pr of S.profiles) {
       const r = rowButton(pr.name, { sub: pr.id === S.profile?.id ? 'Current user' : '', onClick: () => editProfile(pr.id) });
       r.querySelector('.rl').prepend(avatarEl(pr)); r.querySelector('.rl').style.cssText = 'flex-direction:row;align-items:center;gap:.8em';
@@ -2509,11 +2439,7 @@ const Panels = {
       p.append(r);
     }
     p.append(rowButton('Add user', { icon: I.plus, onClick: () => createProfileFlow() }));
-    p.append(h('h3', {}, 'How saves work'));
-    p.append(h('p', { class: 'note' }, S.settings.emulator?.manageSaves ?
-      'Each user has a private save folder (NEXUS data\\Saves\\<user id> - <name>), with a readable folder for every game. When a game starts, the NEXUS engine uses the current user’s folder, so users never share or overwrite each other’s progress. Saves are never deleted: removing a user moves their data to NEXUS data\\Archived.' :
-      'Per-user saves are turned off, so all users share the engine’s save folder. Turn it on in Settings › Game sessions & saves.'));
-    p.append(rowButton('Open saves folder', { onClick: () => api('/api/app/open-folder', { body: { which: 'saves' } }) }));
+    p.append(rowButton('Save Data…', { sub: 'Each user’s saves', onClick: () => selectCat('savedata', true) }));
     p.append(rowButton('Open archived data', { onClick: () => api('/api/app/open-folder', { body: { which: 'archived' } }) }));
   },
   system(p) {
@@ -2653,11 +2579,7 @@ async function enhancementsPanel(box) {
         }
       } }));
     }
-    if (en.dlss.supported && !en.dlss.ready) {
-      box.append(h('p', { class: 'note' }, en.dlss.why));
-      box.append(rowButton('Open the DLSS folder', { sub: en.dlssDir, onClick: () => api('/api/app/open-folder', { body: { which: 'streamline' } }).catch(e => toast(e.message, I.warn)) }));
-      box.append(rowButton('Check again', { onClick: async () => { en = await api('/api/enhancements'); draw(); } }));
-    }
+    if (en.dlss.supported) { const db = h('div'); box.append(db); dlssPanel(db); }
   };
   draw();
 }
@@ -2814,7 +2736,7 @@ async function sysAction(path, body, { pickText, okMsg } = {}) {
 }
 async function renderSystemFiles(p) {
   p.append(h('h2', {}, 'System files'));
-  engineDataSection(p);
+  p.append(h('p', { class: 'note' }, 'NEXUS keeps its own system files in its engine data folder; it never needs another emulator. Install the keys and firmware dumped from your own console below.'));
   const holder = h('div'); p.append(holder);
   let st;
   try { st = await api('/api/system-files'); } catch (e) { holder.append(h('p', { class: 'note warn' }, e.message)); return; }
@@ -2982,8 +2904,8 @@ const Controllers = {
     const body = $('#ctl-body'); body.innerHTML = '';
     const c = S.profile?.controls || {};
     const left = h('div', {}), right = h('div', {});
-    left.append(h('h3', { class: 'set-h' }, 'Connected controllers'));
-    if (!S.pads.length) left.append(h('div', { class: 'pad-card' }, h('h4', {}, 'No controller detected'), h('small', {}, 'Connect a controller and press any button. Xbox, PlayStation and most USB/Bluetooth pads work. Keyboard: arrows to move, Enter = OK, Esc = Back, X = Options.')));
+    left.append(h('h3', { class: 'set-h' }, 'Controllers in NEXUS menus'));
+    if (!S.pads.length) left.append(h('div', { class: 'pad-card' }, h('h4', {}, 'No controller active in the menus yet'), h('small', {}, 'Press any button on a controller to use it in NEXUS menus. Xbox, PlayStation and most USB/Bluetooth pads work. Keyboard: arrows to move, Enter = OK, Esc = Back, X = Options.')));
     for (const p of S.pads) {
       const card = h('div', { class: 'pad-card', dataset: { pad: p.index } }, h('h4', {}, `Player ${p.index + 1}`), h('small', {}, p.id),
         h('div', { class: 'pad-btns' }, Array.from({ length: 17 }, (_, i) => h('span', { dataset: { b: i } }, i))),
@@ -3010,6 +2932,8 @@ const Controllers = {
       ips.length ? 'Player 1 uses this saved profile whenever this user starts a game. A game can choose its own in Configure Game Settings.' : 'Player 1 is mapped automatically to the first connected controller with its standard layout (keyboard if none is connected).'));
     if (!c.emuInputProfile) layoutRows(right, c.gameLayout || {}, async l => { await api(`/api/profiles/${S.profile.id}/game-layout`, { body: l }); await loadState(); S.profile = profileById(S.profile.id); Controllers.refreshList(); }, 'user');
     right.append(h('p', { class: 'note' }, 'In games the NEXUS engine detects controllers automatically (Xbox/XInput, PlayStation, Switch Pro and most USB or Bluetooth pads) and uses this layout for player 1. A game can have its own layout in Configure Game Settings › Controls. Keyboard: the engine’s standard keys work when no controller is connected.'));
+    const known = h('div'); left.prepend(known);
+    controllerList(known).then(() => $$('.set-h', known).forEach(e => e.style.cssText = 'font-size:.8em;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:1em 0 .6em'));
     body.append(left, right);
     $$('.set-h', body).forEach(e => e.style.cssText = 'font-size:.8em;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:1em 0 .6em');
   },
@@ -3143,6 +3067,25 @@ function connectEvents() {
         Wall.update();
         break;
       }
+      case 'input.home': // Home pressed while NEXUS shows: go to the Home screen (never back to the game)
+        if (!Launch.el) goHome({ button: true });
+        break;
+      case 'launch.reveal': if (Launch.el) Launch.enter(); break;
+      case 'media.added':
+        toast(`Screenshot saved${m.data.title ? ' · ' + m.data.title : ''}`, I.media, 2200);
+        if (S.screen === 'media') { await Media.load(); Media.render(); }
+        break;
+      case 'media.changed': if (S.screen === 'media') { await Media.load(); Media.render(); } break;
+      case 'dlss.job':
+        if (!m.data.running) { if (m.data.ok) toast('NVIDIA DLSS installed', I.check, 3000); else if (m.data.error) alertDlg('NVIDIA DLSS was not installed', m.data.error + '\n\nNothing incomplete was kept.'); }
+        if (S.screen === 'settings' && curCat === 'emusettings') rebuildPanel();
+        break;
+      case 'gamecontent.changed':
+        if (m.data.error) alertDlg('The update was not added', m.data.error); else toast('Update added', I.check);
+        break;
+      case 'update.available': if (!Launch.el && !S.playing?.running) updateDialog(m.data); else toast(`NEXUS ${m.data.latest} is available (Settings › Updates)`, I.info, 5000); break;
+      case 'update.job': UpdateUI.job(m.data); break;
+      case 'update.done': toast(`NEXUS was updated to ${m.data.version}`, I.check, 5000); break;
       case 'emulator.home': { // the game was paused with Home: show the Home screen
         S.playing = m.data;
         Sound.play('home_pop');
@@ -3210,6 +3153,437 @@ window.addEventListener('error', e => { api('/api/app/log', { body: { level: 'er
 window.addEventListener('unhandledrejection', e => { api('/api/app/log', { body: { level: 'error', message: 'promise: ' + (e.reason?.stack || e.reason) } }).catch(() => { }); });
 
 // ------------------------------------------------------------------ start
+
+// ======================================================================================
+// NEXUS 0.3: Save Data, Media, game updates & mods, controllers, DLSS files, NEXUS updates
+// ======================================================================================
+
+function download(url) { const a = h('a', { href: url, download: '' }); document.body.append(a); a.click(); a.remove(); }
+
+// ---------- Save Data
+// One user at a time; each game shows its save slots and files the way people think of them
+// ("Slot 00", "Account Data"), never nested engine paths.
+async function saveDataPage(profileId) {
+  let pid = profileId || S.profile?.id || S.profiles[0]?.id;
+  if (!pid) { alertDlg('No users yet', 'Create a user first.'); return; }
+  const l = sheet('Save Data', async (body, layer, rebuild) => {
+    let d;
+    try { d = await api(`/api/profiles/${pid}/saves`); } catch (e) { body.append(h('p', { class: 'note warn' }, e.message)); return; }
+    const pl = d.player;
+    if (d.migrationError) body.append(h('p', { class: 'note warn' }, d.migrationError));
+    // user picker
+    const users = h('div', { class: 'sd-users' });
+    for (const pr of S.profiles) {
+      const b = h('button', { class: 'sd-user' + (pr.id === pid ? ' sel' : ''), 'data-nav': true }, avatarEl(pr), h('span', {}, pr.name));
+      b.addEventListener('click', () => { if (pr.id !== pid) { pid = pr.id; rebuild(); } });
+      users.append(b);
+    }
+    body.append(users);
+    body.append(h('p', { class: 'note' }, `Player ID ${pl.playerId || '—'} · each user has their own saves; games only ever see the saves of the user who is playing.`));
+    if (d.busy) body.append(h('p', { class: 'note warn' }, `${pl.name} is playing right now. Saves can be viewed, but changes wait until the game is closed.`));
+    const acts = h('div', { class: 'sd-actions' });
+    const imp = h('button', { class: 'btn primary', 'data-nav': true }, svg(I.plus), 'Import saves…');
+    imp.addEventListener('click', () => saveImportWizard(pid, null, rebuild));
+    const exp = h('button', { class: 'btn', 'data-nav': true }, 'Export all');
+    exp.addEventListener('click', () => { download(`/api/profiles/${pid}/saves/export`); toast('Export started', I.check); });
+    const bk = h('button', { class: 'btn', 'data-nav': true }, 'Back up all');
+    bk.addEventListener('click', async () => { try { const b = await api(`/api/profiles/${pid}/saves/backup`, { body: { folder: '' } }); toast(`Backed up (${fmtBytes(b.bytes)})`, I.check); rebuild(); } catch (e) { alertDlg('Could not back up', e.message); } });
+    const op = h('button', { class: 'btn', 'data-nav': true }, 'Open folder');
+    op.addEventListener('click', () => api(`/api/profiles/${pid}/saves/open`, { body: {} }).catch(e => toast(e.message, I.warn)));
+    acts.append(imp, exp, bk, op);
+    body.append(acts);
+    if (!pl.games.length) body.append(h('div', { class: 'sd-empty' }, h('b', {}, 'No save data yet'), h('span', {}, 'Saves appear here after playing a game, or import them from another PC or emulator.')));
+    for (const g of pl.games) {
+      const lib = S.games.find(x => x.titleId === g.titleId && x.kind !== 'update' && x.kind !== 'dlc');
+      const head = h('div', { class: 'sd-ghead' },
+        lib ? gameTile(lib) : h('div', { class: 'sd-noart' }, svg(I.pad)),
+        h('div', { class: 'sd-ginfo' }, h('b', {}, g.title + (g.kind === 'device' ? ' — device save' : g.kind === 'other-copy' ? ' — other copy' : '')),
+          h('span', {}, `Game ID ${g.titleId}`), h('span', {}, `${fmtBytes(g.bytes)} · last changed ${fmtDate(g.modified)}`)));
+      head.querySelector('.tile')?.removeAttribute('data-nav');
+      const items = h('div', { class: 'sd-items' }, g.items.map(it => h('span', { class: 'sd-item' + (it.dir ? ' slot' : '') }, it.label, h('small', {}, fmtBytes(it.bytes)))));
+      const card = h('div', { class: 'sd-game' }, head, items);
+      const btns = h('div', { class: 'sd-gbtns' });
+      const add = (label, fn, cls = '') => { const b = h('button', { class: 'chip ' + cls, 'data-nav': true }, label); b.addEventListener('click', fn); btns.append(b); };
+      if (g.kind === 'other-copy') add('Use this copy', async () => {
+        if (await confirmDlg('Use this copy?', `This copy becomes ${g.title}'s save; the current save is kept as another copy. Everything is backed up first.`, 'Use this copy')) {
+          try { await api(`/api/profiles/${pid}/saves/use-copy`, { body: { folder: g.folder } }); toast('Done', I.check); rebuild(); } catch (e) { alertDlg('Could not switch', e.message); }
+        }
+      });
+      add('Import into this game…', () => saveImportWizard(pid, g.titleId, rebuild));
+      add('Export', () => { download(`/api/profiles/${pid}/saves/export?folder=${encodeURIComponent(g.folder)}`); toast('Export started', I.check); });
+      add('Back up', async () => { try { await api(`/api/profiles/${pid}/saves/backup`, { body: { folder: g.folder } }); toast('Backed up', I.check); rebuild(); } catch (e) { alertDlg('Could not back up', e.message); } });
+      add('Restore…', () => restoreDlg(pid, g, rebuild));
+      add('Open', () => api(`/api/profiles/${pid}/saves/open`, { body: { folder: g.folder } }).catch(e => toast(e.message, I.warn)));
+      add('Delete…', async () => {
+        if (await confirmDlg(`Delete ${g.title}'s save?`, `${pl.name}'s save for ${g.title} (${g.items.length} item${g.items.length === 1 ? '' : 's'}, ${fmtBytes(g.bytes)}) is deleted. A backup is made first, so it can be restored from Restore….`, 'Delete', true)) {
+          try { await api(`/api/profiles/${pid}/saves/delete`, { body: { folder: g.folder, confirm: true } }); toast('Deleted (a backup was kept)', I.check); rebuild(); } catch (e) { alertDlg('Could not delete', e.message); }
+        }
+      }, 'danger');
+      card.append(btns);
+      body.append(card);
+    }
+    if (pl.otherFolders.length) body.append(h('p', { class: 'note' }, `Other folders in this user's save folder (not used by games): ${pl.otherFolders.join(', ')}. Use Import to assign one to a game.`));
+    if (d.backups.length) body.append(h('p', { class: 'note' }, `${d.backups.length} backup${d.backups.length === 1 ? '' : 's'} in NEXUS data\\UserData\\Backups\\Saves.`));
+  });
+  return l;
+}
+
+async function restoreDlg(pid, g, done) {
+  let list = [];
+  try { list = await api(`/api/profiles/${pid}/saves/backups?titleId=${g.titleId}`); } catch { }
+  if (!list.length) { alertDlg('No backups', `There are no backups of ${g.title}'s save yet. NEXUS makes one before every import, restore and delete, and you can make one with Back up.`); return; }
+  const why = { manual: 'Backup', 'before-import': 'Before an import', 'before-restore': 'Before a restore', 'before-delete': 'Before deleting', migration: 'Before the 0.3 update' };
+  const pick = await dialog({ title: `Restore ${g.title}`, text: 'Choose a backup. The current save is backed up first.', buttons: [{ label: 'Cancel', value: null }, ...list.slice(0, 6).map(b => ({ label: `${fmtDate(b.created)} · ${why[b.reason] || b.reason}`, value: b.file }))] });
+  if (!pick) return;
+  if (!(await confirmDlg('Replace the current save?', 'The save is replaced with the backup. The current save is backed up first.', 'Restore', true))) return;
+  try { await api(`/api/profiles/${pid}/saves/restore`, { body: { file: pick, confirm: true } }); toast('Restored', I.check); done(); } catch (e) { alertDlg('Could not restore', e.message); }
+}
+
+// Import: pick a folder or ZIP → NEXUS inspects it → shows what it found (player, game, slots) →
+// the user confirms the user and game → import (existing saves only replaced after confirming).
+async function saveImportWizard(pid, gameId, done) {
+  const how = await dialog({ title: 'Import saves', text: 'Choose a save folder (a game’s folder with slot_00, account.sav…, or a folder holding several games, from NEXUS, Eden, yuzu or another PC) or a ZIP archive of one. NEXUS looks inside and shows what it found before anything is copied.',
+    buttons: [{ label: 'Cancel', value: null }, { label: 'ZIP archive…', value: 'zip' }, { label: 'Folder…', value: 'folder', primary: true }] });
+  if (!how) return;
+  let insp;
+  try {
+    if (!S.app.native && how === 'folder') {
+      const v = await dialog({ title: 'Folder', text: 'Full path of the save folder on this PC.', input: { value: '', max: 500 }, buttons: [{ label: 'Cancel', value: null }, { label: 'OK', value: true, primary: true }] });
+      if (!v) return;
+      insp = await api('/api/saves/inspect', { body: { path: v } });
+    } else if (!S.app.native && how === 'zip') {
+      const f = await pickFile('.zip,application/zip'); if (!f) return;
+      insp = await api(`/api/saves/inspect?name=${encodeURIComponent(f.name)}`, { body: new Blob([f], { type: 'application/zip' }) });
+    } else insp = await api('/api/saves/inspect', { body: { pick: how } });
+  } catch (e) { alertDlg('Could not read that', e.message); return; }
+  if (!insp || insp.cancelled) return;
+  if (!insp.candidates?.length) { alertDlg('No saves found', insp.note || 'No save data was found there.'); return; }
+  const libGames = S.games.filter(g => g.titleId && g.kind !== 'update' && g.kind !== 'dlc');
+  const picks = insp.candidates.map(c => ({ c, on: !gameId || !c.titleId || c.titleId === gameId, titleId: c.titleId || gameId || '' }));
+  let target = (insp.candidates.find(c => c.profileId)?.profileId) || pid;
+  const l = sheet('Import saves', (body, layer, rebuild) => {
+    body.append(h('dl', { class: 'kv' }, h('dt', {}, 'From'), h('dd', {}, insp.source), h('dt', {}, 'Recognised as'), h('dd', {}, insp.format)));
+    body.append(rowChoice('Import into', S.profiles.map(p => ({ v: p.id, l: p.name })), target, v => { target = v; rebuild(); },
+      insp.candidates.some(c => c.playerId && !c.profileId) ? 'The player ID in these saves does not belong to a NEXUS user, so choose who gets them.' : 'Matched by player ID where the saves carry one.'));
+    for (const p of picks) {
+      const c = p.c;
+      const card = h('div', { class: 'sd-game' });
+      const title = c.titleId ? (c.title || c.titleId) : 'Unknown game';
+      card.append(h('div', { class: 'sd-ginfo' }, h('b', {}, title + (c.device ? ' — device save' : '')),
+        h('span', {}, [c.titleId ? `Game ID ${c.titleId}` : 'Game not identified', c.playerId ? `Player ${c.playerId}` : ''].filter(Boolean).join(' · ')),
+        h('span', {}, c.evidence), h('span', {}, `${c.files} file${c.files === 1 ? '' : 's'}, ${fmtBytes(c.bytes)}`)));
+      card.append(h('div', { class: 'sd-items' }, c.items.map(it => h('span', { class: 'sd-item' + (it.dir ? ' slot' : '') }, it.label))));
+      card.append(rowToggle('Import this save', p.on, v => { p.on = v; }));
+      if (!c.confident) {
+        card.append(rowChoice('Game', [{ v: '', l: 'Choose the game…' }, ...libGames.map(g => ({ v: g.titleId, l: `${g.title} (${g.titleId})` }))], p.titleId, v => { p.titleId = v; },
+          'NEXUS could not tell which game this save belongs to, so it is only imported into the game you choose.'));
+      }
+      body.append(card);
+    }
+    const go = h('button', { class: 'btn primary', 'data-nav': true }, 'Import');
+    go.addEventListener('click', () => run(false));
+    body.append(go);
+  });
+  async function run(replace) {
+    const sel = picks.filter(p => p.on);
+    if (!sel.length) { toast('Nothing selected', I.warn); return; }
+    if (sel.some(p => !p.titleId)) { alertDlg('Choose the game', 'Choose the game for every save NEXUS could not identify.'); return; }
+    try {
+      await api('/api/saves/import', { body: { token: insp.token, profileId: target, picks: sel.map(p => ({ id: p.c.id, titleId: p.titleId, device: p.c.device, replace })) } });
+      toast('Saves imported', I.check); l.close(); done?.();
+    } catch (e) {
+      if (e.status === 409 && e.data?.conflicts) {
+        const names = e.data.conflicts.map(c => '• ' + c.title).join('\n');
+        if (await confirmDlg('Replace existing saves?', `${profileById(target)?.name || 'This user'} already has saves for:\n${names}\n\nThey are backed up first, and can be restored from Save Data › Restore.`, 'Replace', true)) run(true);
+      } else alertDlg('Could not import', e.message);
+    }
+  }
+}
+
+// ---------- Media
+const Media = {
+  items: [], filter: 'all', game: '', sort: 'new',
+  async show() {
+    await this.load();
+    this.render();
+    show('media', { initial: Nav.items($('#media-body'))[0] });
+  },
+  async load() {
+    try { const d = await api('/api/media'); this.items = d.items || []; this.dirs = d; } catch (e) { this.items = []; toast(e.message, I.warn); }
+  },
+  visible() {
+    let l = this.items.filter(i => (this.filter === 'all' || i.type === this.filter) && (!this.game || i.gameKey === this.game));
+    if (this.sort === 'old') l = [...l].reverse();
+    return l;
+  },
+  render() {
+    const body = $('#media-body'); body.innerHTML = '';
+    const games = [...new Map(this.items.filter(i => i.gameKey).map(i => [i.gameKey, i.title || i.gameKey])).entries()];
+    const bar = h('div', { class: 'media-bar' });
+    const seg = (v, label) => { const b = h('button', { class: 'chip' + (this.filter === v ? ' sel' : ''), 'data-nav': true }, label); b.addEventListener('click', () => { this.filter = v; this.render(); Nav.setFocus(b); }); return b; };
+    const n = t => this.items.filter(i => t === 'all' || i.type === t).length;
+    bar.append(seg('all', `All (${n('all')})`), seg('screenshot', `Screenshots (${n('screenshot')})`), seg('recording', `Recordings (${n('recording')})`));
+    const gsel = h('select', { class: 'media-sel', 'data-nav': true }, h('option', { value: '' }, 'All games'), games.map(([k, t]) => h('option', { value: k }, t)));
+    gsel.value = this.game; gsel.addEventListener('change', () => { this.game = gsel.value; this.render(); });
+    const ssel = h('select', { class: 'media-sel', 'data-nav': true }, h('option', { value: 'new' }, 'Newest first'), h('option', { value: 'old' }, 'Oldest first'));
+    ssel.value = this.sort; ssel.addEventListener('change', () => { this.sort = ssel.value; this.render(); });
+    const folder = h('button', { class: 'chip', 'data-nav': true }, 'Open Media folder');
+    folder.addEventListener('click', () => api('/api/app/open-folder', { body: { which: 'media' } }).catch(e => toast(e.message, I.warn)));
+    bar.append(gsel, ssel, folder);
+    body.append(bar);
+    const list = this.visible();
+    if (!list.length) {
+      body.append(h('div', { class: 'sd-empty' }, h('b', {}, this.items.length ? 'Nothing matches' : 'No captures yet'),
+        h('span', {}, 'Press F12 or your controller’s Share / Capture button while playing to take a screenshot. Recording from inside NEXUS is not available yet; video files you put in Media\\Recordings (for example from the Xbox Game Bar) appear here too.')));
+      return;
+    }
+    const grid = h('div', { class: 'media-grid' });
+    for (const it of list) {
+      const src = `/media/file?id=${encodeURIComponent(it.id)}`;
+      const thumb = it.type === 'screenshot' ? h('img', { src: src + '&w=480', loading: 'lazy', alt: '' }) : h('video', { src, preload: 'metadata', muted: true });
+      const cell = h('button', { class: 'media-item', 'data-nav': true }, h('div', { class: 'media-thumb' }, thumb, it.type === 'recording' ? h('span', { class: 'media-badge' }, svg(I.play), 'Video') : ''),
+        h('div', { class: 'media-meta' }, h('b', {}, it.title || 'Unknown game'), h('span', {}, fmtDate(it.captured)), h('small', {}, it.name)));
+      cell.addEventListener('click', () => this.view(it));
+      grid.append(cell);
+    }
+    body.append(grid);
+  },
+  view(it) {
+    const src = `/media/file?id=${encodeURIComponent(it.id)}`;
+    const media = it.type === 'screenshot' ? h('img', { src, class: 'media-full', alt: it.name }) : h('video', { src, class: 'media-full', controls: true, autoplay: true });
+    media.addEventListener('error', () => toast('This capture could not be shown. It may have been moved or deleted.', I.warn, 4000));
+    const l = sheet(it.title || it.name, body => {
+      body.append(media);
+      body.append(h('dl', { class: 'kv' }, h('dt', {}, 'Type'), h('dd', {}, it.type === 'screenshot' ? 'Screenshot' : 'Recording'), h('dt', {}, 'Game'), h('dd', {}, it.title || 'Unknown'),
+        h('dt', {}, 'Captured'), h('dd', {}, fmtDate(it.captured)), h('dt', {}, 'File'), h('dd', {}, `${it.name} · ${fmtBytes(it.bytes)}`)));
+      const row = h('div', { class: 'sd-gbtns' });
+      const add = (label, fn, cls = '') => { const b = h('button', { class: 'chip ' + cls, 'data-nav': true }, label); b.addEventListener('click', fn); row.append(b); };
+      add('Open', () => api('/api/media/open', { body: { id: it.id } }).catch(e => toast(e.message, I.warn)));
+      add('Show in folder', () => api('/api/media/reveal', { body: { id: it.id } }).catch(e => toast(e.message, I.warn)));
+      if (it.gameKey && gameByKey(it.gameKey)) add('View game', () => { l.close(); showLibrary(); setTimeout(() => { const t = $$('#lib-grid .tile, #library .tile').find(x => x._game?.key === it.gameKey); if (t) Nav.setFocus(t); }, 50); });
+      add('Delete…', async () => {
+        if (await confirmDlg('Delete this capture?', `${it.name} is moved to the Recycle Bin.`, 'Delete', true)) {
+          try { await api('/api/media/delete', { body: { id: it.id, confirm: true } }); l.close(); await this.load(); this.render(); toast('Deleted', I.check); } catch (e) { alertDlg('Could not delete', e.message); }
+        }
+      }, 'danger');
+      body.append(row);
+    }, { onClose: () => { if (media.pause) media.pause(); } });
+  },
+};
+Screens.media = { onBack: () => goHome() };
+
+// ---------- per-game Game Updates and Mods (Configure Game Settings)
+async function gameContentPanel(body, g, which, redraw) {
+  let d;
+  try { d = await api(`/api/games/${g.key}/content`); } catch (e) { body.append(h('p', { class: 'note warn' }, e.message)); return; }
+  if (which === 'updates') {
+    body.append(h('p', { class: 'note' }, 'Add update packages for this game (NSP, NSZ, XCI, XCZ or NUP). NEXUS reads each package and only accepts a real update for this game. Updates in your games folder keep working too.'));
+    if (d.busy) body.append(h('p', { class: 'note' }, `Adding ${d.busy}…`));
+    const add = rowButton('Add an update…', { icon: I.plus, onClick: async () => {
+      try {
+        let body2 = {};
+        if (!S.app.native) { const v = await dialog({ title: 'Update package', text: 'Full path of the update file on this PC.', input: { value: '', max: 500 }, buttons: [{ label: 'Cancel', value: null }, { label: 'OK', value: true, primary: true }] }); if (!v) return; body2 = { path: v }; }
+        const u = await api(`/api/games/${g.key}/updates/add`, { body: body2 });
+        if (u?.cancelled) return;
+        toast(`Adding update ${u.version || u.fullId}…`, I.info, 3000); redraw();
+      } catch (e) { alertDlg('That update was not added', e.message); }
+    } });
+    body.append(add);
+    if (!d.updates.length) body.append(h('p', { class: 'note' }, 'No updates added in NEXUS.'));
+    for (const u of d.updates) {
+      const missing = u.source === 'missing';
+      body.append(rowToggle(`Update ${u.version || ''}`.trim(), u.enabled, async v => {
+        try { await api(`/api/games/${g.key}/updates/toggle`, { body: { file: u.file, on: v } }); } catch (e) { alertDlg('Could not change it', e.message); redraw(); }
+      }, missing ? `The file ${u.file} is missing from the Updates folder.` : `${u.fullId} · ${fmtBytes(u.bytes)} · added ${fmtDate(u.added)}${u.enabled ? '' : ' · switched off: the game starts without it'}`));
+      body.append(rowButton(`Remove update ${u.version || u.fullId}`, { danger: true, sub: 'Deletes NEXUS’s copy. The file you added it from is not touched.', onClick: async () => {
+        if (await confirmDlg('Remove this update?', `${g.title} starts without update ${u.version || u.fullId} (unless another copy is in your games folder).`, 'Remove', true)) {
+          try { await api(`/api/games/${g.key}/updates/remove`, { body: { file: u.file, confirm: true } }); redraw(); } catch (e) { alertDlg('Could not remove it', e.message); }
+        }
+      } }));
+    }
+    return;
+  }
+  body.append(h('p', { class: 'note' }, 'A mod is a folder with romfs, exefs, romfs_ext or cheats inside (or .pchtxt / .ips patches), or a ZIP of one. NEXUS installs it for this game only; a mod made for another game is refused. Switched-off mods stay installed.'));
+  const addMod = async pickHow => {
+    try {
+      let r;
+      if (!S.app.native && pickHow === 'zip') { const f = await pickFile('.zip,application/zip'); if (!f) return; r = await api(`/api/games/${g.key}/mods/add?name=${encodeURIComponent(f.name)}`, { body: new Blob([f], { type: 'application/zip' }) }); }
+      else if (!S.app.native) { const v = await dialog({ title: 'Mod folder', text: 'Full path of the mod folder on this PC.', input: { value: '', max: 500 }, buttons: [{ label: 'Cancel', value: null }, { label: 'OK', value: true, primary: true }] }); if (!v) return; r = await api(`/api/games/${g.key}/mods/add`, { body: { path: v } }); }
+      else r = await api(`/api/games/${g.key}/mods/add`, { body: { pick: pickHow } });
+      if (r?.cancelled) return;
+      toast(`Installed: ${r.added.join(', ')}`, I.check); redraw();
+    } catch (e) { alertDlg('That mod was not installed', e.message); }
+  };
+  body.append(rowButton('Add a mod folder…', { icon: I.plus, onClick: () => addMod('folder') }));
+  body.append(rowButton('Add a mod from a ZIP…', { icon: I.plus, onClick: () => addMod('zip') }));
+  if (!d.mods.length) body.append(h('p', { class: 'note' }, 'No mods installed for this game.'));
+  for (const m of d.mods) {
+    body.append(rowToggle(m.name, m.enabled, async v => {
+      try { await api(`/api/games/${g.key}/mods/toggle`, { body: { name: m.name, on: v } }); } catch (e) { alertDlg('Could not change it', e.message); redraw(); }
+    }, `${(m.contents || []).join(', ') || 'files'} · ${fmtBytes(m.bytes)}${m.enabled ? '' : ' · off'}`));
+    body.append(rowButton(`Remove ${m.name}`, { danger: true, sub: 'Moves the mod to the Recycle Bin.', onClick: async () => {
+      if (await confirmDlg(`Remove ${m.name}?`, 'The mod is moved to the Recycle Bin.', 'Remove', true)) {
+        try { await api(`/api/games/${g.key}/mods/remove`, { body: { name: m.name, confirm: true } }); redraw(); } catch (e) { alertDlg('Could not remove it', e.message); }
+      }
+    } }));
+  }
+  body.append(rowButton('Open the mods folder', { sub: d.modsDir, onClick: () => api('/api/app/open-folder', { body: { which: 'enginedata' } }).catch(() => { }) }));
+}
+
+// ---------- remembered controllers (Controllers screen)
+async function controllerList(box) {
+  box.append(h('h3', { class: 'set-h' }, 'Your controllers'));
+  let d;
+  try { d = await api(`/api/controllers?profile=${S.profile?.id || ''}`); } catch (e) { box.append(h('p', { class: 'note warn' }, e.message)); return; }
+  if (d.error && !d.pads.length) box.append(h('p', { class: 'note' }, `Controllers are listed by the NEXUS engine: ${d.error}`));
+  if (!d.pads.length) box.append(h('p', { class: 'note' }, 'No controller has been connected yet.'));
+  const chosen = d.pads.filter(p => p.player).sort((a, b) => a.player - b.player).map(p => p.key);
+  const setPlayers = async keys => { try { await api('/api/controllers/players', { body: { profileId: S.profile.id, keys } }); Controllers.refreshList(); } catch (e) { alertDlg('Could not change it', e.message); } };
+  for (const p of d.pads) {
+    const name = p.nickname || p.name || p.label;
+    const status = [p.label, p.connected ? 'connected' : `not connected · last seen ${fmtAgo(p.lastSeen)}`, p.serial ? `serial ${p.serial}` : ''].filter(Boolean).join(' · ');
+    const card = h('div', { class: 'pad-card known' + (p.player ? ' chosen' : '') + (p.connected ? '' : ' off') },
+      h('h4', {}, p.player ? h('span', { class: 'pl-badge' }, `Player ${p.player}`) : '', name), h('small', {}, status));
+    const btns = h('div', { class: 'sd-gbtns' });
+    const add = (label, fn, cls = '') => { const b = h('button', { class: 'chip ' + cls, 'data-nav': true }, label); b.addEventListener('click', fn); btns.append(b); };
+    if (p.player !== 1) add('Use as Player 1', () => setPlayers([p.key, ...chosen.filter(k => k !== p.key)]));
+    if (!p.player) add('Add as next player', () => setPlayers([...chosen, p.key]));
+    if (p.player) add('Stop using', () => setPlayers(chosen.filter(k => k !== p.key)));
+    add('Configure…', () => configurePad(p));
+    add('Forget', async () => {
+      if (await confirmDlg(`Forget ${name}?`, 'NEXUS forgets this controller and its settings. If you connect it again it is listed as new.', 'Forget', true)) {
+        try { await api('/api/controllers/forget', { body: { key: p.key } }); Controllers.refreshList(); } catch (e) { alertDlg('Could not forget it', e.message); }
+      }
+    }, 'danger');
+    card.append(btns);
+    box.append(card);
+  }
+  box.append(h('p', { class: 'note' }, chosen.length ? `${S.profile?.name || 'This user'} plays with the controllers marked Player 1, 2… (connected ones, in that order). Multiplayer games get one player per controller.` :
+    'With no controller chosen, player 1 is the first connected controller. Choose Use as Player 1 to always play with a specific one.'));
+}
+function configurePad(p) {
+  sheet(p.nickname || p.name || p.label, (body, layer, rebuild) => {
+    body.append(rowButton('Name', { value: p.nickname || p.name, onClick: async () => {
+      const n = await dialog({ title: 'Controller name', input: { value: p.nickname || p.name || '', max: 30 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Save', value: true, primary: true }] });
+      if (n == null) return;
+      try { const kp = await api('/api/controllers/update', { body: { key: p.key, nickname: n } }); Object.assign(p, kp); rebuild(); Controllers.refreshList(); } catch (e) { alertDlg('Could not rename', e.message); }
+    } }));
+    body.append(h('dl', { class: 'kv' }, h('dt', {}, 'Type'), h('dd', {}, p.label), h('dt', {}, 'Model'), h('dd', {}, p.name || '—'),
+      h('dt', {}, 'First connected'), h('dd', {}, fmtDate(p.firstSeen)), h('dt', {}, 'Identified by'), h('dd', {}, p.serial ? 'its serial number' : 'its model and USB/Bluetooth position')));
+    body.append(h('h3', {}, 'Button layout of this controller'));
+    body.append(rowToggle('Own layout', !!p.layout, async v => {
+      const kp = await api('/api/controllers/update', { body: v ? { key: p.key, layout: { base: 'nintendo' } } : { key: p.key, clearLayout: true } }).catch(e => { alertDlg('Could not change it', e.message); return null; });
+      if (kp) { Object.assign(p, kp); if (!v) p.layout = null; rebuild(); }
+    }, 'When this controller is player 1 it uses its own layout instead of the user’s (a game’s own layout still comes first).'));
+    if (p.layout) layoutRows(body, p.layout, async l => {
+      const kp = await api('/api/controllers/update', { body: { key: p.key, layout: l } }).catch(e => { alertDlg('Could not save', e.message); return null; });
+      if (kp) { Object.assign(p, kp); rebuild(); }
+    }, 'controller');
+  });
+}
+
+// ---------- NVIDIA DLSS files (Frame generation & DLSS)
+async function dlssPanel(box) {
+  let st;
+  try { st = await api('/api/dlss'); } catch (e) { box.append(h('p', { class: 'note warn' }, e.message)); return; }
+  box.append(h('h3', {}, 'NVIDIA DLSS files'));
+  if (!st.supported) { box.append(h('p', { class: 'note' }, st.why || 'DLSS needs an NVIDIA GeForce RTX graphics card.')); return; }
+  if (st.ready) {
+    box.append(infoRow('NVIDIA DLSS', 'Installed', `${st.installed.join(', ')}${st.appModel ? ' · DLSS model from the NVIDIA app' : ''}`));
+    return;
+  }
+  const j = st.job;
+  if (j?.running) {
+    box.append(infoRow('Downloading from NVIDIA', `${Math.round((j.done / Math.max(1, j.total)) * 100)}%`, j.file || ''));
+    return;
+  }
+  if (j?.error) box.append(h('p', { class: 'note warn' }, `The last download did not finish: ${j.error}. Nothing incomplete was kept.`));
+  box.append(h('p', { class: 'note' }, `Your ${st.gpu} supports DLSS. The NEXUS engine needs NVIDIA’s Streamline files to use it: ${st.missing.join(', ')}. NEXUS can download them from NVIDIA’s own Streamline ${st.version} release, check them (checksum and NVIDIA’s signature) and install them. Until then games use AMD FSR 3.1.`));
+  box.append(rowButton('Download from NVIDIA…', { icon: I.check, onClick: async () => {
+    let offer;
+    try { toast('Contacting NVIDIA’s download…', I.info, 2000); offer = await api('/api/dlss/prepare', { body: {} }); } catch (e) { alertDlg('Could not reach NVIDIA’s download', e.message + `\n\nYou can also download the Streamline SDK yourself from ${st.source} and copy ${st.missing.join(', ')} from bin\\x64 into ${st.folder}.`); return; }
+    const text = `NEXUS will download ${offer.files.join(', ')} (${fmtBytes(offer.bytes)}) from ${offer.source}.\n\nThese are NVIDIA’s files, under NVIDIA’s licences:\n\n` + offer.licences.map(l => `==== ${l.title} ====\n${l.text.slice(0, 4000)}${l.text.length > 4000 ? '\n…' : ''}`).join('\n\n');
+    const ok = await dialog({ title: 'NVIDIA DLSS', pre: text, buttons: [{ label: 'Cancel', value: null }, { label: 'Accept and download', value: true, primary: true }] });
+    if (!ok) return;
+    try { await api('/api/dlss/install', { body: { accepted: true } }); rebuildPanel?.(); } catch (e) { alertDlg('Could not download', e.message); }
+  } }));
+  box.append(rowButton('Open the DLSS folder', { sub: st.folder, onClick: () => api('/api/app/open-folder', { body: { which: 'streamline' } }).catch(e => toast(e.message, I.warn)) }));
+}
+
+// ---------- NEXUS updates
+async function updatesPanel(p) {
+  p.append(h('h2', {}, 'Updates'));
+  let d;
+  try { d = await api('/api/update'); } catch (e) { p.append(h('p', { class: 'note warn' }, e.message)); return; }
+  if (d.failed) p.append(h('p', { class: 'note warn' }, `The last update did not start correctly, so NEXUS went back to this version: ${d.failed}`));
+  const info = d.info || {};
+  p.append(infoRow('Installed version', d.current));
+  if (info.checked) p.append(infoRow('Latest version', info.latest || '—', `Checked ${fmtAgo(info.checked)}`));
+  if (info.error) p.append(h('p', { class: 'note warn' }, info.error));
+  if (info.available) p.append(rowButton(`Update to ${info.latest}…`, { icon: I.check, onClick: () => updateDialog(info) }));
+  else if (info.checked && !info.error) p.append(h('p', { class: 'note' }, 'NEXUS is up to date.'));
+  p.append(rowButton('Check for updates', { onClick: async () => { await api('/api/update/check', { body: {} }).catch(() => { }); rebuildPanel(); } }));
+  p.append(rowToggle('Check when NEXUS starts', d.settings.autoCheck, v => api('/api/update/settings', { body: { autoCheck: v } })));
+  p.append(h('h3', {}, 'Release page'));
+  p.append(rowButton('Repository', { value: d.settings.repo || '0ryzin/Nexus', sub: 'Where NEXUS looks for official releases (GitHub owner/name).', onClick: async () => {
+    const v = await dialog({ title: 'Release repository', input: { value: d.settings.repo || '', max: 100 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Save', value: true, primary: true }] });
+    if (v == null) return;
+    try { await api('/api/update/settings', { body: { repo: v } }); rebuildPanel(); } catch (e) { alertDlg('Not saved', e.message); }
+  } }));
+  p.append(rowButton('Access token', { value: d.hasToken ? 'Saved' : 'None', disabled: !d.canStoreToken, sub: 'Only needed while the release page is private: a GitHub fine-grained token with read-only access to that repository’s contents. NEXUS stores it encrypted for your Windows account and sends it only to GitHub’s API.', onClick: async () => {
+    const v = await dialog({ title: 'GitHub access token', text: 'Paste a read-only token, or leave it empty to remove the saved one.', input: { value: '', max: 300 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Save', value: true, primary: true }] });
+    if (v == null) return;
+    try { await api('/api/update/settings', { body: { token: v } }); rebuildPanel(); } catch (e) { alertDlg('Not saved', e.message); }
+  } }));
+  p.append(h('p', { class: 'note' }, 'Updates are checked against the published SHA-256 checksum before they are used. Your users, saves, settings, captures, mods, game updates and controller settings are never touched. If a new version does not start, NEXUS puts the previous one back automatically.'));
+}
+
+async function updateDialog(info) {
+  const notes = (info.notes || '').replace(/\r/g, '').slice(0, 6000);
+  const v = await dialog({ title: `NEXUS ${info.latest} is available`, pre: `Installed: ${S.app.version}\nNew: ${info.latest}${info.size ? `\nDownload: ${fmtBytes(info.size)}` : ''}\n\n${notes}`,
+    buttons: [{ label: 'Later', value: 'later' }, { label: 'Update now', value: 'now', primary: true }], cancelValue: 'later' });
+  if (v === 'later') { api('/api/update/later', { body: {} }).catch(() => { }); return; }
+  try { await api('/api/update/download', { body: {} }); } catch (e) { alertDlg('Could not download', e.message); return; }
+  const box = h('div', { class: 'dialog' }, h('div', { class: 'd-body' }, h('h2', {}, `Updating to NEXUS ${info.latest}`), h('p', { class: 'upd-status' }, 'Downloading…'), h('div', { class: 'lx-bar measured' }, h('i'))));
+  const layer = openLayer(box, { onBack: () => { } });
+  UpdateUI.box = box; UpdateUI.layer = layer;
+}
+const UpdateUI = {
+  box: null, layer: null,
+  async job(j) {
+    if (!this.box) return;
+    const st = $('.upd-status', this.box), bar = $('.lx-bar i', this.box);
+    if (j.state === 'downloading') { st.textContent = `Downloading… ${fmtBytes(j.done)} of ${fmtBytes(j.total)}`; bar.style.width = `${Math.round(j.done / Math.max(1, j.total) * 100)}%`; }
+    if (j.state === 'verifying') st.textContent = 'Checking the download…';
+    if (j.state === 'error') { this.layer.close(); this.box = null; alertDlg('The update was not installed', j.error + '\n\nNEXUS has not changed.'); }
+    if (j.state === 'ready') {
+      st.textContent = 'Ready. NEXUS restarts to finish the update.';
+      bar.style.width = '100%';
+      if (S.playing?.running) { st.textContent = 'Ready. Close your game to finish the update (NEXUS restarts).'; return; }
+      await sleep(800);
+      try { await api('/api/update/install', { body: {} }); st.textContent = 'Installing… NEXUS restarts in a moment.'; } catch (e) { this.layer.close(); this.box = null; alertDlg('The update was not installed', e.message); }
+    }
+  },
+};
+
+// ---------- settings: Save Data and Updates categories
+Object.assign(Panels, {
+  savedata(p) {
+    p.append(h('h2', {}, 'Save Data'));
+    p.append(h('p', { class: 'note' }, 'Every user has their own save folder, NEXUS data\\UserData\\Saves\\<player ID>-<name>, with a folder per game named after its game ID and a short name (for example 0400486024DEC000-OOT). Games read and write there directly.'));
+    for (const pr of S.profiles) {
+      const r = rowButton(pr.name, { sub: 'View, import, export, back up, restore or delete saves', onClick: () => saveDataPage(pr.id) });
+      r.querySelector('.rl').prepend(avatarEl(pr)); r.querySelector('.rl').style.cssText = 'flex-direction:row;align-items:center;gap:.8em';
+      r.querySelector('.avatar').style.setProperty('--sz', '2.2em');
+      p.append(r);
+    }
+    p.append(rowButton('Import saves…', { icon: I.plus, sub: 'From NEXUS, another PC or another emulator’s save folder, or a ZIP.', onClick: () => saveImportWizard(S.profile?.id || S.profiles[0]?.id, null, () => { }) }));
+    p.append(rowButton('Open the saves folder', { onClick: () => api('/api/app/open-folder', { body: { which: 'saves' } }) }));
+    p.append(rowButton('Open save backups', { sub: 'Made before every import, restore, delete and the 0.3 conversion.', onClick: () => api('/api/app/open-folder', { body: { which: 'savebackups' } }) }));
+  },
+  updates(p) { return updatesPanel(p); },
+});
+
 (async function main() {
   Sound.init();
   try { await loadState(); }

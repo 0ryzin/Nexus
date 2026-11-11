@@ -52,7 +52,16 @@ type GlobalSettings struct {
 	ThemeVersion int `json:"themeVersion"` // 2 = 1.6 home screen (red accent)
 
 	// Engine holds global emulation settings as NEXUS values (see enginesettings.go).
-	Engine map[string]string `json:"engine"`
+	Engine  map[string]string `json:"engine"`
+	Updates UpdateSettings    `json:"updates"`
+}
+
+// UpdateSettings: automatic NEXUS updates (updater.go).
+type UpdateSettings struct {
+	AutoCheck   bool   `json:"autoCheck"`             // check the release page when NEXUS starts
+	Repo        string `json:"repo,omitempty"`        // owner/name of the release repository
+	SkipVersion string `json:"skipVersion,omitempty"` // "Later" for this version: not announced again
+	LastCheck   int64  `json:"lastCheck,omitempty"`
 }
 
 type EmulatorSettings struct {
@@ -66,6 +75,12 @@ type EmulatorSettings struct {
 	// Guide/Home button. A key that is one of the game's controls stays with the game.
 	HomeKey    string `json:"homeKey"`
 	HomeButton bool   `json:"homeButton"`
+	// While playing: fullscreen/window toggle and screenshot keys ("" = off), the controller's
+	// capture/share button for screenshots, and the fade from the loading screen into the game.
+	FullscreenKey string `json:"fullscreenKey"`
+	ScreenshotKey string `json:"screenshotKey"`
+	CaptureButton bool   `json:"captureButton"`
+	FadeIn        bool   `json:"fadeIn"`
 	// Overrides holds engine keys saved by NEXUS 1.2-1.5; migrated into Engine on load.
 	Overrides map[string]string `json:"overrides"`
 }
@@ -91,7 +106,9 @@ func DefaultSettings() GlobalSettings {
 	s.Library.NlibURL = "https://api.nlib.cc"
 	s.Library.ArtProviders = []string{}
 	s.Engine = map[string]string{}
-	s.Emulator = EmulatorSettings{Fullscreen: true, QuitCombo: true, ManageSaves: true, WhoPlays: "several", HomeKey: "H", HomeButton: true, Overrides: map[string]string{}}
+	s.Updates = UpdateSettings{AutoCheck: true, Repo: defaultReleaseRepo}
+	s.Emulator = EmulatorSettings{Fullscreen: true, QuitCombo: true, ManageSaves: true, WhoPlays: "several", HomeKey: "H", HomeButton: true,
+		FullscreenKey: "F11", ScreenshotKey: "F12", CaptureButton: true, FadeIn: true, Overrides: map[string]string{}}
 	return s
 }
 

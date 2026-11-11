@@ -1,9 +1,17 @@
-# NEXUS 0.1.0 (preview)
+# NEXUS 0.3.0 (preview)
 
 NEXUS is a console-style game system for Windows. It starts with a power-on animation, then opens a home screen with your game library, user profiles, themes and controller navigation.
 
 **What NEXUS does:**
-- **NEXUS sets itself up.** At the first start NEXUS creates its engine data folder and configuration on its own; no other emulator has to be opened or set up. If data from another Switch emulator (Eden, Lichii, yuzu, Citron, Sudachi, Suyu; keys from Ryujinx) is on the PC, NEXUS offers to copy it in — or to start fresh. See *Data from other emulators*.
+- **NEXUS sets itself up and manages its own files.** At the first start NEXUS creates its engine data folder and configuration on its own. It never reads or needs another emulator's folders: keys and firmware are installed in *System files*, saves in *Save Data*, updates and mods per game.
+- **Save Data:** every user has `UserData\Saves\<PLAYER_ID>-<name>\<GAME_ID>-<SHORT>\` (for example `0400486024DEC000-OOT` with `slot_00 … slot_05`, `account.sav`, `option.sav`), which games read and write directly. Save Data shows each game's slots and files by name, and imports saves from a folder or ZIP (it tells you which player and game they belong to, from the folder IDs or the save's own metadata), exports, backs up, restores and deletes — never replacing or deleting a save without asking and without a backup.
+- **Media:** screenshots (F12, or your controller's Share / Capture button while playing) in `Media\Screenshots`, shown in the Media tab with their game and date; filter, sort, view, open, show in folder, delete (to the Recycle Bin). Recording from inside NEXUS is not available yet; video files you put in `Media\Recordings` appear too.
+- **NEXUS Home while playing:** one press of the Home key (H) or the controller's Home/Guide button goes to NEXUS Home; the game is paused and keeps its place (green dot on its tile) until *Resume Game*. The button no longer reaches the game itself.
+- **F11** switches the game between fullscreen and a window without restarting it.
+- **Controllers:** NEXUS remembers every controller (by serial number where it has one), lets each user choose which controller is player 1, 2 … (multiplayer), and gives a controller its own button layout if you want.
+- **Game Updates and Mods** in each game's *Configure Game Settings*: NEXUS reads a package and accepts it only if it really is an update for that game; mods install for that game only and can be switched on and off.
+- **NVIDIA DLSS files:** on GeForce RTX cards NEXUS can download NVIDIA's Streamline files from NVIDIA's own release (after showing NVIDIA's licences and asking), checks them and installs them.
+- **Automatic updates:** NEXUS checks the official release page, shows what's new, downloads the update, checks its SHA-256, installs it and restarts; if the new version does not start, the previous one comes back. Your data is never touched.
 - **Starting a game:** *Who's playing?* (when there is more than one user), the game's artwork opens, the NEXUS loading screen shows the real loading steps, then the game. If a game cannot start, NEXUS says why in plain words; the technical details and a diagnostic log are one button away.
 - **Frame generation and DLSS:** frame generation (AMD FSR 3 built in, or Lossless Scaling with your own copy), NVIDIA DLSS in place of a game's own DLSS on GeForce RTX cards, and AMD FSR 4 on Radeon RX 9000 cards, in *Emulation settings › Frame generation & DLSS* and per game. NEXUS detects your graphics card and offers only what it supports.
 - **The engine is built and shipped with NEXUS.** The NEXUS engine is compiled on Windows by the project's build (GitHub Actions), its tests run, and it is packed into the same ZIP as `NEXUS.exe`. NEXUS finds it in `NEXUS\Engine`, checks every file and loads it in the background while the interface starts. `NEXUS.exe --engine-check result.json` runs the same check from the command line.
@@ -13,7 +21,6 @@ NEXUS is a console-style game system for Windows. It starts with a power-on anim
 - **Light and dark themes everywhere:** every screen, list, dialog and the setup use one set of theme colours, and text in your profile colour is adjusted to stay readable on both themes.
 - **One download.** `NEXUS-<version>-Windows-x64.zip` contains NEXUS *and* its engine (`NEXUS\Engine`). Extract it and run `NEXUS.exe`; nothing else to install. The engine is found relative to `NEXUS.exe`, so the folder works wherever you put it, and it is updated together with NEXUS.
 - **Hardware information** and **Optimise for my device** (*Emulation settings*): NEXUS reads your CPU, GPU, memory, Windows version and display, and recommends engine settings with *Performance*, *Balanced* or *Quality* profiles, for all games or for one game. You see every change first, choose which to apply, and can restore the previous settings.
-- **Readable save folders:** `Saves\<profile ID> - <name>\<game>` (for example `BOTW - The Legend of Zelda Breath of the Wild`), ready for dropping in your own saves; export and import as ZIP.
 - **Animated wallpapers** (GIF, animated WebP, MP4, WebM) with a preview, and **Home transitions**: pressing Home during a game pauses it and opens the Home screen; *Resume* takes you back.
 - **NEXUS runs games itself.** The NEXUS engine (Switch emulation core built on the yuzu/Eden code base) is loaded inside NEXUS. When you press Play, NEXUS opens the game window, plays the game and brings you back to the home screen. No other emulator program is started, and there is no emulator to choose.
 - **NEXUS Engine** settings: status, supported systems, engine builds with verified install and rollback.
@@ -22,7 +29,7 @@ NEXUS is a console-style game system for Windows. It starts with a power-on anim
 - Updates and DLC in your game folders are applied automatically; player 1 is mapped to your controller automatically.
 - Fast library: tiles use cached, downscaled artwork.
 
-> **About this package.** This ZIP was produced by the project's Windows build (GitHub Actions, `.github/workflows/nexus-build.yml`): it compiles the NEXUS engine from upstream Lichii build-150 plus the NEXUS patches in `engine/patches`, runs the engine's test suite (its full test suite), loads the DLL and checks its interface, runs NEXUS's own tests on Windows, builds `NEXUS.exe`, packs both into this ZIP, then extracts the ZIP into a fresh folder and has `NEXUS.exe --engine-check` find, verify and load the engine there. The build machine has no GPU and no games, so **running real games has not been tested yet** (see *Known limitations*).
+> **About this package.** This ZIP was produced by the project's Windows build (GitHub Actions, `.github/workflows/nexus-build.yml`): it compiles the NEXUS engine from upstream Lichii build-160 plus the NEXUS patches in `engine/patches`, runs the engine's test suite (its full test suite), loads the DLL and checks its interface, runs NEXUS's own tests on Windows, builds `NEXUS.exe`, packs both into this ZIP, then extracts the ZIP into a fresh folder and has `NEXUS.exe --engine-check` find, verify and load the engine there. The build machine has no GPU and no games, so **running real games has not been tested yet** (see *Known limitations*).
 
 NEXUS is an independent project. It is not affiliated with or endorsed by Nintendo. It contains **no games, keys or firmware**.
 
@@ -79,17 +86,19 @@ NEXUS\
 ├── README.md  NEXUS_ENGINE.md  RELEASE.json
 ```
 
-Your own data is deliberately **not** inside this folder (so an update can never overwrite it): users and profiles, **Saves**, settings and per-game configuration, artwork, themes and wallpapers, keys and firmware, logs are in `%APPDATA%\NEXUS\` (*System Settings › System › Storage & data* opens each folder).
+Your own data is deliberately **not** inside this folder (so an update can never overwrite it): users and profiles, **saves** (`UserData\Saves`), **screenshots** (`Media`), settings and per-game configuration, artwork, themes and wallpapers, keys and firmware, logs are in `%APPDATA%\NEXUS\` (*System Settings › System › Storage & data* opens each folder).
 
 **Saves folder layout:**
 
 ```text
-%APPDATA%\NEXUS\Saves\
-├── 7a8ba3d4a1e2 - Tom\
-│   ├── BOTW - The Legend of Zelda Breath of the Wild\
-│   ├── OOT - The Legend of Zelda Ocarina of Time\
-│   └── Cloud Garden\
-└── 645e4b5f6e11 - Jo\
+%APPDATA%\NEXUS\UserData\Saves\
+├── C36C52B3FCFA09313E76441554C5F2B5-Tom\
+│   ├── 0400486024DEC000-OOT\
+│   │   ├── slot_00\ … slot_05\
+│   │   ├── account.sav
+│   │   └── option.sav
+│   └── 0100BBBB00010000-CG\
+└── 2FAF7BE653FF9433ACF8395D4EA84182-Jo\
 ```
 
 **Portable mode:** an empty `portable.txt` next to `NEXUS.exe` keeps all data inside the NEXUS folder.
@@ -130,12 +139,8 @@ Existing users still on the old default accent (cyan) are moved to NEXUS red onc
 ### First start and adding users
 When NEXUS starts with no users, it opens **Welcome to NEXUS**: choose a **name** (up to 20 characters, no duplicates), a **picture** (a NEXUS icon with a background colour, a console icon, or a picture from your PC), and your **profile colour**, then check the **review** and press *Start using NEXUS*. The user is created only at that last step. *Add user* on *Who's playing?* opens the same steps. NEXUS supports **up to 8 users**; with 8, *Add user* is hidden and NEXUS explains that a user must be deleted first. Everything can be changed later in *User settings* (name, colour, icon, picture).
 
-### Data from other emulators
-NEXUS keeps its engine data in `%APPDATA%\NEXUS\System\Engine` and creates it, with its configuration, at the first start. When NEXUS finds data from another Switch emulator in `%APPDATA%` it asks once:
-- **Import** copies keys, firmware, installed updates/DLC, mods, controller profiles and game-list icons into NEXUS. The original folders are only read — never changed, moved or deleted. Files NEXUS already has are kept, and NEXUS backs up its own keys and controller profiles first (`Archived\engine-data-backup-…`).
-- **Start fresh** imports nothing and deletes nothing. You can import later in *Settings › System files › Data from other emulators*.
-- If an import is cut off (NEXUS closed, PC switched off), NEXUS notices at the next start and offers **Try again**; files are written under a temporary name first, so nothing half-copied is ever used, and the retry copies only what is missing.
-- Saves are not part of this import: each user can copy earlier saves in *User settings › Copy earlier saves*.
+### System files
+NEXUS keeps its engine data in `%APPDATA%\NEXUS\System\Engine` and creates it, with its configuration, at the first start. Keys and firmware dumped from your own console are installed in *Settings › System files*: NEXUS checks them before anything is replaced and keeps the previous files. NEXUS does not read other emulators' folders and never asks you to open another emulator.
 
 ### Choosing a user
 Each user on *Who's playing?* has a card of their own, evenly spaced, with the picture centred. The red focus ring, the slight zoom and the hover highlight all stay inside that card, so moving between users never overlaps a neighbour; the change animates smoothly. The user who played last carries a **LAST** label. The cards wrap into more rows as users are added, and shrink on small windows.
@@ -175,10 +180,8 @@ Update and DLC files are hidden by default because they are not games you launch
 ### Users, saves and isolation
 Each user has their own name, picture, theme, wallpaper, controller mapping, play time and recently played list. Each user also has **their own save data**:
 
-- When a game starts, NEXUS points the engine's save folder at `%APPDATA%\NEXUS\Saves\<user id>`, so games read and write only that user's saves. Keys, firmware and installed updates stay shared.
-- If saves exist from the emulator NEXUS 1.x used, you can **copy** them into a user (*User settings › Copy earlier saves*). The originals are never moved or deleted. If the user already has saves for the same game, NEXUS asks first and backs up the user's copy to `%APPDATA%\NEXUS\Archived\save-backups` before replacing anything.
+- When a game starts, NEXUS gives the engine that user's save folder (`UserData\Saves\<PLAYER_ID>-<name>`), so games read and write only that user's saves. Keys, firmware and installed updates stay shared.
 - **Deleting a user never erases saves.** You must type the user's name to confirm, and the user's folder and saves are moved to `%APPDATA%\NEXUS\Archived`.
-- To share one save folder between all users, turn off *Settings › Game sessions & saves › Separate saves for each user*.
 
 ### Profile icons
 NEXUS reads its profile icon gallery from the console's own **installed firmware**: system data archive `010000000000080A`, folder `chara`, Yaz0-compressed 256 × 256 images (the same source the console's avatar picker uses).
@@ -306,22 +309,13 @@ A full page per game: **General** (title, version, Title ID, type, file, **compa
 **Compatibility** ratings: *Works* (≥ 10 minutes over ≥ 2 sessions without a crash), *Starts*, *Known issues* (has crashed), *Unsupported* (never reached the first frame), *Not tested*. Your rating always overrides the automatic one. NEXUS shows no ratings copied from other projects.
 
 ### Saves
-Each user's saves are in `Saves\<profile ID> - <name>` with one readable folder per game:
-- well-known games get a short code ("BOTW - …");
-- other games use their full name;
-- names are made safe for Windows;
-- clashes get " (2)".
+*Settings › Save Data* (or *User settings › Save Data*) shows one user at a time: each game with its **game ID**, size, last change and the save's own slots and files (*Slot 00*, *Account Data*, *Option Data* …).
 
-*User settings › Open save folder* also creates an empty folder for every game in your library, so you can drop your own save files into the right place.
-
-How it works:
-- A hidden mapping file links each folder to its game's title ID.
-- When a game starts, its folder is handed to the engine at the title-ID path the engine uses. When the game ends it comes back.
-- After a crash, the next start puts it back.
-- Profile IDs and title IDs never change, and nothing is deleted or overwritten.
-- Folders from NEXUS 2.0 (`Saves\<id>\user\save\…`) are reorganised automatically at the first start.
-
-*Export saves* downloads a ZIP of a user's game folders. *Import saves from a ZIP* adds them; an existing folder is never replaced (the import gets " (2)"). Please don't rename the game folders.
+- **Import saves…:** choose a save folder (a game's folder, or a folder with several, such as another emulator's `<user ID>` folder) or a ZIP. NEXUS inspects it and shows which **player** and **game** each save belongs to (from the folder names' IDs, or from a Ryujinx save's own metadata). If the game cannot be identified, you choose it — NEXUS never guesses. A game that already has a save is only replaced when you confirm, and a backup is made first.
+- **Export** (one game or all), **Back up**, **Restore…** (the current save is backed up first), **Delete…** (backed up first), **Open** the folder.
+- Backups: `UserData\Backups\Saves\<player folder>\`.
+- If two copies of a game's save exist (for example after an older engine wrote one in its own layout), both are kept: the second is shown as *other copy* and *Use this copy* switches them.
+- **From NEXUS 0.2:** at the first start of 0.3 the old `Saves` folders are backed up into one ZIP, then converted to the layout above (renamed, nothing copied or deleted). If the backup cannot be written, nothing is changed and Save Data says so.
 
 ### Themes and wallpapers
 These settings are per user (*System Settings › Appearance*):
