@@ -54,6 +54,15 @@ jobs:
       - name: Check out NEXUS
         uses: actions/checkout@v4
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: app/go.sum
+
+      - name: NEXUS tests on Windows (gate, before the long engine build)
+        working-directory: app
+        run: go test -count=1 .
+
       - name: Read engine.lock
         id: lock
         shell: bash
@@ -201,15 +210,6 @@ jobs:
           NEXUS_ENGINE_UPSTREAM_BASE: ${{ steps.lock.outputs.base }}
           NEXUS_ENGINE_PATCHSET: ${{ steps.lock.outputs.patchset }}
         run: python tools/nexus/package_engine.py build/bin ../engine-out
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.24"
-          cache-dependency-path: app/go.sum
-
-      - name: NEXUS tests on Windows (gate)
-        working-directory: app
-        run: go test -count=1 .
 
       - name: Build NEXUS.exe
         working-directory: app

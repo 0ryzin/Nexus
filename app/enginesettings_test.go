@@ -55,7 +55,7 @@ func TestNexusSettingsReachTheEngine(t *testing.T) {
 		t.Fatalf("reverse %v", ev)
 	}
 	app.Emu.SetGameSettings(g, map[string]*string{"graphics.vsync": sp("off")}, nil)
-	app2, _ := NewApp(root)
+	app2, _ := testNewApp(t, root)
 	if v := app2.Emu.GameSettingsView(g).Overrides["graphics.vsync"]; v != "off" {
 		t.Fatal("per-game settings lost after restart")
 	}

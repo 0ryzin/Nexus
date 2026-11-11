@@ -45,7 +45,7 @@ func newTestApp(t *testing.T, nlib string) (*App, string) {
 	os.WriteFile(filepath.Join(root, "Games", "a.nsp"), buildPFS0([]f{{"p.nca", buildNCA(t, k, 0, 0x0100AAAA00010000, nil, nil, nil)}, {"c.nca", buildNCA(t, k, 2, 0x0100AAAA00010000, romfs, nil, nil)}}), 0o644)
 	os.WriteFile(filepath.Join(root, "Games", "b.nsp"), buildPFS0([]f{{"p.nca", buildNCA(t, k, 0, 0x0100AAAA00020000, nil, nil, nil)}}), 0o644)
 	os.WriteFile(filepath.Join(root, "Games", "Charlie Racing [0100AAAA00030000].xci"), []byte("unreadable image: ID only from file name"), 0o644)
-	app, err := NewApp(root)
+	app, err := testNewApp(t, root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestOnlineArtwork(t *testing.T) {
 		t.Fatalf("custom art: %+v", b)
 	}
 	app.Library.SetArtOptions(b.Key, "online", "")
-	app2, _ := NewApp(root)
+	app2, _ := testNewApp(t, root)
 	app2.Library.Scan()
 	b2, _ := app2.Library.Get(b.Key)
 	if b2.ArtSource != "online" || !b2.HasCustom {
@@ -183,7 +183,7 @@ func TestNamesMatch(t *testing.T) {
 
 func TestAvatarImport(t *testing.T) {
 	root := t.TempDir()
-	app, _ := NewApp(root)
+	app, _ := testNewApp(t, root)
 	src := filepath.Join(t.TempDir(), "my-icons")
 	png := jpegBytes(64, color.RGBA{1, 2, 3, 255})
 	for _, p := range []string{"super-series/characters/c1.png", "super-series/characters/c2.png", "super-series/backgrounds/b1.png", "super-series/frames/f1.png", "other/x.png", "README.md"} {
@@ -201,7 +201,7 @@ func TestAvatarImport(t *testing.T) {
 
 func TestDataDirSurvivesReinstall(t *testing.T) {
 	install1, data := t.TempDir(), t.TempDir()
-	app, err := NewAppWithPaths(NewPathsSplit(install1, data, false))
+	app, err := testNewAppWithPaths(t, NewPathsSplit(install1, data, false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +211,7 @@ func TestDataDirSurvivesReinstall(t *testing.T) {
 	app.Close()
 	os.RemoveAll(install1)
 	install2 := t.TempDir()
-	app2, err := NewAppWithPaths(NewPathsSplit(install2, data, false))
+	app2, err := testNewAppWithPaths(t, NewPathsSplit(install2, data, false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestMigrateOldLayout(t *testing.T) {
 	os.WriteFile(filepath.Join(old, "profiles.json"), []byte(`{"profiles":[{"id":"abc","name":"Old"}]}`), 0o644)
 	os.MkdirAll(filepath.Join(install, "System", "Saves", "abc"), 0o755)
 	os.WriteFile(filepath.Join(install, "System", "Saves", "abc", "s.bin"), []byte("x"), 0o644)
-	app, _ := NewAppWithPaths(NewPathsSplit(install, data, false))
+	app, _ := testNewAppWithPaths(t, NewPathsSplit(install, data, false))
 	app.migrateToDataDir()
 	pr, _ := LoadProfiles(app.Paths)
 	if len(pr.List()) != 1 || !fileExists(filepath.Join(data, "Saves", "abc", "s.bin")) {
@@ -251,7 +251,7 @@ func TestImportPreviousEngineData(t *testing.T) {
 	os.WriteFile(filepath.Join(reg, "a.nca"), []byte("nca"), 0o644)
 	os.MkdirAll(filepath.Join(eden, "nand", "user", "save"), 0o755)
 	os.WriteFile(filepath.Join(eden, "nand", "user", "save", "s.bin"), []byte("save"), 0o644)
-	app, _ := NewAppWithPaths(NewPathsSplit(t.TempDir(), t.TempDir(), false))
+	app, _ := testNewAppWithPaths(t, NewPathsSplit(t.TempDir(), t.TempDir(), false))
 	app.importPreviousEngineData()
 	if !app.Emu.KeysPresent() || !app.Emu.FirmwarePresent() {
 		t.Fatal("keys/firmware not imported")
@@ -342,7 +342,7 @@ func TestEngineSessionAndPlaytime(t *testing.T) {
 	// crash recovery
 	now := nowUnix()
 	app.Profiles.Checkpoint(&LiveSession{ProfileID: p.ID, Key: g.Key, Title: g.Title, Emulator: engineID, Start: now - 600, LastSeen: now - 60})
-	app2, _ := NewApp(root)
+	app2, _ := testNewApp(t, root)
 	if rec := app2.Profiles.RecoverLiveSession(); rec == nil || rec.Seconds != 540 {
 		t.Fatalf("recover %+v", rec)
 	}
@@ -450,7 +450,7 @@ func TestVolumeReachesEngineAudio(t *testing.T) {
 		t.Fatal("volume must be clamped to 200%")
 	}
 	app.Emu.SetVolume(140)
-	app2, _ := NewApp(root)
+	app2, _ := testNewApp(t, root)
 	if app2.Emu.Volume() != 140 {
 		t.Fatalf("volume not persisted: %d", app2.Emu.Volume())
 	}
@@ -521,7 +521,7 @@ func TestBundledEngine(t *testing.T) {
 	if err := os.Rename(root, moved); err != nil {
 		t.Fatal(err)
 	}
-	app, err := NewApp(moved)
+	app, err := testNewApp(t, moved)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -540,7 +540,7 @@ func TestBundledEngine(t *testing.T) {
 	}
 	// a damaged dependency is detected
 	os.WriteFile(filepath.Join(moved, "Engine", "Libraries", "SDL3.dll"), []byte("MZ damaged"), 0o644)
-	app2, _ := NewApp(moved)
+	app2, _ := testNewApp(t, moved)
 	if err := app2.Emu.Builds.VerifyActive(); err == nil || !strings.Contains(err.Error(), "SDL3.dll") {
 		t.Fatalf("damaged library not detected: %v", err)
 	}
