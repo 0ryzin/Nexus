@@ -1,0 +1,36 @@
+From c4251967eba06451182aac16f6e8a969c6fb9a21 Mon Sep 17 00:00:00 2001
+From: NEXUS <nexus@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 19:01:04 +0000
+Subject: [PATCH 12/12] nexus_engine: keep the engine state alive until the
+ process ends
+
+After a session the engine thread has finished but is joined only when the
+next session starts. At process exit the static Engine was destroyed with a
+joinable std::thread, which calls std::terminate: NEXUS.exe ended with
+0xC0000409 when it closed after having run a game. The state object is now
+never destroyed (the OS reclaims it), like other process-lifetime singletons.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
+---
+ src/nexus_engine/nexus_engine.cpp | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/src/nexus_engine/nexus_engine.cpp b/src/nexus_engine/nexus_engine.cpp
+index 5bb77ffb2..5b75b5358 100644
+--- a/src/nexus_engine/nexus_engine.cpp
++++ b/src/nexus_engine/nexus_engine.cpp
+@@ -123,8 +123,11 @@ struct Engine {
+ };
+ 
+ Engine& E() {
+-    static Engine engine;
+-    return engine;
++    // Never destroyed: at process exit Windows has already ended the engine thread, and
++    // destroying a finished-but-unjoined std::thread (or tearing Core::System down inside
++    // DLL_PROCESS_DETACH) would end the host process with a fail-fast error instead of exiting.
++    static Engine* const engine = new Engine;
++    return *engine;
+ }
+ 
+ void Fail(const char* code, const std::string& message) {

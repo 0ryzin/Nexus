@@ -192,7 +192,7 @@ jobs:
         working-directory: engine-src
         run: |
           sccache --zero-stats || true
-          cmake --build build --target nexus_engine tests --parallel
+          cmake --build build --target nexus_engine tests config_tests profile_import_tests --parallel
           sccache --show-stats || true
 
       - name: Save compiler objects
@@ -208,6 +208,9 @@ jobs:
         run: |
           ls build/bin
           ./build/bin/tests.exe
+          # configuration and data-folder tests (includes the NEXUS host-managed folder case)
+          ./build/bin/config_tests.exe
+          ./build/bin/profile_import_tests.exe
 
       - name: Engine interface smoke test
         working-directory: engine-src
