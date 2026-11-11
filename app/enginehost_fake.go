@@ -62,6 +62,17 @@ func (f *fakeEngine) run(req EngineRequest) {
 		})
 		return
 	}
+	// development: a loading phase (NEXUS_FAKE_LOAD) and an engine exception with upstream wording
+	if d, err := time.ParseDuration(os.Getenv("NEXUS_FAKE_LOAD")); err == nil && d > 0 {
+		f.set(func(s *EngineStatus) { s.State = "loading" })
+		time.Sleep(d)
+	}
+	if strings.Contains(req.Game, "exception") || os.Getenv("NEXUS_FAKE_FAIL") == "exception" {
+		f.set(func(s *EngineStatus) {
+			*s = EngineStatus{State: "error", Code: "exception", Message: "Legacy emulator data or an unfinished import was found. Open the Lichii GUI to import it or explicitly start fresh before using eden-cli. No configuration was created."}
+		})
+		return
+	}
 	sys := "switch1"
 	if strings.Contains(req.Game, "nx2") {
 		sys = "switch2"

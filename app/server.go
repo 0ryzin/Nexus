@@ -648,6 +648,40 @@ func (s *Server) routes() {
 		}
 		writeJSON(w, true)
 	})
+	m.HandleFunc("POST /api/app/reveal-log", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Path string }
+		_ = readBody(r, &b)
+		rel, err := filepath.Rel(a.Paths.Logs, b.Path)
+		if err != nil || strings.HasPrefix(rel, "..") || !fileExists(b.Path) {
+			writeErr(w, 400, errors.New("That log file is not available."))
+			return
+		}
+		if err := revealInExplorer(b.Path); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, true)
+	})
+	// ----- NEXUS engine data: setup and import of other emulators' data (enginedata.go)
+	m.HandleFunc("GET /api/engine-data", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, a.Emu.EngineDataStatus())
+	})
+	m.HandleFunc("POST /api/engine-data/import", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Source string }
+		_ = readBody(r, &b)
+		if err := a.Emu.ImportLegacy(b.Source); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, a.Emu.EngineDataStatus())
+	})
+	m.HandleFunc("POST /api/engine-data/fresh", func(w http.ResponseWriter, r *http.Request) {
+		if err := a.Emu.StartFresh(); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, a.Emu.EngineDataStatus())
+	})
 	// ----- frame generation, DLSS, FSR 4 (enhancements.go)
 	m.HandleFunc("GET /api/enhancements", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, a.Emu.Enhancements())

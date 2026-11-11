@@ -1,8 +1,10 @@
-# NEXUS 0.0.0 (preview)
+# NEXUS 0.1.0 (preview)
 
 NEXUS is a console-style game system for Windows. It starts with a power-on animation, then opens a home screen with your game library, user profiles, themes and controller navigation.
 
 **What NEXUS does:**
+- **NEXUS sets itself up.** At the first start NEXUS creates its engine data folder and configuration on its own; no other emulator has to be opened or set up. If data from another Switch emulator (Eden, Lichii, yuzu, Citron, Sudachi, Suyu; keys from Ryujinx) is on the PC, NEXUS offers to copy it in — or to start fresh. See *Data from other emulators*.
+- **Starting a game:** *Who's playing?* (when there is more than one user), the game's artwork opens, the NEXUS loading screen shows the real loading steps, then the game. If a game cannot start, NEXUS says why in plain words; the technical details and a diagnostic log are one button away.
 - **Frame generation and DLSS:** frame generation (AMD FSR 3 built in, or Lossless Scaling with your own copy), NVIDIA DLSS in place of a game's own DLSS on GeForce RTX cards, and AMD FSR 4 on Radeon RX 9000 cards, in *Emulation settings › Frame generation & DLSS* and per game. NEXUS detects your graphics card and offers only what it supports.
 - **The engine is built and shipped with NEXUS.** The NEXUS engine is compiled on Windows by the project's build (GitHub Actions), its tests run, and it is packed into the same ZIP as `NEXUS.exe`. NEXUS finds it in `NEXUS\Engine`, checks every file and loads it in the background while the interface starts. `NEXUS.exe --engine-check result.json` runs the same check from the command line.
 - **First-time setup:** when there are no users yet, NEXUS opens a short setup — name → picture → profile colour → review. Your picture and colour (a ring around your picture, and the highlight colour while you are signed in) appear wherever your user is shown and can be changed later in *User settings*.
@@ -127,6 +129,13 @@ Existing users still on the old default accent (cyan) are moved to NEXUS red onc
 
 ### First start and adding users
 When NEXUS starts with no users, it opens **Welcome to NEXUS**: choose a **name** (up to 20 characters, no duplicates), a **picture** (a NEXUS icon with a background colour, a console icon, or a picture from your PC), and your **profile colour**, then check the **review** and press *Start using NEXUS*. The user is created only at that last step. *Add user* on *Who's playing?* opens the same steps. NEXUS supports **up to 8 users**; with 8, *Add user* is hidden and NEXUS explains that a user must be deleted first. Everything can be changed later in *User settings* (name, colour, icon, picture).
+
+### Data from other emulators
+NEXUS keeps its engine data in `%APPDATA%\NEXUS\System\Engine` and creates it, with its configuration, at the first start. When NEXUS finds data from another Switch emulator in `%APPDATA%` it asks once:
+- **Import** copies keys, firmware, installed updates/DLC, mods, controller profiles and game-list icons into NEXUS. The original folders are only read — never changed, moved or deleted. Files NEXUS already has are kept, and NEXUS backs up its own keys and controller profiles first (`Archived\engine-data-backup-…`).
+- **Start fresh** imports nothing and deletes nothing. You can import later in *Settings › System files › Data from other emulators*.
+- If an import is cut off (NEXUS closed, PC switched off), NEXUS notices at the next start and offers **Try again**; files are written under a temporary name first, so nothing half-copied is ever used, and the retry copies only what is missing.
+- Saves are not part of this import: each user can copy earlier saves in *User settings › Copy earlier saves*.
 
 ### Choosing a user
 Each user on *Who's playing?* has a card of their own, evenly spaced, with the picture centred. The red focus ring, the slight zoom and the hover highlight all stay inside that card, so moving between users never overlaps a neighbour; the change animates smoothly. The user who played last carries a **LAST** label. The cards wrap into more rows as users are added, and shrink on small windows.
@@ -395,6 +404,7 @@ NEXUS never downloads or swaps an emulator executable. The engine is built from 
 
 | Problem | What to do |
 |---|---|
+| A game does not start | NEXUS shows the reason; *Technical details* and *Open diagnostic log* (`Logs\diagnostics`) have the engine's own report. |
 | "The NEXUS engine cannot be used" | The message says why (missing or damaged files). Extract the complete ZIP again. `NEXUS.exe --engine-check result.json` writes the details to a file. |
 | An engine build is refused | It is damaged or for a different NEXUS version; the message says which file. Nothing was changed. |
 | A game stops with an error | The message shows the engine's last error lines; full log in `%APPDATA%\NEXUS\Engine\log\eden_log.txt`. Usually keys or firmware are missing or too old. |

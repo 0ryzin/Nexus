@@ -1,0 +1,142 @@
+From ea52cd967bab11770c96c2c21d8dbe64070b08e5 Mon Sep 17 00:00:00 2001
+From: NEXUS <nexus@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 17:57:11 +0000
+Subject: [PATCH 11/11] nexus_engine: a host-managed data folder is never
+ blocked by other emulators' data
+
+Lichii build-150 (#1253) refuses to create a configuration while data of
+another emulator (eden, yuzu, citron, sudachi, suyu) exists in its standard
+location and no import decision was recorded; it tells the user to open the
+Lichii GUI. Config::Initialize runs that check, and nexus_engine uses
+Config, so NEXUS could not start any game on a PC that ever had Eden.
+
+The NEXUS engine's data folder is set explicitly by NEXUS (SetAppDirectory),
+which offers its own import of that data. Such a host-managed folder is now
+recognised (IsHostManagedDataDirectory) and skips the upstream check; eden-cli
+and the Qt frontend keep the upstream behaviour. Tests cover both.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
+---
+ src/common/fs/path_util.cpp                  | 11 ++++++++++
+ src/common/fs/path_util.h                    |  7 ++++++
+ src/frontend_common/profile_import.cpp       |  6 +++++
+ src/tests/frontend_common/profile_import.cpp | 23 ++++++++++++++++++++
+ 4 files changed, 47 insertions(+)
+
+diff --git a/src/common/fs/path_util.cpp b/src/common/fs/path_util.cpp
+index 765ba3c36..55ca2428c 100644
+--- a/src/common/fs/path_util.cpp
++++ b/src/common/fs/path_util.cpp
+@@ -93,6 +93,10 @@ public:
+         return portable;
+     }
+ 
++    bool IsHostManaged() const {
++        return host_managed;
++    }
++
+     void CreateEdenPaths() {
+         std::for_each(eden_paths.begin(), eden_paths.end(), [](auto &path) {
+             void(FS::CreateDirs(path.second));
+@@ -118,6 +122,7 @@ public:
+         // NEXUS: an explicit root (SetAppDirectory) is honoured on every platform, so the
+         // NEXUS engine keeps all of its data in the folder the NEXUS application chooses.
+         const bool explicit_root = !eden_path.empty();
++        host_managed = explicit_root;
+ #ifdef _WIN32
+         // User directory takes priority over global %AppData% directory
+         if (!explicit_root) {
+@@ -220,6 +225,8 @@ private:
+     ::Common::unordered_map<EdenPath, fs::path> eden_paths;
+     ::Common::unordered_map<EmuPath, fs::path> legacy_paths;
+     bool portable{};
++    // NEXUS: the data folder was chosen by the host application (SetAppDirectory)
++    bool host_managed{};
+ };
+ 
+ bool ValidatePath(const fs::path& path) {
+@@ -307,6 +314,10 @@ bool IsPortableMode() {
+     return PathManagerImpl::GetInstance().IsPortableMode();
+ }
+ 
++bool IsHostManagedDataDirectory() {
++    return PathManagerImpl::GetInstance().IsHostManaged();
++}
++
+ const fs::path& GetEdenPath(EdenPath eden_path) {
+     return PathManagerImpl::GetInstance().GetEdenPathImpl(eden_path);
+ }
+diff --git a/src/common/fs/path_util.h b/src/common/fs/path_util.h
+index 40985cb4d..2742b68af 100644
+--- a/src/common/fs/path_util.h
++++ b/src/common/fs/path_util.h
+@@ -229,6 +229,13 @@ void SetAppDirectory(const std::string& app_directory);
+ 
+ [[nodiscard]] bool IsPortableMode();
+ 
++/**
++ * NEXUS: whether the data folder was set explicitly by the application hosting the engine
++ * (SetAppDirectory). Such a folder belongs to the host, which handles importing data from
++ * other emulators itself.
++ */
++[[nodiscard]] bool IsHostManagedDataDirectory();
++
+ /**
+  * Gets the filesystem path associated with the EdenPath enum.
+  *
+diff --git a/src/frontend_common/profile_import.cpp b/src/frontend_common/profile_import.cpp
+index 56e83cee0..5ed3ffa85 100644
+--- a/src/frontend_common/profile_import.cpp
++++ b/src/frontend_common/profile_import.cpp
+@@ -32,6 +32,12 @@ bool NeedsLegacyProfileImport() {
+     if (IsPortableMode()) {
+         return false;
+     }
++    // NEXUS: the NEXUS application owns the engine's data folder and offers its own import of
++    // other emulators' data (with backup, start-fresh and retry). The engine must not refuse to
++    // create its configuration because data of another emulator exists on the PC.
++    if (IsHostManagedDataDirectory()) {
++        return false;
++    }
+     const auto state = Migration::GetState(ProfileImportStateDirectory());
+     if (state == Migration::State::Pending) {
+         return true;
+diff --git a/src/tests/frontend_common/profile_import.cpp b/src/tests/frontend_common/profile_import.cpp
+index 1f5e14a00..12ef1da03 100644
+--- a/src/tests/frontend_common/profile_import.cpp
++++ b/src/tests/frontend_common/profile_import.cpp
+@@ -128,6 +128,15 @@ TEST_CASE("CLI-first configuration is blocked and portable user stays untouched"
+     CHECK(NeedsLegacyProfileImport());
+     CHECK_THROWS(CheckLegacyProfileBeforeConfig());
+     CHECK(fs::is_empty(fixture.root / "config/lichii"));
++    // NEXUS: a data folder chosen by the host application is never blocked by other
++    // emulators' data; the host runs its own import
++    Common::FS::SetAppDirectory(Common::FS::PathToUTF8String(fixture.root / "nexus-data"));
++    CHECK(Common::FS::IsHostManagedDataDirectory());
++    CHECK_FALSE(NeedsLegacyProfileImport());
++    CHECK_NOTHROW(CheckLegacyProfileBeforeConfig());
++    Common::FS::SetAppDirectory("");
++    CHECK_FALSE(Common::FS::IsHostManagedDataDirectory());
++    CHECK(NeedsLegacyProfileImport());
+     Migration::MarkFresh(ProfileImportStateDirectory());
+     CHECK_FALSE(NeedsLegacyProfileImport());
+     CHECK_NOTHROW(CheckLegacyProfileBeforeConfig());
+@@ -141,3 +150,17 @@ TEST_CASE("CLI-first configuration is blocked and portable user stays untouched"
+     CHECK(fs::is_empty(fixture.root / "user"));
+ }
+ #endif
++
++TEST_CASE("NEXUS: a host-managed data folder creates its configuration", "[migration][nexus]") {
++    const auto root = fs::temp_directory_path() / "nexus-host-managed-test";
++    fs::remove_all(root);
++    fs::create_directories(root);
++    Common::FS::SetAppDirectory(Common::FS::PathToUTF8String(root));
++    CHECK(Common::FS::IsHostManagedDataDirectory());
++    CHECK(Common::FS::GetEdenPath(Common::FS::EdenPath::EdenDir) == root);
++    CHECK_FALSE(NeedsLegacyProfileImport());
++    CHECK_NOTHROW(CheckLegacyProfileBeforeConfig());
++    Common::FS::SetAppDirectory("");
++    std::error_code ec;
++    fs::remove_all(root, ec);
++}

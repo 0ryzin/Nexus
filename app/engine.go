@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,6 +32,9 @@ type RunState struct {
 	Volume    int    `json:"volume"`
 	// Suspended: the game is paused and hidden while NEXUS Home is shown (session kept).
 	Suspended bool `json:"suspended,omitempty"`
+	// Stage, while starting: preparing (NEXUS writes the session) | loading (the engine reads the
+	// game) | starting (the game runs, first frame not shown yet). Shown on the loading screen.
+	Stage string `json:"stage,omitempty"`
 }
 
 const engineID = "nexus"
@@ -356,7 +360,7 @@ func (e *Emulator) Launch(g *Game, profileID string) error {
 		}
 		return &LaunchError{Code: "start-failed", Message: "The NEXUS engine could not start the game.", Detail: err.Error()}
 	}
-	st := RunState{Running: true, Phase: "starting", Started: nowUnix(), ProfileID: profileID, Mode: "game",
+	st := RunState{Running: true, Phase: "starting", Stage: "preparing", Started: nowUnix(), ProfileID: profileID, Mode: "game",
 		GameKey: g.Key, Title: g.Title, Emulator: engineID, EmuName: "NEXUS", Volume: vol}
 	e.app.Profiles.RecordLaunch(profileID, g.Key, g.Title)
 	e.setState(st)
@@ -400,6 +404,13 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 		if es.System != "" {
 			gameSystem = es.System
 		}
+		if st.Phase == "starting" {
+			stage := map[string]string{"loading": "loading", "running": "starting"}[es.State]
+			if stage != "" && stage != st.Stage {
+				st.Stage = stage
+				e.setState(st)
+			}
+		}
 		switch es.State {
 		case "running":
 			if es.Frames > 0 && st.Phase != "playing" {
@@ -408,7 +419,7 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 				}
 				sawGame = true
 				playStart = time.Now()
-				st.Phase = "playing"
+				st.Phase, st.Stage = "playing", ""
 				e.setState(st)
 				checkpoint()
 			}
@@ -479,12 +490,12 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 		time.Since(start).Round(time.Second), secs)
 	result := map[string]any{"gameKey": st.GameKey, "title": st.Title, "seconds": secs, "mode": "game", "emulator": engineID}
 	if crashed {
-		le := &LaunchError{Code: firstNonEmpty(final.Code, "crash"), Message: firstNonEmpty(final.Message, "The game stopped unexpectedly.")}
-		if tail := tailFile(filepath.Join(e.DataDir(), "log", "eden_log.txt"), 10, func(l string) bool {
+		tail := tailFile(filepath.Join(e.DataDir(), "log", "eden_log.txt"), 12, func(l string) bool {
 			return strings.Contains(l, "<Error>") || strings.Contains(l, "<Critical>")
-		}); tail != "" {
-			le.Detail = "Last log lines:\n" + tail
-		}
+		})
+		le := nexusLaunchError(final.Code, final.Message, sawGame)
+		le.Technical = strings.TrimSpace(fmt.Sprintf("Engine code: %s\nEngine message: %s\n\n%s", firstNonEmpty(final.Code, "none"), final.Message, tail))
+		le.Log = e.writeDiagnostic(st, le, tail)
 		result["error"] = le
 	}
 	e.setState(RunState{Volume: e.Volume()})
@@ -566,8 +577,14 @@ func (e *Emulator) SetVolume(p int) error {
 // for a one-time copy into a NEXUS user (never moved or deleted).
 func (e *Emulator) PreviousSaveDirs() []string {
 	var out []string
-	if ad := os.Getenv("APPDATA"); ad != "" {
-		out = append(out, filepath.Join(ad, "eden", "nand", "user", "save"))
+	// the emulator imported from first, then any other emulator found on this PC
+	imported := e.readImportRecord().Source
+	srcs := e.LegacySources()
+	sort.SliceStable(srcs, func(i, j int) bool { return srcs[i].ID == imported && srcs[j].ID != imported })
+	for _, s := range srcs {
+		if s.ID != "ryujinx" {
+			out = append(out, filepath.Join(s.Path, "nand", "user", "save"))
+		}
 	}
 	out = append(out, filepath.Join(e.app.Paths.Root, "Emulator", "Lichii", "user", "nand", "user", "save"),
 		filepath.Join(e.DataDir(), "nand", "user", "save"))
@@ -630,4 +647,46 @@ func (e *Emulator) Status() map[string]any {
 		"firmware": e.FirmwarePresent(), "vcRuntime": vcRuntimeAvailable(e.Builds.ActiveDir()), "vulkan": vulkanLoaderPresent(), "state": e.State(),
 		"inputProfiles": e.InputProfiles(), "volume": e.Volume(),
 	}
+}
+
+// nexusLaunchError turns what the engine reports into a NEXUS message. The engine's own text
+// (which may name upstream components) is kept for the technical details and the diagnostic log.
+func nexusLaunchError(code, engineMsg string, started bool) *LaunchError {
+	le := &LaunchError{Code: firstNonEmpty(code, "crash")}
+	switch code {
+	case "unsupported-file", "memory", "cpu", "gpu", "load":
+		// these messages are written by the NEXUS engine itself
+		le.Message = firstNonEmpty(engineMsg, "The game could not be started.")
+	default:
+		if started {
+			le.Message = "The game stopped unexpectedly."
+			le.Detail = "The NEXUS engine stopped while the game was running. Your play time up to this point was saved. Try again; if it keeps happening, check the game's settings (try Restore defaults) and the diagnostic log."
+		} else {
+			le.Message = "NEXUS could not start this game."
+			le.Detail = "The NEXUS engine could not prepare the game. Check that your keys and firmware are installed (Settings › System files) and that the game file is complete. The diagnostic log has the technical details."
+		}
+	}
+	return le
+}
+
+// writeDiagnostic writes a diagnostic log for a failed or crashed session and returns its path.
+func (e *Emulator) writeDiagnostic(st RunState, le *LaunchError, tail string) string {
+	dir := filepath.Join(e.app.Paths.Logs, "diagnostics")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return ""
+	}
+	name := "session-" + time.Now().Format("20060102-150405") + ".txt"
+	var b strings.Builder
+	fmt.Fprintf(&b, "NEXUS %s diagnostic log\n%s\n\n", AppVersion, time.Now().Format(time.RFC1123))
+	fmt.Fprintf(&b, "Game: %s (%s)\nUser: %s\nEngine: %s\n\n", st.Title, st.GameKey, st.ProfileID, e.Builds.ActiveVersionLabel())
+	fmt.Fprintf(&b, "Shown to the user: %s\n%s\n\n%s\n", le.Message, le.Detail, le.Technical)
+	if tail == "" {
+		b.WriteString("\n(no error lines in the engine log)\n")
+	}
+	fmt.Fprintf(&b, "\nFull engine log: %s\n", filepath.Join(e.DataDir(), "log", "eden_log.txt"))
+	p := filepath.Join(dir, name)
+	if err := os.WriteFile(p, []byte(b.String()), 0o644); err != nil {
+		return ""
+	}
+	return p
 }

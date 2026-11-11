@@ -12,6 +12,8 @@ NEXUS's emulation development draws on the following projects and their wider up
 - **Ryujinx** — https://github.com/Ryujinx
 - **Ryubing** — a fork of Ryujinx, also part of the related emulation work referenced by NEXUS.
 
+The NEXUS Engine's code comes from yuzu, Eden and Lichii (currently Lichii build-150); no Ryujinx or Ryubing code is included. See [docs/ENGINE_SOURCES.md](docs/ENGINE_SOURCES.md).
+
 These projects are acknowledged as part of the NEXUS emulation foundation and development. Their code, contributions and individual components remain subject to their respective upstream licences and copyright notices. The exact origin and applicable licence of each source file or component must be preserved and checked before redistribution; this summary does not replace those notices.
 
 ## Third-party engine components
