@@ -1,6 +1,13 @@
-# NEXUS 2.1
+# NEXUS 2.2
 
 NEXUS is a console-style game system for Windows. It starts with a power-on animation, then opens a home screen with your game library, user profiles, themes and controller navigation.
+
+**New in 2.2:**
+- **The engine is built and shipped with NEXUS.** The NEXUS engine is compiled on Windows by the project's build (GitHub Actions), its tests run, and it is packed into the same ZIP as `NEXUS.exe`. NEXUS finds it in `NEXUS\Engine`, checks every file and loads it in the background while the interface starts. `NEXUS.exe --engine-check result.json` runs the same check from the command line.
+- **First-time setup:** when there are no users yet, NEXUS opens a short setup — name → picture → profile colour → review. Your picture and colour (a ring around your picture, and the highlight colour while you are signed in) appear wherever your user is shown and can be changed later in *User settings*.
+- **Up to 8 users.** *Add user* disappears when 8 exist; existing users are kept as they are.
+- **Controller layouts for games:** Nintendo positions or Xbox labels, the controller type the game sees (Pro Controller, Joy-Con pair, handheld), and any Switch button moved to another button — for all games (*Controllers*) or for one game (*Configure Game Settings › Controls*). Some games come with a preset (for example, Joy-Con pair for party games). *Restore defaults* is always one step away.
+- **Light and dark themes everywhere:** every screen, list, dialog and the setup use one set of theme colours; the play-time list no longer shows a white background in dark mode, and text in your profile colour is adjusted to stay readable on both themes.
 
 **New in 2.1:**
 - **One download.** `NEXUS-<version>-Windows-x64.zip` contains NEXUS *and* its engine (`NEXUS\Engine`). Extract it and run `NEXUS.exe`; nothing else to install. The engine is found relative to `NEXUS.exe`, so the folder works wherever you put it, and it is updated together with NEXUS.
@@ -120,6 +127,9 @@ The 1.6 layout takes its structure from modern console home screens but keeps NE
 - No engine version numbers appear on the home screen. Versions are in *NEXUS Engine* and *System files*.
 
 Existing users still on the old default accent (cyan) are moved to NEXUS red once. An accent you chose yourself is kept, and you can change it any time in *Appearance*.
+
+### First start and adding users
+When NEXUS starts with no users, it opens **Welcome to NEXUS**: choose a **name** (up to 20 characters, no duplicates), a **picture** (a NEXUS icon with a background colour, a console icon, or a picture from your PC), and your **profile colour**, then check the **review** and press *Start using NEXUS*. The user is created only at that last step. *Add user* on *Who's playing?* opens the same steps. NEXUS supports **up to 8 users**; with 8, *Add user* is hidden and NEXUS explains that a user must be deleted first. Everything can be changed later in *User settings* (name, colour, icon, picture).
 
 ### Choosing a user
 Each user on *Who's playing?* has a card of their own, evenly spaced, with the picture centred. The red focus ring, the slight zoom and the hover highlight all stay inside that card, so moving between users never overlaps a neighbour; the change animates smoothly. The user who played last carries a **LAST** label. The cards wrap into more rows as users are added, and shrink on small windows.
@@ -365,8 +375,15 @@ NEXUS never downloads or swaps an emulator executable. The engine is built from 
 
 ## 6. Controller support
 
-- NEXUS menus: any XInput/standard gamepad, keyboard and mouse; remappable in *Controllers*.
-- Games: the engine reads controllers through SDL (Xbox, PlayStation, Switch Pro and most USB/Bluetooth pads). Player 1 is mapped automatically to the first connected controller, or uses a saved controller profile chosen per user (*Controllers › Controller profile for games*) or per game.
+- **NEXUS menus:** any XInput/standard gamepad, keyboard and mouse; the menu buttons are remappable in *Controllers*.
+- **Games, automatically:** the engine detects controllers through SDL (Xbox/XInput, PlayStation, Switch Pro and most USB/Bluetooth pads) and maps player 1 to the first connected one. With no controller, the engine's keyboard keys work.
+- **Your layout for all games** (*Controllers › In-game controls*), saved per user:
+  - *Button layout*: **Nintendo positions** (A on the right, as on the console; the default) or **Xbox labels** (A is the button printed A);
+  - *Controller type*: Automatic, Pro Controller, Joy-Con pair or Handheld;
+  - *Customise buttons…*: each Switch button (A, B, X, Y, L, R, ZL, ZR, +, −, stick presses) can be put on any controller button — choose it from the list or press *Press…* and then the button. NEXUS warns when two Switch buttons share one controller button;
+  - *Restore default layout*.
+- **A game's own layout** (*Configure Game Settings › Controls › Controller layout for this game › Its own layout*): the same options, used only for that game. Some games have a preset that picks the controller type they need (for example, a Joy-Con pair for Super Mario Party, 1-2-Switch, Switch Sports, Ring Fit Adventure and Labo); the note on the page says what the preset does and what cannot work with a normal controller. Order: the game's own layout, otherwise your layout (plus the game's preset), otherwise the default.
+- A saved engine controller profile (*Controller profile for games*) still takes priority when you choose one.
 - Hold **View + Menu** for 2 s to close the running game.
 
 ## 7. Known limitations
@@ -375,7 +392,6 @@ NEXUS never downloads or swaps an emulator executable. The engine is built from 
 - Hardware detection on Windows (DXGI, Vulkan, display settings, registry) was written against the Windows APIs. It compiles, but it has not been run on a Windows PC yet. The optimiser itself was tested with saved hardware profiles of three different PCs.
 - Nothing about running games has been verified yet. That includes window ownership and focus, a second game in one NEXUS session, audio volume on real output, and controller auto-map. All of it needs the first engine build, a PC with a GPU, and games. These are the first checks.
 - **Switch 2:** the engine contains experimental upstream code; NEXUS has not run any Switch 2 game and makes no claim. Results appear per game under Compatibility.
-- **In-game button remapping** inside NEXUS is not available yet; saved controller profiles or the automatic mapping are used.
 - The quit shortcut needs an XInput controller.
 - NEXUS has no self-updater.
 

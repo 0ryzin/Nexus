@@ -1,7 +1,7 @@
 From 969b55bf2b59441528d6bee8d4bfdba0a83b9999 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Tue, 10 Nov 2026 23:45:51 +0000
-Subject: [PATCH 4/8] nexus_engine: machine-readable system status
+Subject: [PATCH 4/9] nexus_engine: machine-readable system status
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
