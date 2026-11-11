@@ -44,7 +44,7 @@ The supplied application package identifies these dependencies:
 | Inter font | SIL Open Font License 1.1 |
 | Outfit font | SIL Open Font License 1.1 |
 
-The relevant licence texts are included in the supplied package under NEXUS/Licences/.
+The supplied ZIP contains the corresponding licence text files under NEXUS/Licences/. Those individual third-party licence text files have not yet been copied into this GitHub repository. Before publishing a binary release, add the applicable texts and preserve the upstream notices alongside the source and release package. The root LICENSE file currently contains the project's GPL-3.0-or-later text.
 
 ## Other emulator projects
 
