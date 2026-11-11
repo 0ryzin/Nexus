@@ -426,3 +426,16 @@ FodyWeavers.xsd
 
 # Official VS Code C# Dev Kit Extension exclusion
 #*.lscache
+
+# ---- NEXUS ----
+# the release tooling lives in app/tools/release (the Visual Studio rules above ignore "release/")
+!app/tools/release/
+!app/tools/release/**
+# build outputs and the engine checkout CI creates
+/engine-src/
+/app/out/
+/app/NEXUS.exe
+# Nintendo artwork supplied for personal builds is never committed
+app/dist-base/Resources/ProfileIcons/
+app/dist-base/Resources/ArtworkDB/*.png
+app/resources/ArtworkDB/*.png

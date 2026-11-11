@@ -1,0 +1,2 @@
+engine/patches/*.patch -text
+*.syso binary

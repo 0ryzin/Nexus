@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NEXUS</title>
+<link rel="icon" href="/assets/favicon.png">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body class="theme-dark anim-full booting">
+  <div id="wallpaper" aria-hidden="true"><div class="wp-img"></div><div class="wp-scrim"></div></div>
+
+  <!-- Startup sequence -->
+  <section id="boot" aria-label="NEXUS startup">
+    <div id="boot-logo" aria-hidden="true"></div>
+  </section>
+
+  <!-- Profile picker -->
+  <section id="who" class="screen" hidden>
+    <h1 class="who-title">Who's playing?</h1>
+    <div class="who-list" id="who-list"></div>
+    <p class="who-hint" id="who-hint"></p>
+  </section>
+
+  <!-- Home -->
+  <section id="home" class="screen" hidden>
+    <header class="topbar">
+      <div class="tb-left" id="tb-profiles"></div>
+      <div class="tb-right">
+        <span id="tb-pads" class="tb-item" title="Controllers"></span>
+        <span id="tb-net" class="tb-item" title="Network"></span>
+        <span id="tb-bat" class="tb-item" title="Battery"></span>
+        <span id="tb-clock" class="tb-item tb-clock">--:--</span>
+      </div>
+    </header>
+    <div id="home-banner" class="banner" hidden></div>
+    <div class="row-wrap">
+      <div class="sel-label" id="sel-label"><span class="sel-title"></span><span class="sel-meta"></span></div>
+      <div class="tiles" id="tiles" role="list"></div>
+    </div>
+    <nav class="dock" id="dock" aria-label="System"></nav>
+    <div class="dock-label" id="dock-label" aria-live="polite"></div>
+  </section>
+
+  <!-- Library -->
+  <section id="library" class="screen page" hidden>
+    <header class="page-head">
+      <h1>All Software</h1>
+      <div class="lib-tools">
+        <label class="search"><svg viewBox="0 0 24 24"><path d="M10 3a7 7 0 1 1 0 14 7 7 0 0 1 0-14Zm0 2a5 5 0 1 0 0 10 5 5 0 0 0 0-10Zm6.3 10.9 4.4 4.4-1.4 1.4-4.4-4.4z"/></svg>
+          <input id="lib-search" type="text" placeholder="Search" data-nav autocomplete="off" spellcheck="false"></label>
+        <button class="chip" id="lib-sort" data-nav></button>
+        <button class="chip" id="lib-extras" data-nav></button>
+        <button class="chip" id="lib-hidden" data-nav hidden></button>
+        <button class="chip" id="lib-refresh" data-nav>Refresh</button>
+      </div>
+    </header>
+    <div class="lib-status" id="lib-status"></div>
+    <div class="lib-grid" id="lib-grid"></div>
+  </section>
+
+  <!-- Settings -->
+  <section id="settings" class="screen page" hidden>
+    <header class="page-head"><h1>System Settings</h1></header>
+    <div class="set-body">
+      <nav class="set-cats" id="set-cats"></nav>
+      <div class="set-panel" id="set-panel"></div>
+    </div>
+  </section>
+
+  <!-- Controllers -->
+  <section id="controllers" class="screen page" hidden>
+    <header class="page-head"><h1>Controllers</h1></header>
+    <div class="ctl-body" id="ctl-body"></div>
+  </section>
+
+  <!-- In-game overlay -->
+  <section id="playing" class="screen" hidden>
+    <div class="play-card">
+      <div class="play-art" id="play-art"></div>
+      <div class="play-info">
+        <div class="play-kicker">Now playing</div>
+        <h2 id="play-title"></h2>
+        <p id="play-sub"></p>
+        <div class="play-actions">
+          <button class="btn primary" id="play-return" data-nav>Return to game</button>
+          <button class="btn" id="play-close" data-nav>Close game</button>
+        </div>
+        <div class="play-volume" id="play-volume"></div>
+        <p class="play-tip" id="play-tip"></p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="hints" id="hints"><div class="hint-pad" id="hint-pad"></div><div class="hint-list" id="hint-list"></div></footer>
+  <div id="layers"></div>
+  <div id="toasts" aria-live="polite"></div>
+  <input type="file" id="file-input" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+  <script src="/app.js"></script>
+</body>
+</html>

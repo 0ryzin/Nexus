@@ -1,0 +1,210 @@
+From 6e7cebed5561045f510738d844f838beedae6a1f Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 11 Nov 2026 00:11:29 +0000
+Subject: [PATCH 5/8] nexus_engine: interface 2 - suspend/resume for NEXUS
+ Home; package in the NEXUS Engine folder layout with app-local VC++ runtime
+ and licences
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
+---
+ src/nexus_engine/include/nexus_engine.h |  9 +++-
+ src/nexus_engine/nexus_engine.cpp       | 25 +++++++++++
+ tools/nexus/abi_smoke.py                |  6 ++-
+ tools/nexus/package_engine.py           | 60 ++++++++++++++++++++-----
+ 4 files changed, 84 insertions(+), 16 deletions(-)
+
+diff --git a/src/nexus_engine/include/nexus_engine.h b/src/nexus_engine/include/nexus_engine.h
+index 0691fd4cc..c37c544ad 100644
+--- a/src/nexus_engine/include/nexus_engine.h
++++ b/src/nexus_engine/include/nexus_engine.h
+@@ -24,7 +24,7 @@
+ extern "C" {
+ #endif
+ 
+-#define NEXUS_ENGINE_API_VERSION 1
++#define NEXUS_ENGINE_API_VERSION 2
+ 
+ /// Version of this C interface. The host refuses engines with a different major version.
+ NEXUS_API int32_t nexus_engine_api_version(void);
+@@ -45,7 +45,7 @@ NEXUS_API int32_t nexus_engine_start(const char* request_json);
+ /// Writes the session status as JSON into buf (always NUL-terminated). Returns the length needed
+ /// (excluding NUL); if that is >= buf_len the text was truncated.
+ /// {"state":"idle|starting|running|stopping|stopped|error","frames":N,"programId":"…",
+-///  "system":"switch1"|"switch2","code":"…","message":"…","volume":N}
++///  "system":"switch1"|"switch2","suspended":bool,"code":"…","message":"…","volume":N}
+ NEXUS_API int32_t nexus_engine_status(char* buf, int32_t buf_len);
+ 
+ /// Asks the running game to close (force != 0: do not wait for the guest). Returns immediately.
+@@ -58,6 +58,11 @@ NEXUS_API void nexus_engine_set_volume(int32_t percent);
+ /// Brings the game window to the front (e.g. "Return to game").
+ NEXUS_API void nexus_engine_focus(void);
+ 
++/// Interface 2: suspend != 0 pauses emulation and hides the game window (NEXUS Home while a game
++/// runs); 0 shows the window again and resumes. The session stays loaded either way. Handled on
++/// the engine thread; status reports "suspended":true/false.
++NEXUS_API void nexus_engine_suspend(int32_t suspend);
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/src/nexus_engine/nexus_engine.cpp b/src/nexus_engine/nexus_engine.cpp
+index bb799eb05..3d41a2569 100644
+--- a/src/nexus_engine/nexus_engine.cpp
++++ b/src/nexus_engine/nexus_engine.cpp
+@@ -98,6 +98,8 @@ struct Engine {
+     std::thread thread;
+     std::atomic<State> state{State::Idle};
+     std::atomic<bool> stop_requested{false};
++    std::atomic<int> suspend_request{-1}; // -1 none, 0 resume, 1 suspend (handled on the engine thread)
++    std::atomic<bool> suspended{false};
+     std::atomic<bool> force_stop{false};
+     std::atomic<int> volume{100};
+     std::atomic<std::uint64_t> frames{0};
+@@ -244,6 +246,8 @@ void RunSession(Request req) {
+     e.frames = 0;
+     e.program_id = 0;
+     e.system_gen = 0;
++    e.suspend_request = -1;
++    e.suspended = false;
+ 
+     // All engine data lives in the folder NEXUS chose (keys, firmware, NAND, saves, caches).
+     Common::FS::SetAppDirectory(req.data_dir);
+@@ -329,6 +333,22 @@ void RunSession(Request req) {
+                 } while (SDL_PollEvent(&event));
+             }
+             window->ApplyPendingTitle();
++            // Home in NEXUS: pause emulation and hide the game window; resume shows it again.
++            if (const int req_s = e.suspend_request.exchange(-1); req_s >= 0) {
++                SDL_Window* sdl_window = window->GetSDLWindow();
++                if (req_s == 1 && !e.suspended) {
++                    void(system.Pause());
++                    SDL_HideWindow(sdl_window);
++                    e.suspended = true;
++                    LOG_INFO(Frontend, "NEXUS Engine: suspended (Home)");
++                } else if (req_s == 0 && e.suspended) {
++                    SDL_ShowWindow(sdl_window);
++                    SDL_RaiseWindow(sdl_window);
++                    void(system.Run());
++                    e.suspended = false;
++                    LOG_INFO(Frontend, "NEXUS Engine: resumed");
++                }
++            }
+             e.frames = Core::g_nx2_present_count.load() - presents_at_start;
+             if (const int v = e.volume.load(); v != applied_volume) {
+                 Settings::values.volume.SetValue(static_cast<u8>(std::clamp(v, 0, 200)));
+@@ -466,6 +486,7 @@ NEXUS_API int32_t nexus_engine_status(char* buf, int32_t buf_len) {
+         std::snprintf(hex, sizeof(hex), "%016llX", static_cast<unsigned long long>(id));
+         j["programId"] = hex;
+     }
++    j["suspended"] = e.suspended.load();
+     if (const int gen = e.system_gen.load(); gen != 0) {
+         j["system"] = gen == 2 ? "switch2" : "switch1";
+     }
+@@ -499,6 +520,10 @@ NEXUS_API void nexus_engine_set_volume(int32_t percent) {
+     E().volume = std::clamp<int32_t>(percent, 0, 200);
+ }
+ 
++NEXUS_API void nexus_engine_suspend(int32_t suspend) {
++    E().suspend_request = suspend != 0 ? 1 : 0;
++}
++
+ NEXUS_API void nexus_engine_focus(void) {
+ #ifdef _WIN32
+     if (void* hwnd = E().window_handle.load()) {
+diff --git a/tools/nexus/abi_smoke.py b/tools/nexus/abi_smoke.py
+index dc175e420..f07fd120d 100644
+--- a/tools/nexus/abi_smoke.py
++++ b/tools/nexus/abi_smoke.py
+@@ -4,13 +4,15 @@ import ctypes, json, sys
+ dll = ctypes.CDLL(sys.argv[1])
+ dll.nexus_engine_api_version.restype = ctypes.c_int32
+ dll.nexus_engine_info.restype = ctypes.c_char_p
+-assert dll.nexus_engine_api_version() == 1, "unexpected API version"
++assert dll.nexus_engine_api_version() == 2, "unexpected API version"
++assert hasattr(dll, "nexus_engine_suspend"), "interface 2 needs nexus_engine_suspend"
+ info = json.loads(dll.nexus_engine_info())
+ assert info["name"] == "NEXUS Engine" and info["systems"], info
+ buf = ctypes.create_string_buffer(512)
+ n = dll.nexus_engine_status(buf, 512)
+ status = json.loads(buf.value)
+-assert status["state"] == "idle", status
++assert status["state"] == "idle" and status["suspended"] is False, status
++dll.nexus_engine_suspend(1)  # no session: must be harmless
+ assert dll.nexus_engine_start(b"{not json") == -2, "bad request must be refused"
+ dll.nexus_engine_set_volume(150)
+ dll.nexus_engine_status(buf, 512)
+diff --git a/tools/nexus/package_engine.py b/tools/nexus/package_engine.py
+index ddb421154..65799affd 100644
+--- a/tools/nexus/package_engine.py
++++ b/tools/nexus/package_engine.py
+@@ -1,21 +1,57 @@
+-"""Packages nexus_engine.dll and the DLLs it needs into nexus-engine-<version>-win64.zip with an
+-engine.json manifest (version, source commit, upstream base, SHA-256 of every file)."""
+-import hashlib, json, os, subprocess, sys, zipfile
++"""Packages the NEXUS engine in the layout NEXUS loads it from (the NEXUS folder's Engine\\):
++
++    nexus_engine.dll            the engine
++    engine.json                 version, interface, source commit, upstream base, SHA-256 of every file
++    Libraries\\*.dll             every other DLL the build produced (SDL3, FFmpeg, ...)
++    Libraries\\vcruntime140.dll  Microsoft Visual C++ runtime, app-local copies (permitted by the
++    Libraries\\vcruntime140_1.dll Visual Studio redistribution terms), so users need not install it
++    Libraries\\msvcp140.dll
++    Licences\\                   engine licence (GPL-3.0-or-later) and component licences
++
++usage: package_engine.py <build/bin> <out dir>
++Writes <out>/nexus-engine-<version>-win64.zip (+ .sha256). The NEXUS release script unpacks it
++into NEXUS\\Engine, so NEXUS and its matching engine ship as one ZIP.
++"""
++import glob, hashlib, json, os, shutil, subprocess, sys, zipfile
+ 
+ src, out = sys.argv[1], sys.argv[2]
+ os.makedirs(out, exist_ok=True)
+-files = ["nexus_engine.dll"] + sorted(f for f in os.listdir(src) if f.lower().endswith(".dll") and f != "nexus_engine.dll")
+-version = os.environ.get("GITHUB_REF_NAME", "dev").replace("engine-v", "")
++version = os.environ.get("GITHUB_REF_NAME", "dev").replace("engine-v", "").replace("/", "-")
++
++files = {"nexus_engine.dll": os.path.join(src, "nexus_engine.dll")}
++for f in sorted(os.listdir(src)):
++    if f.lower().endswith(".dll") and f != "nexus_engine.dll":
++        files["Libraries/" + f] = os.path.join(src, f)
++
++# app-local Visual C++ runtime from the Visual Studio installation used for the build
++redist = os.environ.get("VCToolsRedistDir", "")
++crt = sorted(glob.glob(os.path.join(redist, "x64", "Microsoft.VC14*.CRT")))
++if crt:
++    for name in ("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll"):
++        p = os.path.join(crt[-1], name)
++        if os.path.exists(p):
++            files["Libraries/" + name] = p
++else:
++    print("warning: VCToolsRedistDir not set; the VC++ runtime is not bundled", file=sys.stderr)
++
++root = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip()
++licences = {"Licences/GPL-3.0-or-later.txt": os.path.join(root, "LICENSE.txt")}
++for p in sorted(glob.glob(os.path.join(root, "LICENSES", "*.txt"))):
++    licences["Licences/" + os.path.basename(p)] = p
++
+ commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+-base = subprocess.run(["git", "describe", "--tags", "--match", "build-*", "--abbrev=0"], capture_output=True, text=True).stdout.strip()
+-manifest = {"name": "NEXUS Engine", "version": version, "api": 1, "commit": commit, "upstreamBase": base, "files": {}}
+-for f in files:
+-    with open(os.path.join(src, f), "rb") as fh:
+-        manifest["files"][f] = hashlib.sha256(fh.read()).hexdigest()
++base = subprocess.run(["git", "describe", "--tags", "--match", "build-*", "--abbrev=0"],
++                      capture_output=True, text=True).stdout.strip()
++manifest = {"name": "NEXUS Engine", "version": version, "api": 2, "commit": commit,
++            "upstreamBase": base, "files": {}}
++for name, path in files.items():
++    with open(path, "rb") as fh:
++        manifest["files"][name] = hashlib.sha256(fh.read()).hexdigest()
++
+ zpath = os.path.join(out, f"nexus-engine-{version}-win64.zip")
+ with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
+-    for f in files:
+-        z.write(os.path.join(src, f), f)
++    for name, path in {**files, **licences}.items():
++        z.write(path, name)
+     z.writestr("engine.json", json.dumps(manifest, indent=2))
+ with open(zpath, "rb") as fh:
+     digest = hashlib.sha256(fh.read()).hexdigest()

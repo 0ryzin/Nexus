@@ -1,0 +1,142 @@
+From 64b5e4b773dd06ca479d73d0b1a6d3ab4287f3a4 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 10 Nov 2026 23:41:36 +0000
+Subject: [PATCH 3/8] nexus_engine: updates/DLC from NEXUS game folders,
+ controller auto-map for player 1
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
+---
+ src/nexus_engine/include/nexus_engine.h |  5 +-
+ src/nexus_engine/nexus_engine.cpp       | 67 +++++++++++++++++++++++++
+ 2 files changed, 70 insertions(+), 2 deletions(-)
+
+diff --git a/src/nexus_engine/include/nexus_engine.h b/src/nexus_engine/include/nexus_engine.h
+index 3f2a2f1fa..0691fd4cc 100644
+--- a/src/nexus_engine/include/nexus_engine.h
++++ b/src/nexus_engine/include/nexus_engine.h
+@@ -36,7 +36,8 @@ NEXUS_API const char* nexus_engine_info(void);
+ 
+ /// Starts a game session. request_json:
+ /// {"game":path,"dataDir":path,"configFile":path,"logDir":path,"title":text,
+-///  "fullscreen":bool,"volume":0..200,"ownerWindow":hwnd-as-number}
++///  "fullscreen":bool,"volume":0..200,"ownerWindow":hwnd-as-number,
++///  "contents":["update or DLC container", …],"autoMapController":bool}
+ /// Returns 0 when the session thread started, -1 if a session is already running, -2 for a bad
+ /// request. Load errors are reported asynchronously through nexus_engine_status.
+ NEXUS_API int32_t nexus_engine_start(const char* request_json);
+@@ -44,7 +45,7 @@ NEXUS_API int32_t nexus_engine_start(const char* request_json);
+ /// Writes the session status as JSON into buf (always NUL-terminated). Returns the length needed
+ /// (excluding NUL); if that is >= buf_len the text was truncated.
+ /// {"state":"idle|starting|running|stopping|stopped|error","frames":N,"programId":"…",
+-///  "code":"…","message":"…","volume":N}
++///  "system":"switch1"|"switch2","code":"…","message":"…","volume":N}
+ NEXUS_API int32_t nexus_engine_status(char* buf, int32_t buf_len);
+ 
+ /// Asks the running game to close (force != 0: do not wait for the guest). Returns immediately.
+diff --git a/src/nexus_engine/nexus_engine.cpp b/src/nexus_engine/nexus_engine.cpp
+index 0b3fd1697..0616ec07e 100644
+--- a/src/nexus_engine/nexus_engine.cpp
++++ b/src/nexus_engine/nexus_engine.cpp
+@@ -32,6 +32,11 @@
+ #include "core/file_sys/registered_cache.h"
+ #include "core/file_sys/vfs/vfs_real.h"
+ #include "core/hle/kernel/k_process.h"
++#include "hid_core/hid_core.h"
++#include "common/param_package.h"
++#include "common/settings_input.h"
++#include <optional>
++#include <vector>
+ #include "core/hle/service/am/applet_manager.h"
+ #include "core/hle/service/filesystem/filesystem.h"
+ #include "core/loader/loader.h"
+@@ -84,6 +89,8 @@ struct Request {
+     bool fullscreen{true};
+     int volume{100};
+     std::uintptr_t owner_window{};
++    std::vector<std::string> contents; // update / DLC containers from the user's game folders
++    bool auto_map_controller{false};   // map player 1 to the first connected controller
+ };
+ 
+ struct Engine {
+@@ -184,6 +191,54 @@ void AttachToOwner(SDL_Window* window, std::uintptr_t owner) {
+ #endif
+ }
+ 
++// Same as the upstream frontends' "auto-map": bind player 1 to the first game controller the
++// input subsystem reports, using the driver's default mapping for that device. Only used when
++// the NEXUS user has not chosen a saved controller profile.
++void AutoMapController(InputCommon::InputSubsystem& input, Core::System& system) {
++    std::optional<Common::ParamPackage> pad;
++    for (int attempt = 0; attempt < 25 && !pad; ++attempt) { // SDL reports pads asynchronously
++        for (const auto& d : input.GetInputDevices()) {
++            const auto engine = d.Get("engine", "");
++            if (engine == "sdl" || engine == "joycon" || engine == "gcpad") {
++                pad = d;
++                break;
++            }
++        }
++        if (!pad) {
++            std::this_thread::sleep_for(std::chrono::milliseconds(20));
++        }
++    }
++    if (!pad) {
++        LOG_INFO(Frontend, "NEXUS: no game controller connected, keeping the keyboard mapping");
++        return;
++    }
++    auto& player = Settings::values.players.GetValue()[0];
++    for (const auto& [id, param] : input.GetButtonMappingForDevice(*pad)) {
++        player.buttons[id] = param.Serialize();
++    }
++    for (const auto& [id, param] : input.GetAnalogMappingForDevice(*pad)) {
++        player.analogs[id] = param.Serialize();
++    }
++    for (const auto& [id, param] : input.GetMotionMappingForDevice(*pad)) {
++        player.motions[id] = param.Serialize();
++    }
++    player.connected = true;
++    system.HIDCore().ReloadInputDevices();
++    LOG_INFO(Frontend, "NEXUS: player 1 mapped to {}", pad->Get("display", "controller"));
++}
++
++void RegisterExternalContent(FileSys::ManualContentProvider& provider, Core::System& system,
++                             const std::vector<std::string>& paths) {
++    provider.ClearAllEntries();
++    for (const auto& path : paths) {
++        if (const auto file = system.GetFilesystem()->OpenFile(path, FileSys::OpenMode::Read)) {
++            if (!provider.AddEntriesFromContainer(file)) {
++                LOG_WARNING(Frontend, "NEXUS: {} is not a usable update/DLC container", path);
++            }
++        }
++    }
++}
++
+ void RunSession(Request req) {
+     Engine& e = E();
+     e.frames = 0;
+@@ -227,6 +282,10 @@ void RunSession(Request req) {
+                                        &manual_provider);
+         system.SetFilesystem(std::make_shared<FileSys::RealVfsFilesystem>());
+         system.GetFileSystemController().CreateFactories(*system.GetFilesystem());
++        RegisterExternalContent(manual_provider, system, req.contents);
++        if (req.auto_map_controller) {
++            AutoMapController(input, system);
++        }
+         system.GetUserChannel().clear();
+ 
+         Service::AM::FrontendAppletParameters params{.applet_id = Service::AM::AppletId::Application};
+@@ -362,6 +421,14 @@ NEXUS_API int32_t nexus_engine_start(const char* request_json) {
+         req.title = j.value("title", std::string{"NEXUS"});
+         req.fullscreen = j.value("fullscreen", true);
+         req.volume = j.value("volume", 100);
++        req.auto_map_controller = j.value("autoMapController", false);
++        if (const auto it = j.find("contents"); it != j.end() && it->is_array()) {
++            for (const auto& c : *it) {
++                if (c.is_string()) {
++                    req.contents.push_back(c.get<std::string>());
++                }
++            }
++        }
+         req.owner_window = j.value("ownerWindow", std::uintptr_t{0});
+     } catch (const std::exception&) {
+         return -2;

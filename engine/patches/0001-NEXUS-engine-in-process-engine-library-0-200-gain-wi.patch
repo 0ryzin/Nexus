@@ -1,0 +1,1200 @@
+From 8acbc62f275e19c531deb3c0c6ef1fe9e141323c Mon Sep 17 00:00:00 2001
+From: NEXUS <nexus@localhost>
+Date: Tue, 10 Nov 2026 23:27:30 +0000
+Subject: [PATCH 1/8] NEXUS engine: in-process engine library, 0-200% gain with
+ soft limiter, explicit data root, window title/icon, CI and upstream sync
+ tooling
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .github/workflows/nexus-engine.yml            |  50 ++
+ CMakeLists.txt                                |   1 +
+ dist/nexus.bmp                                | Bin 0 -> 12342 bytes
+ src/CMakeLists.txt                            |   5 +
+ src/audio_core/sink/nexus_gain.h              |  50 ++
+ src/audio_core/sink/sink_stream.cpp           |  19 +-
+ src/common/fs/path_util.cpp                   |  17 +-
+ src/nexus_engine/CMakeLists.txt               |  52 +++
+ src/nexus_engine/include/nexus_engine.h       |  62 +++
+ src/nexus_engine/nexus_engine.cpp             | 435 ++++++++++++++++++
+ src/tests/CMakeLists.txt                      |   1 +
+ src/tests/nexus/nexus_gain.cpp                |  38 ++
+ src/yuzu_cmd/emu_window/emu_window_sdl3.cpp   |   5 +-
+ src/yuzu_cmd/emu_window/emu_window_sdl3.h     |  11 +
+ .../emu_window/emu_window_sdl3_gl.cpp         |   3 +
+ .../emu_window/emu_window_sdl3_vk.cpp         |   9 +-
+ tools/nexus/abi_smoke.py                      |  21 +
+ tools/nexus/package_engine.py                 |  24 +
+ tools/nexus/upstream-sync.sh                  |  53 +++
+ 19 files changed, 836 insertions(+), 20 deletions(-)
+ create mode 100644 .github/workflows/nexus-engine.yml
+ create mode 100644 dist/nexus.bmp
+ create mode 100644 src/audio_core/sink/nexus_gain.h
+ create mode 100644 src/nexus_engine/CMakeLists.txt
+ create mode 100644 src/nexus_engine/include/nexus_engine.h
+ create mode 100644 src/nexus_engine/nexus_engine.cpp
+ create mode 100644 src/tests/nexus/nexus_gain.cpp
+ create mode 100644 tools/nexus/abi_smoke.py
+ create mode 100644 tools/nexus/package_engine.py
+ create mode 100755 tools/nexus/upstream-sync.sh
+
+diff --git a/.github/workflows/nexus-engine.yml b/.github/workflows/nexus-engine.yml
+new file mode 100644
+index 000000000..56a1bcac7
+--- /dev/null
++++ b/.github/workflows/nexus-engine.yml
+@@ -0,0 +1,50 @@
++# NEXUS Engine build: compiles nexus_engine.dll from this repository (the NEXUS fork of the
++# Lichii/Eden code base), runs the test suite, and only publishes a build when every test passes.
++name: nexus-engine
++
++on:
++  push:
++    branches: [nexus, "sync/**"]
++    tags: ["engine-v*"]
++  pull_request:
++  workflow_dispatch:
++
++jobs:
++  windows:
++    runs-on: windows-latest
++    timeout-minutes: 240
++    steps:
++      - uses: actions/checkout@v4
++        with:
++          fetch-depth: 0
++      - uses: ilammy/msvc-dev-cmd@v1
++        with:
++          arch: x64
++      - name: Configure
++        shell: cmd
++        run: >
++          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
++          -DENABLE_QT=OFF -DYUZU_CMD=OFF -DNEXUS_ENGINE=ON -DYUZU_TESTS=ON
++          -DENABLE_WEB_SERVICE=OFF -DYUZU_ROOM=OFF -DENABLE_UPDATE_CHECKER=OFF -DENABLE_WERROR=OFF
++          -DNEXUS_ENGINE_VERSION=%GITHUB_REF_NAME%
++      - name: Build
++        shell: cmd
++        run: cmake --build build --target nexus_engine tests
++      - name: Test (whole suite; the gate for publishing)
++        shell: cmd
++        run: build\bin\tests.exe
++      - name: Smoke test the C interface
++        shell: pwsh
++        run: python tools/nexus/abi_smoke.py build/bin/nexus_engine.dll
++      - name: Package
++        shell: pwsh
++        run: python tools/nexus/package_engine.py build/bin dist-engine
++      - uses: actions/upload-artifact@v4
++        with:
++          name: nexus-engine-windows-x64
++          path: dist-engine/*.zip
++      - name: Publish release (tags only, after tests passed)
++        if: startsWith(github.ref, 'refs/tags/engine-v')
++        uses: softprops/action-gh-release@v2
++        with:
++          files: dist-engine/*
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 7d1d910cf..9e21b469e 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -299,6 +299,7 @@ cmake_dependent_option(YUZU_ROOM "Enable dedicated room functionality" ON "NOT A
+ cmake_dependent_option(YUZU_ROOM_STANDALONE "Enable standalone room executable" ON "YUZU_ROOM" OFF)
+ 
+ cmake_dependent_option(YUZU_CMD "Compile the eden-cli executable" ON "NOT ANDROID" OFF)
++option(NEXUS_ENGINE "Build nexus_engine, the emulation engine library loaded by the NEXUS application" OFF)
+ 
+ cmake_dependent_option(YUZU_CRASH_DUMPS "Compile crash dump (Minidump) support" OFF "WIN32 OR LINUX" OFF)
+ 
+diff --git a/dist/nexus.bmp b/dist/nexus.bmp
+new file mode 100644
+index 0000000000000000000000000000000000000000..53f659c58a9dba51e926180c20e4b1b4bbf158e5
+GIT binary patch
+literal 12342
+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
+
+literal 0
+HcmV?d00001
+
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 92ea5b16c..cfa632a97 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -288,6 +288,11 @@ add_subdirectory(input_common)
+ add_subdirectory(frontend_common)
+ add_subdirectory(shader_recompiler)
+ 
++# NEXUS Engine (shared library loaded by the NEXUS application)
++if (NEXUS_ENGINE)
++    add_subdirectory(nexus_engine)
++endif()
++
+ if (YUZU_TESTS)
+     add_subdirectory(tests)
+ endif()
+diff --git a/src/audio_core/sink/nexus_gain.h b/src/audio_core/sink/nexus_gain.h
+new file mode 100644
+index 000000000..f0506621b
+--- /dev/null
++++ b/src/audio_core/sink/nexus_gain.h
+@@ -0,0 +1,50 @@
++// SPDX-FileCopyrightText: 2026 NEXUS project
++// SPDX-License-Identifier: GPL-3.0-or-later
++
++// NEXUS output gain: 0-200 % master volume.
++//
++// Upstream mapped volumes above 100 % through 0.6 + 20*log10(v), which made 101 % quieter than
++// 100 % (x0.6) and 200 % a x6.6 boost followed by hard clipping. NEXUS uses a linear gain
++// (0 % silent, 50 % half amplitude, 100 % unchanged, 200 % double) and, only when the gain is
++// above 1, a soft limiter: samples below 80 % of full scale pass unchanged, louder ones bend
++// smoothly (tanh knee) towards full scale instead of clipping. At or below 100 % the output is
++// bit-identical to upstream (plain clamp), so normal listening is unchanged.
++
++#pragma once
++
++#include <algorithm>
++#include <cmath>
++#include <cstdint>
++
++namespace AudioCore::Nexus {
++
++constexpr float kFullScale = 32767.0f;
++constexpr float kKnee = 0.80f * kFullScale;
++
++/// Maps the volume setting (percent, 0-200) to a linear gain.
++inline float GainFromPercent(float percent) {
++    return std::clamp(percent, 0.0f, 200.0f) / 100.0f;
++}
++
++/// Smoothly limits |x| to full scale; identity below the knee.
++inline float SoftLimit(float x) {
++    const float a = std::fabs(x);
++    if (a <= kKnee) {
++        return x;
++    }
++    const float range = kFullScale - kKnee;
++    const float y = kKnee + range * std::tanh((a - kKnee) / range);
++    return std::copysign(y, x);
++}
++
++/// Applies gain to one sample (in s16 units) and converts back to s16.
++inline std::int16_t ApplyGain(float sample, float gain) {
++    float x = sample * gain;
++    if (gain > 1.0f) {
++        x = SoftLimit(x);
++    }
++    const float r = std::nearbyint(std::clamp(x, -32768.0f, 32767.0f));
++    return static_cast<std::int16_t>(r);
++}
++
++} // namespace AudioCore::Nexus
+diff --git a/src/audio_core/sink/sink_stream.cpp b/src/audio_core/sink/sink_stream.cpp
+index 45c72dd44..89e9fa55b 100644
+--- a/src/audio_core/sink/sink_stream.cpp
++++ b/src/audio_core/sink/sink_stream.cpp
+@@ -20,6 +20,7 @@
+ #include "common/fixed_point.h"
+ #include "common/scope_exit.h"
+ #include "common/settings.h"
++#include "audio_core/sink/nexus_gain.h"
+ #include "core/core.h"
+ #include "core/core_timing.h"
+ 
+@@ -29,13 +30,11 @@ void SinkStream::AppendBuffer(SinkBuffer& buffer, std::span<s16> samples) {
+     if (type == StreamType::In)
+         return;
+ 
+-    constexpr s32 min = (std::numeric_limits<s16>::min)();
+-    constexpr s32 max = (std::numeric_limits<s16>::max)();
++    [[maybe_unused]] constexpr s32 min = (std::numeric_limits<s16>::min)();
++    [[maybe_unused]] constexpr s32 max = (std::numeric_limits<s16>::max)();
+ 
+-    auto yuzu_volume = Settings::Volume();
+-    if (yuzu_volume > 1.0f)
+-        yuzu_volume = 0.6f + 20.0f * std::log10(yuzu_volume);
+-    auto const volume = system_volume * device_volume * yuzu_volume;
++    // NEXUS: linear 0-200 % master volume with a soft limiter above 100 % (nexus_gain.h).
++    auto const volume = system_volume * device_volume * Settings::Volume();
+     std::size_t pushed{};
+     const auto device_samples = samples.size() / system_channels * device_channels;
+ 
+@@ -58,8 +57,8 @@ void SinkStream::AppendBuffer(SinkBuffer& buffer, std::span<s16> samples) {
+             const f32 left  = rcoeff[0] * tcoeff[0] + rcoeff[2] * tcoeff[1] + rcoeff[3] * tcoeff[2] + rcoeff[1] * tcoeff[3];
+             const f32 right = rcoeff[5] * tcoeff[0] + rcoeff[2] * tcoeff[1] + rcoeff[3] * tcoeff[2] + rcoeff[4] * tcoeff[3];
+ 
+-            samples[w_offs + 0] = s16(std::clamp(s32(left * volume),  min, max));
+-            samples[w_offs + 1] = s16(std::clamp(s32(right * volume), min, max));
++            samples[w_offs + 0] = Nexus::ApplyGain(left, volume);
++            samples[w_offs + 1] = Nexus::ApplyGain(right, volume);
+         }
+ 
+         pushed = samples_buffer.Push(samples.subspan(0, device_samples));
+@@ -67,13 +66,13 @@ void SinkStream::AppendBuffer(SinkBuffer& buffer, std::span<s16> samples) {
+         std::vector<s16> new_samples(samples.size() / system_channels * device_channels);
+         for (u32 r_offs = 0, w_offs = 0; r_offs < samples.size(); r_offs += system_channels, w_offs += device_channels)
+             for (u32 channel = 0; channel < system_channels; ++channel)
+-                new_samples[w_offs + channel] = s16(std::clamp(s32(f32(samples[r_offs + channel]) * volume), min, max));
++                new_samples[w_offs + channel] = Nexus::ApplyGain(f32(samples[r_offs + channel]), volume);
+ 
+         pushed = samples_buffer.Push(new_samples);
+     } else {
+         if (volume != 1.0f) {
+             for (u32 i = 0; i < samples.size(); ++i)
+-                samples[i] = s16(std::clamp(s32(f32(samples[i]) * volume), min, max));
++                samples[i] = Nexus::ApplyGain(f32(samples[i]), volume);
+         }
+ 
+         pushed = samples_buffer.Push(samples);
+diff --git a/src/common/fs/path_util.cpp b/src/common/fs/path_util.cpp
+index f77da2e30..c2723193e 100644
+--- a/src/common/fs/path_util.cpp
++++ b/src/common/fs/path_util.cpp
+@@ -111,11 +111,16 @@ public:
+     void Reinitialize(fs::path eden_path = {}) {
+         fs::path eden_path_cache;
+         fs::path eden_path_config;
++        // NEXUS: an explicit root (SetAppDirectory) is honoured on every platform, so the
++        // NEXUS engine keeps all of its data in the folder the NEXUS application chooses.
++        const bool explicit_root = !eden_path.empty();
+ #ifdef _WIN32
+         // User directory takes priority over global %AppData% directory
+-        eden_path = GetExeDirectory() / PORTABLE_DIR;
+-        if (!Exists(eden_path) || !IsDir(eden_path)) {
+-            eden_path = GetAppDataRoamingDirectory() / EDEN_DIR;
++        if (!explicit_root) {
++            eden_path = GetExeDirectory() / PORTABLE_DIR;
++            if (!Exists(eden_path) || !IsDir(eden_path)) {
++                eden_path = GetAppDataRoamingDirectory() / EDEN_DIR;
++            }
+         }
+         eden_path_cache = eden_path / CACHE_DIR;
+         eden_path_config = eden_path / CONFIG_DIR;
+@@ -132,8 +137,10 @@ public:
+         eden_path_cache = eden_path / CACHE_DIR;
+         eden_path_config = eden_path / CONFIG_DIR;
+ #else
+-        eden_path = GetCurrentDir() / PORTABLE_DIR;
+-        if (!Exists(eden_path) || !IsDir(eden_path)) {
++        if (explicit_root) {
++            eden_path_cache = eden_path / CACHE_DIR;
++            eden_path_config = eden_path / CONFIG_DIR;
++        } else if (eden_path = GetCurrentDir() / PORTABLE_DIR; !Exists(eden_path) || !IsDir(eden_path)) {
+             eden_path = GetDataDirectory("XDG_DATA_HOME") / EDEN_DIR;
+             eden_path_cache = GetDataDirectory("XDG_CACHE_HOME") / EDEN_DIR;
+             eden_path_config = GetDataDirectory("XDG_CONFIG_HOME") / EDEN_DIR;
+diff --git a/src/nexus_engine/CMakeLists.txt b/src/nexus_engine/CMakeLists.txt
+new file mode 100644
+index 000000000..e0134426b
+--- /dev/null
++++ b/src/nexus_engine/CMakeLists.txt
+@@ -0,0 +1,52 @@
++# SPDX-FileCopyrightText: 2026 NEXUS project
++# SPDX-License-Identifier: GPL-3.0-or-later
++
++# nexus_engine: the NEXUS emulation engine as a shared library (nexus_engine.dll) that the NEXUS
++# application loads into its own process. It reuses the upstream core libraries and the SDL3
++# game-window code of the command-line frontend; it has no executable of its own.
++
++set(NEXUS_ENGINE_VERSION "0.1.0" CACHE STRING "Version reported by nexus_engine_info")
++
++if (ENABLE_OPENGL)
++    set(NEXUS_GL_SOURCES ../yuzu_cmd/emu_window/emu_window_sdl3_gl.cpp ../yuzu_cmd/emu_window/emu_window_sdl3_gl.h)
++endif()
++
++add_library(nexus_engine SHARED
++    include/nexus_engine.h
++    nexus_engine.cpp
++    ../yuzu_cmd/emu_window/emu_window_sdl3.cpp
++    ../yuzu_cmd/emu_window/emu_window_sdl3.h
++    ../yuzu_cmd/emu_window/sdl_window_state.h
++    ../yuzu_cmd/emu_window/emu_window_sdl3_null.cpp
++    ../yuzu_cmd/emu_window/emu_window_sdl3_null.h
++    ../yuzu_cmd/emu_window/emu_window_sdl3_vk.cpp
++    ../yuzu_cmd/emu_window/emu_window_sdl3_vk.h
++    ../yuzu_cmd/sdl_config.cpp
++    ../yuzu_cmd/sdl_config.h
++    ${NEXUS_GL_SOURCES}
++)
++
++target_compile_definitions(nexus_engine PRIVATE NEXUS_ENGINE_VERSION="${NEXUS_ENGINE_VERSION}")
++target_include_directories(nexus_engine PUBLIC include PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/gen)
++target_link_libraries(nexus_engine PRIVATE common core input_common frontend_common video_core network
++    nlohmann_json::nlohmann_json SDL3::SDL3 ${PLATFORM_LIBRARIES} Threads::Threads)
++if (ENABLE_OPENGL)
++    target_link_libraries(nexus_engine PRIVATE glad)
++endif()
++set_target_properties(nexus_engine PROPERTIES PREFIX "" C_VISIBILITY_PRESET hidden CXX_VISIBILITY_PRESET hidden)
++
++# Window icon: the NEXUS emblem (dist/nexus.bmp) compiled in under the name the upstream window
++# code includes ("yuzu_cmd/yuzu_icon.h").
++file(READ "${PROJECT_SOURCE_DIR}/dist/nexus.bmp" NEXUS_ICON_HEX HEX)
++string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," NEXUS_ICON_HEX "${NEXUS_ICON_HEX}")
++file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/gen/yuzu_cmd/yuzu_icon.h"
++    "const unsigned char yuzu_icon[] = {${NEXUS_ICON_HEX}};\nconst unsigned yuzu_icon_size = sizeof(yuzu_icon);\n")
++
++if (NOT MSVC)
++    target_compile_options(nexus_engine PRIVATE
++        $<$<COMPILE_LANGUAGE:C,CXX>:-Wno-conversion>
++        $<$<COMPILE_LANGUAGE:C,CXX>:-Wno-unused-parameter>
++        $<$<COMPILE_LANGUAGE:C,CXX>:-Wno-missing-field-initializers>)
++endif()
++
++create_target_directory_groups(nexus_engine)
+diff --git a/src/nexus_engine/include/nexus_engine.h b/src/nexus_engine/include/nexus_engine.h
+new file mode 100644
+index 000000000..3f2a2f1fa
+--- /dev/null
++++ b/src/nexus_engine/include/nexus_engine.h
+@@ -0,0 +1,62 @@
++// SPDX-FileCopyrightText: 2026 NEXUS project
++// SPDX-License-Identifier: GPL-3.0-or-later
++
++// NEXUS Engine: the emulation engine the NEXUS application loads into its own process
++// (nexus_engine.dll). This is the only interface between the NEXUS interface and the engine;
++// it is a plain C ABI so the host can call it without a C++ runtime of its own (NEXUS's host is
++// written in Go and loads the DLL with LoadLibrary/GetProcAddress).
++//
++// Threading: every function may be called from any thread. A game session runs on a thread the
++// engine owns; it creates the game window, drives input/audio/video and shuts the game down.
++// Strings are UTF-8; JSON is used for requests and status so the ABI never changes shape.
++
++#pragma once
++
++#include <stdint.h>
++
++#ifdef _WIN32
++#define NEXUS_API __declspec(dllexport)
++#else
++#define NEXUS_API __attribute__((visibility("default")))
++#endif
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++#define NEXUS_ENGINE_API_VERSION 1
++
++/// Version of this C interface. The host refuses engines with a different major version.
++NEXUS_API int32_t nexus_engine_api_version(void);
++
++/// Static description of the engine build as JSON:
++/// {"name","version","api","upstream":{"project","commit","describe"},"systems":[...],
++///  "renderers":[...],"components":[...]}
++NEXUS_API const char* nexus_engine_info(void);
++
++/// Starts a game session. request_json:
++/// {"game":path,"dataDir":path,"configFile":path,"logDir":path,"title":text,
++///  "fullscreen":bool,"volume":0..200,"ownerWindow":hwnd-as-number}
++/// Returns 0 when the session thread started, -1 if a session is already running, -2 for a bad
++/// request. Load errors are reported asynchronously through nexus_engine_status.
++NEXUS_API int32_t nexus_engine_start(const char* request_json);
++
++/// Writes the session status as JSON into buf (always NUL-terminated). Returns the length needed
++/// (excluding NUL); if that is >= buf_len the text was truncated.
++/// {"state":"idle|starting|running|stopping|stopped|error","frames":N,"programId":"…",
++///  "code":"…","message":"…","volume":N}
++NEXUS_API int32_t nexus_engine_status(char* buf, int32_t buf_len);
++
++/// Asks the running game to close (force != 0: do not wait for the guest). Returns immediately.
++NEXUS_API int32_t nexus_engine_stop(int32_t force);
++
++/// Sets the master volume in percent (0 = muted, 100 = reference, 200 = maximum). Takes effect on
++/// the next audio buffer of a running game and is remembered for the next session.
++NEXUS_API void nexus_engine_set_volume(int32_t percent);
++
++/// Brings the game window to the front (e.g. "Return to game").
++NEXUS_API void nexus_engine_focus(void);
++
++#ifdef __cplusplus
++}
++#endif
+diff --git a/src/nexus_engine/nexus_engine.cpp b/src/nexus_engine/nexus_engine.cpp
+new file mode 100644
+index 000000000..9d420e8d7
+--- /dev/null
++++ b/src/nexus_engine/nexus_engine.cpp
+@@ -0,0 +1,435 @@
++// SPDX-FileCopyrightText: 2026 NEXUS project
++// SPDX-License-Identifier: GPL-3.0-or-later
++
++// NEXUS Engine session host. The game lifecycle mirrors the upstream command-line frontend
++// (src/yuzu_cmd/yuzu.cpp: Initialize, ApplySettings, window, content providers, Load, GPU start,
++// Run, and Pause + ShutdownMainProcess on exit) but runs inside the NEXUS process on an engine
++// thread, is driven through the C interface in nexus_engine.h and reports its state back to
++// NEXUS instead of to a console.
++
++#include <algorithm>
++#include <atomic>
++#include <chrono>
++#include <cstdio>
++#include <cstring>
++#include <filesystem>
++#include <memory>
++#include <mutex>
++#include <string>
++#include <thread>
++
++#include <SDL3/SDL.h>
++#include <nlohmann/json.hpp>
++
++#include "common/fs/fs.h"
++#include "common/fs/path_util.h"
++#include "common/logging.h"
++#include "common/scm_rev.h"
++#include "common/settings.h"
++#include "core/core.h"
++#include "core/core_timing.h"
++#include "core/cpu_manager.h"
++#include "core/file_sys/registered_cache.h"
++#include "core/file_sys/vfs/vfs_real.h"
++#include "core/hle/service/am/applet_manager.h"
++#include "core/hle/service/filesystem/filesystem.h"
++#include "core/loader/loader.h"
++#include "input_common/main.h"
++#include "network/network.h"
++#include "nexus_engine.h"
++#include "video_core/gpu.h"
++#include "video_core/rasterizer_interface.h"
++#include "video_core/renderer_base.h"
++#include "yuzu_cmd/emu_window/emu_window_sdl3.h"
++#ifdef HAS_OPENGL
++#include "yuzu_cmd/emu_window/emu_window_sdl3_gl.h"
++#endif
++#include "yuzu_cmd/emu_window/emu_window_sdl3_null.h"
++#include "yuzu_cmd/emu_window/emu_window_sdl3_vk.h"
++#include "yuzu_cmd/sdl_config.h"
++
++#ifdef _WIN32
++#include <windows.h>
++#include "common/windows/timer_resolution.h"
++#endif
++
++#ifndef NEXUS_ENGINE_VERSION
++#define NEXUS_ENGINE_VERSION "0.1.0-dev"
++#endif
++
++namespace {
++
++using json = nlohmann::json;
++
++enum class State { Idle, Starting, Running, Stopping, Stopped, Error };
++
++const char* StateName(State s) {
++    switch (s) {
++    case State::Idle: return "idle";
++    case State::Starting: return "starting";
++    case State::Running: return "running";
++    case State::Stopping: return "stopping";
++    case State::Stopped: return "stopped";
++    case State::Error: return "error";
++    }
++    return "idle";
++}
++
++struct Request {
++    std::string game;
++    std::string data_dir;
++    std::string config_file;
++    std::string title{"NEXUS"};
++    bool fullscreen{true};
++    int volume{100};
++    std::uintptr_t owner_window{};
++};
++
++struct Engine {
++    std::mutex mutex;
++    std::thread thread;
++    std::atomic<State> state{State::Idle};
++    std::atomic<bool> stop_requested{false};
++    std::atomic<bool> force_stop{false};
++    std::atomic<int> volume{100};
++    std::atomic<std::uint64_t> frames{0};
++    std::atomic<std::uint64_t> program_id{0};
++    std::string code;    // guarded by mutex
++    std::string message; // guarded by mutex
++    std::string info_json;
++    bool logging_started{false};
++    std::atomic<void*> window_handle{nullptr};
++    // Like the Qt frontend, one Core::System lives for the whole process: it is initialised once
++    // and each game is loaded into it and shut down again (Load / ShutdownMainProcess).
++    std::unique_ptr<Core::System> system;
++    std::unique_ptr<InputCommon::InputSubsystem> input;
++};
++
++Engine& E() {
++    static Engine engine;
++    return engine;
++}
++
++void Fail(const char* code, const std::string& message) {
++    {
++        std::scoped_lock lk{E().mutex};
++        E().code = code;
++        E().message = message;
++    }
++    LOG_CRITICAL(Frontend, "NEXUS Engine: {} ({})", message, code);
++    E().state = State::Error;
++}
++
++const char* LoadErrorMessage(Core::SystemResultStatus r, const char** code) {
++    switch (r) {
++    case Core::SystemResultStatus::ErrorGetLoader:
++        *code = "unsupported-file";
++        return "This file is not a game NEXUS can load.";
++    case Core::SystemResultStatus::ErrorMemoryAllocation:
++        *code = "memory";
++        return "Not enough memory to start the game. Close other applications and try again.";
++    case Core::SystemResultStatus::ErrorNotInitialized:
++        *code = "cpu";
++        return "The CPU emulator could not be initialised.";
++    case Core::SystemResultStatus::ErrorVideoCore:
++        *code = "gpu";
++        return "The graphics renderer could not be started. Update your GPU driver or switch the "
++               "graphics backend in Emulation settings.";
++    default:
++        *code = "load";
++        return "The game could not be loaded. Check that your keys and firmware are installed and "
++               "match the game.";
++    }
++}
++
++std::unique_ptr<EmuWindow_SDL3> MakeWindow(InputCommon::InputSubsystem& input, Core::System& system,
++                                           bool fullscreen) {
++    switch (Settings::values.renderer_backend.GetValue()) {
++#ifdef HAS_OPENGL
++    case Settings::RendererBackend::OpenGL_GLSL:
++    case Settings::RendererBackend::OpenGL_GLASM:
++    case Settings::RendererBackend::OpenGL_SPIRV:
++        return std::make_unique<EmuWindow_SDL3_GL>(&input, system, fullscreen);
++#endif
++    case Settings::RendererBackend::Null:
++        return std::make_unique<EmuWindow_SDL3_Null>(&input, system, fullscreen);
++    case Settings::RendererBackend::Vulkan:
++    default:
++        return std::make_unique<EmuWindow_SDL3_VK>(&input, system, fullscreen);
++    }
++}
++
++void AttachToOwner(SDL_Window* window, std::uintptr_t owner) {
++#ifdef _WIN32
++    if (window == nullptr) {
++        return;
++    }
++    const SDL_PropertiesID props = SDL_GetWindowProperties(window);
++    auto* hwnd = static_cast<HWND>(
++        SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
++    if (hwnd == nullptr) {
++        return;
++    }
++    E().window_handle = hwnd;
++    if (owner != 0) {
++        // Owned by the NEXUS window: it stays above NEXUS and is part of the same application.
++        SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT, static_cast<LONG_PTR>(owner));
++    }
++    SetForegroundWindow(hwnd);
++#else
++    (void)window;
++    (void)owner;
++#endif
++}
++
++void RunSession(Request req) {
++    Engine& e = E();
++    e.frames = 0;
++    e.program_id = 0;
++
++    // All engine data lives in the folder NEXUS chose (keys, firmware, NAND, saves, caches).
++    Common::FS::SetAppDirectory(req.data_dir);
++    if (!e.logging_started) {
++        Common::Log::Initialize();
++        Common::Log::Start();
++        e.logging_started = true;
++    }
++    LOG_INFO(Frontend, "NEXUS Engine {} ({}-{}) starting {}", NEXUS_ENGINE_VERSION,
++             Common::g_scm_branch, Common::g_scm_desc, req.game);
++
++    // Settings come from the session config NEXUS wrote (global + per-game values).
++    SdlConfig config{req.config_file};
++    Settings::values.volume.SetValue(static_cast<u8>(std::clamp(e.volume.load(), 0, 200)));
++    WindowTitleOverride() = req.title;
++
++    const bool network = Network::Init();
++    {
++        if (!e.system) {
++            e.system = std::make_unique<Core::System>();
++            e.input = std::make_unique<InputCommon::InputSubsystem>();
++            e.system->Initialize();
++        }
++        Core::System& system = *e.system;
++        InputCommon::InputSubsystem& input = *e.input;
++        system.ApplySettings();
++
++        std::unique_ptr<EmuWindow_SDL3> window = MakeWindow(input, system, req.fullscreen);
++#ifdef _WIN32
++        Common::Windows::SetCurrentTimerResolutionToMaximum();
++        system.CoreTiming().SetTimerResolutionNs(Common::Windows::GetCurrentTimerResolution());
++#endif
++        system.SetContentProvider(std::make_unique<FileSys::ContentProviderUnion>());
++        static FileSys::ManualContentProvider manual_provider;
++        system.RegisterContentProvider(FileSys::ContentProviderUnionSlot::FrontendManual,
++                                       &manual_provider);
++        system.SetFilesystem(std::make_shared<FileSys::RealVfsFilesystem>());
++        system.GetFileSystemController().CreateFactories(*system.GetFilesystem());
++        system.GetUserChannel().clear();
++
++        Service::AM::FrontendAppletParameters params{.applet_id = Service::AM::AppletId::Application};
++        const auto result = system.Load(*window, req.game, params);
++        if (result != Core::SystemResultStatus::Success) {
++            const char* code = "load";
++            const std::string msg = LoadErrorMessage(result, &code);
++            window.reset();
++            if (network) {
++                Network::Shutdown();
++            }
++            Fail(code, msg);
++            return;
++        }
++        e.program_id = system.GetApplicationProcessProgramID();
++
++        system.GPU().Start();
++        system.GetCpuManager().OnGpuReady();
++        if (Settings::values.use_disk_shader_cache.GetValue()) {
++            system.Renderer().ReadRasterizer()->LoadDiskResources(
++                system.GetApplicationProcessProgramID(), std::stop_token{},
++                [](VideoCore::LoadCallbackStage, size_t, size_t) {});
++        }
++        system.RegisterExitCallback([] { E().stop_requested = true; }); // the game quit itself
++
++        AttachToOwner(window->GetSDLWindow(), req.owner_window);
++        const std::uint64_t presents_at_start = Core::g_nx2_present_count.load();
++        void(system.Run());
++        e.state = State::Running;
++
++        // Event loop: input, window events, live volume, stop requests.
++        int applied_volume = e.volume.load();
++        while (!e.stop_requested && window->IsOpen()) {
++            SDL_Event event;
++            if (SDL_WaitEventTimeout(&event, 4)) {
++                do {
++                    window->OnEvent(event);
++                } while (SDL_PollEvent(&event));
++            }
++            window->ApplyPendingTitle();
++            e.frames = Core::g_nx2_present_count.load() - presents_at_start;
++            if (const int v = e.volume.load(); v != applied_volume) {
++                Settings::values.volume.SetValue(static_cast<u8>(std::clamp(v, 0, 200)));
++                applied_volume = v;
++            }
++        }
++
++        e.state = State::Stopping;
++        LOG_INFO(Frontend, "NEXUS Engine: stopping (force={})", e.force_stop.load());
++        system.DetachDebugger();
++        if (system.IsPoweredOn()) {
++            void(system.Pause());
++            system.ShutdownMainProcess();
++        }
++        e.window_handle = nullptr;
++        window.reset();
++    }
++    if (network) {
++        Network::Shutdown();
++    }
++    e.state = State::Stopped;
++}
++
++std::string BuildInfo() {
++    json j = json::object();
++    j["name"] = "NEXUS Engine";
++    j["version"] = NEXUS_ENGINE_VERSION;
++    j["api"] = NEXUS_ENGINE_API_VERSION;
++    j["upstream"] = json::object();
++    j["upstream"]["project"] = "Lichii (Eden lineage)";
++    j["upstream"]["branch"] = std::string{Common::g_scm_branch};
++    j["upstream"]["describe"] = std::string{Common::g_scm_desc};
++    json sw1 = json::object();
++    sw1["id"] = "switch1";
++    sw1["name"] = "Nintendo Switch";
++    sw1["status"] = "engine core";
++    json sw2 = json::object();
++    sw2["id"] = "switch2";
++    sw2["name"] = "Nintendo Switch 2";
++    sw2["status"] = "experimental upstream code (nx2 work); untested by NEXUS";
++    j["systems"] = json::array();
++    j["systems"].push_back(sw1);
++    j["systems"].push_back(sw2);
++    j["renderers"] = json::array();
++    j["renderers"].push_back("vulkan");
++#ifdef HAS_OPENGL
++    j["renderers"].push_back("opengl");
++#endif
++    j["renderers"].push_back("null");
++    j["components"] = json::array();
++    for (const char* c : {"cpu: dynarmic JIT (ARMv8)",
++                          "gpu: Maxwell/Ampere command processing, Vulkan/OpenGL renderers",
++                          "audio: audio_core with NEXUS 0-200% gain", "input: SDL3 + input_common",
++                          "services: HLE (Horizon OS services)",
++                          "loader: NSP/XCI/NSZ/XCZ/NCA/NRO/NSO/NUP"}) {
++        j["components"].push_back(c);
++    }
++    return j.dump();
++}
++
++} // namespace
++
++extern "C" {
++
++NEXUS_API int32_t nexus_engine_api_version(void) {
++    return NEXUS_ENGINE_API_VERSION;
++}
++
++NEXUS_API const char* nexus_engine_info(void) {
++    Engine& e = E();
++    std::scoped_lock lk{e.mutex};
++    if (e.info_json.empty()) {
++        e.info_json = BuildInfo();
++    }
++    return e.info_json.c_str();
++}
++
++NEXUS_API int32_t nexus_engine_start(const char* request_json) {
++    Engine& e = E();
++    const State s = e.state.load();
++    if (s == State::Starting || s == State::Running || s == State::Stopping) {
++        return -1;
++    }
++    Request req;
++    try {
++        const json j = json::parse(request_json ? request_json : "{}");
++        req.game = j.at("game").get<std::string>();
++        req.data_dir = j.at("dataDir").get<std::string>();
++        req.config_file = j.at("configFile").get<std::string>();
++        req.title = j.value("title", std::string{"NEXUS"});
++        req.fullscreen = j.value("fullscreen", true);
++        req.volume = j.value("volume", 100);
++        req.owner_window = j.value("ownerWindow", std::uintptr_t{0});
++    } catch (const std::exception&) {
++        return -2;
++    }
++    if (e.thread.joinable()) {
++        e.thread.join();
++    }
++    {
++        std::scoped_lock lk{e.mutex};
++        e.code.clear();
++        e.message.clear();
++    }
++    e.volume = std::clamp(req.volume, 0, 200);
++    e.stop_requested = false;
++    e.force_stop = false;
++    e.state = State::Starting;
++    e.thread = std::thread([req] {
++        try {
++            RunSession(req);
++        } catch (const std::exception& ex) {
++            Fail("exception", ex.what());
++        }
++    });
++    return 0;
++}
++
++NEXUS_API int32_t nexus_engine_status(char* buf, int32_t buf_len) {
++    Engine& e = E();
++    json j = json::object();
++    j["state"] = StateName(e.state.load());
++    j["frames"] = e.frames.load();
++    j["volume"] = e.volume.load();
++    if (const auto id = e.program_id.load(); id != 0) {
++        char hex[17];
++        std::snprintf(hex, sizeof(hex), "%016llX", static_cast<unsigned long long>(id));
++        j["programId"] = hex;
++    }
++    {
++        std::scoped_lock lk{e.mutex};
++        if (!e.code.empty()) {
++            j["code"] = e.code;
++            j["message"] = e.message;
++        }
++    }
++    const std::string text = j.dump();
++    if (buf != nullptr && buf_len > 0) {
++        const auto n = std::min<std::size_t>(text.size(), static_cast<std::size_t>(buf_len - 1));
++        std::memcpy(buf, text.data(), n);
++        buf[n] = '\0';
++    }
++    return static_cast<int32_t>(text.size());
++}
++
++NEXUS_API int32_t nexus_engine_stop(int32_t force) {
++    Engine& e = E();
++    e.force_stop = force != 0;
++    e.stop_requested = true;
++    SDL_Event quit{};
++    quit.type = SDL_EVENT_QUIT;
++    SDL_PushEvent(&quit); // wakes the session's event loop
++    return 0;
++}
++
++NEXUS_API void nexus_engine_set_volume(int32_t percent) {
++    E().volume = std::clamp<int32_t>(percent, 0, 200);
++}
++
++NEXUS_API void nexus_engine_focus(void) {
++#ifdef _WIN32
++    if (void* hwnd = E().window_handle.load()) {
++        ShowWindow(static_cast<HWND>(hwnd), SW_RESTORE);
++        SetForegroundWindow(static_cast<HWND>(hwnd));
++    }
++#endif
++}
++
++} // extern "C"
+diff --git a/src/tests/CMakeLists.txt b/src/tests/CMakeLists.txt
+index cb22de1d1..25548c94d 100644
+--- a/src/tests/CMakeLists.txt
++++ b/src/tests/CMakeLists.txt
+@@ -5,6 +5,7 @@
+ # SPDX-License-Identifier: GPL-2.0-or-later
+ 
+ add_executable(tests
++    nexus/nexus_gain.cpp
+     common/addon_config.cpp
+     video_core/vulkan_overlay_filter.cpp
+     video_core/buffer_cache_ports.cpp
+diff --git a/src/tests/nexus/nexus_gain.cpp b/src/tests/nexus/nexus_gain.cpp
+new file mode 100644
+index 000000000..623954df5
+--- /dev/null
++++ b/src/tests/nexus/nexus_gain.cpp
+@@ -0,0 +1,38 @@
++// SPDX-FileCopyrightText: 2026 NEXUS project
++// SPDX-License-Identifier: GPL-3.0-or-later
++
++#include <cmath>
++#include <catch2/catch_test_macros.hpp>
++#include "audio_core/sink/nexus_gain.h"
++
++using namespace AudioCore::Nexus;
++
++TEST_CASE("NEXUS volume: 0, 50, 100 percent", "[nexus][audio]") {
++    REQUIRE(ApplyGain(10000.0f, GainFromPercent(0)) == 0);
++    REQUIRE(ApplyGain(10000.0f, GainFromPercent(50)) == 5000);
++    REQUIRE(ApplyGain(-10000.0f, GainFromPercent(50)) == -5000);
++    for (int s = -32768; s <= 32767; s += 97) { // 100 % is bit-identical to the input
++        REQUIRE(ApplyGain(float(s), GainFromPercent(100)) == s);
++    }
++}
++
++TEST_CASE("NEXUS volume: amplification is linear for quiet signals", "[nexus][audio]") {
++    REQUIRE(ApplyGain(8000.0f, GainFromPercent(150)) == 12000);
++    REQUIRE(ApplyGain(8000.0f, GainFromPercent(200)) == 16000);
++    REQUIRE(ApplyGain(1000.0f, GainFromPercent(101)) == 1010); // no drop just above 100 %
++}
++
++TEST_CASE("NEXUS volume: loud amplified signals never clip and stay monotonic", "[nexus][audio]") {
++    for (float gain : {1.25f, 1.5f, 2.0f}) {
++        int prev = -40000;
++        for (int s = -32768; s <= 32767; s += 13) {
++            const int y = ApplyGain(float(s), gain);
++            REQUIRE(y >= -32767);
++            REQUIRE(y <= 32767);
++            REQUIRE(y >= prev);
++            prev = y;
++        }
++    }
++    REQUIRE(ApplyGain(32767.0f, 2.0f) < 32767 + 1);
++    REQUIRE(ApplyGain(30000.0f, 2.0f) > ApplyGain(20000.0f, 2.0f));
++}
+diff --git a/src/yuzu_cmd/emu_window/emu_window_sdl3.cpp b/src/yuzu_cmd/emu_window/emu_window_sdl3.cpp
+index a640cf9f1..44dd98826 100644
+--- a/src/yuzu_cmd/emu_window/emu_window_sdl3.cpp
++++ b/src/yuzu_cmd/emu_window/emu_window_sdl3.cpp
+@@ -39,7 +39,10 @@ EmuWindow_SDL3::EmuWindow_SDL3(InputCommon::InputSubsystem* input_subsystem_, Co
+     titlebar_timer = SDL_AddTimer(2000, [](void *userdata, SDL_TimerID, Uint32) -> Uint32 {
+         auto* this_ = (EmuWindow_SDL3*)userdata;
+         auto const results = this_->system.GetAndResetPerfStats();
+-        auto* const title = new std::string(fmt::format("{} | {}-{} | FPS: {:.0f} ({:.0f}%)", Common::g_build_fullname, Common::g_scm_branch, Common::g_scm_desc, results.average_game_fps, results.emulation_speed * 100.0f));
++        auto* const title = new std::string(
++            WindowTitleOverride().empty()
++                ? fmt::format("{} | {}-{} | FPS: {:.0f} ({:.0f}%)", Common::g_build_fullname, Common::g_scm_branch, Common::g_scm_desc, results.average_game_fps, results.emulation_speed * 100.0f)
++                : fmt::format("{} | FPS: {:.0f} ({:.0f}%)", WindowTitleOverride(), results.average_game_fps, results.emulation_speed * 100.0f));
+         // Timers run on their own thread and AppKit throws when a title is set off the main
+         // thread: ApplyPendingTitle sets it from the main loop.
+         delete this_->pending_title.exchange(title);
+diff --git a/src/yuzu_cmd/emu_window/emu_window_sdl3.h b/src/yuzu_cmd/emu_window/emu_window_sdl3.h
+index 6e315d407..35c09cc65 100644
+--- a/src/yuzu_cmd/emu_window/emu_window_sdl3.h
++++ b/src/yuzu_cmd/emu_window/emu_window_sdl3.h
+@@ -36,6 +36,12 @@ inline SDL_WindowFlags Nx2HiddenWindowFlags() {
+                                                          : SDL_WindowFlags{0};
+ }
+ 
++/// NEXUS: when set, game windows are titled with this text instead of the upstream build name.
++inline std::string& WindowTitleOverride() {
++    static std::string title;
++    return title;
++}
++
+ class EmuWindow_SDL3 : public Core::Frontend::EmuWindow {
+ public:
+     explicit EmuWindow_SDL3(InputCommon::InputSubsystem* input_subsystem_, Core::System& system_);
+@@ -44,6 +50,11 @@ public:
+     /// Whether the window is still open, and a close request hasn't yet been sent
+     bool IsOpen() const;
+ 
++    /// NEXUS: the SDL window, so the engine host can attach it to the NEXUS window.
++    SDL_Window* GetSDLWindow() const {
++        return render_window;
++    }
++
+     /// Sets the title the titlebar timer prepared; call from the main thread.
+     void ApplyPendingTitle();
+ 
+diff --git a/src/yuzu_cmd/emu_window/emu_window_sdl3_gl.cpp b/src/yuzu_cmd/emu_window/emu_window_sdl3_gl.cpp
+index 98be7788f..d1af96c3b 100644
+--- a/src/yuzu_cmd/emu_window/emu_window_sdl3_gl.cpp
++++ b/src/yuzu_cmd/emu_window/emu_window_sdl3_gl.cpp
+@@ -97,6 +97,9 @@ EmuWindow_SDL3_GL::EmuWindow_SDL3_GL(InputCommon::InputSubsystem* input_subsyste
+ 
+     std::string window_title = fmt::format("{} | {}-{}", Common::g_build_fullname,
+                                            Common::g_scm_branch, Common::g_scm_desc);
++    if (!WindowTitleOverride().empty()) {
++        window_title = WindowTitleOverride();
++    }
+     render_window =
+         SDL_CreateWindow(window_title.c_str(), Layout::ScreenUndocked::Width,
+                          Layout::ScreenUndocked::Height,
+diff --git a/src/yuzu_cmd/emu_window/emu_window_sdl3_vk.cpp b/src/yuzu_cmd/emu_window/emu_window_sdl3_vk.cpp
+index 247d189bd..bde19fa27 100644
+--- a/src/yuzu_cmd/emu_window/emu_window_sdl3_vk.cpp
++++ b/src/yuzu_cmd/emu_window/emu_window_sdl3_vk.cpp
+@@ -22,10 +22,11 @@
+ EmuWindow_SDL3_VK::EmuWindow_SDL3_VK(InputCommon::InputSubsystem* input_subsystem_,
+                                      Core::System& system_, bool fullscreen)
+     : EmuWindow_SDL3{input_subsystem_, system_} {
+-    const std::string window_title = fmt::format("Eden {} | {}-{} (Vulkan)",
+-                                                 Common::g_build_name,
+-                                                 Common::g_scm_branch,
+-                                                 Common::g_scm_desc);
++    const std::string window_title =
++        WindowTitleOverride().empty()
++            ? fmt::format("Eden {} | {}-{} (Vulkan)", Common::g_build_name, Common::g_scm_branch,
++                          Common::g_scm_desc)
++            : WindowTitleOverride();
+     render_window =
+         SDL_CreateWindow(window_title.c_str(), Layout::ScreenUndocked::Width,
+                          Layout::ScreenUndocked::Height,
+diff --git a/tools/nexus/abi_smoke.py b/tools/nexus/abi_smoke.py
+new file mode 100644
+index 000000000..dc175e420
+--- /dev/null
++++ b/tools/nexus/abi_smoke.py
+@@ -0,0 +1,21 @@
++"""Loads nexus_engine.dll and checks its C interface without starting a game."""
++import ctypes, json, sys
++
++dll = ctypes.CDLL(sys.argv[1])
++dll.nexus_engine_api_version.restype = ctypes.c_int32
++dll.nexus_engine_info.restype = ctypes.c_char_p
++assert dll.nexus_engine_api_version() == 1, "unexpected API version"
++info = json.loads(dll.nexus_engine_info())
++assert info["name"] == "NEXUS Engine" and info["systems"], info
++buf = ctypes.create_string_buffer(512)
++n = dll.nexus_engine_status(buf, 512)
++status = json.loads(buf.value)
++assert status["state"] == "idle", status
++assert dll.nexus_engine_start(b"{not json") == -2, "bad request must be refused"
++dll.nexus_engine_set_volume(150)
++dll.nexus_engine_status(buf, 512)
++assert json.loads(buf.value)["volume"] == 150
++dll.nexus_engine_set_volume(999)
++dll.nexus_engine_status(buf, 512)
++assert json.loads(buf.value)["volume"] == 200, "volume must clamp to 200"
++print("ABI smoke test passed:", info["version"])
+diff --git a/tools/nexus/package_engine.py b/tools/nexus/package_engine.py
+new file mode 100644
+index 000000000..ddb421154
+--- /dev/null
++++ b/tools/nexus/package_engine.py
+@@ -0,0 +1,24 @@
++"""Packages nexus_engine.dll and the DLLs it needs into nexus-engine-<version>-win64.zip with an
++engine.json manifest (version, source commit, upstream base, SHA-256 of every file)."""
++import hashlib, json, os, subprocess, sys, zipfile
++
++src, out = sys.argv[1], sys.argv[2]
++os.makedirs(out, exist_ok=True)
++files = ["nexus_engine.dll"] + sorted(f for f in os.listdir(src) if f.lower().endswith(".dll") and f != "nexus_engine.dll")
++version = os.environ.get("GITHUB_REF_NAME", "dev").replace("engine-v", "")
++commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
++base = subprocess.run(["git", "describe", "--tags", "--match", "build-*", "--abbrev=0"], capture_output=True, text=True).stdout.strip()
++manifest = {"name": "NEXUS Engine", "version": version, "api": 1, "commit": commit, "upstreamBase": base, "files": {}}
++for f in files:
++    with open(os.path.join(src, f), "rb") as fh:
++        manifest["files"][f] = hashlib.sha256(fh.read()).hexdigest()
++zpath = os.path.join(out, f"nexus-engine-{version}-win64.zip")
++with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
++    for f in files:
++        z.write(os.path.join(src, f), f)
++    z.writestr("engine.json", json.dumps(manifest, indent=2))
++with open(zpath, "rb") as fh:
++    digest = hashlib.sha256(fh.read()).hexdigest()
++with open(zpath + ".sha256", "w") as fh:
++    fh.write(f"{digest}  {os.path.basename(zpath)}\n")
++print(zpath, digest)
+diff --git a/tools/nexus/upstream-sync.sh b/tools/nexus/upstream-sync.sh
+new file mode 100755
+index 000000000..63ccbdfd6
+--- /dev/null
++++ b/tools/nexus/upstream-sync.sh
+@@ -0,0 +1,53 @@
++#!/usr/bin/env bash
++# NEXUS Engine upstream sync.
++#
++#   tools/nexus/upstream-sync.sh report  [ref]   list what changed upstream since our last merge
++#   tools/nexus/upstream-sync.sh merge   [ref]   merge an upstream ref into a new sync/<ref> branch
++#
++# The NEXUS engine is a fork: branch "nexus" = upstream code + NEXUS changes, as normal git
++# history. Upstream improvements arrive by MERGING upstream refs (never by copying files or
++# replacing binaries), so NEXUS changes are kept and conflicts are resolved explicitly. A sync
++# branch is pushed for CI; only a branch that builds and passes every test is merged into
++# "nexus" and tagged engine-vX.Y.Z, which is what the NEXUS application can install. Every
++# earlier engine tag stays available for rollback.
++set -euo pipefail
++
++remote_setup() {
++  git remote get-url lichii >/dev/null 2>&1 || git remote add lichii https://github.com/zortos293/Lichii
++  git remote get-url eden   >/dev/null 2>&1 || git remote add eden   https://github.com/eden-emulator/mirror
++  # Ryujinx (C#/.NET, MIT) is tracked for reference only: its code cannot be linked into this C++
++  # engine; individual fixes are ported by hand with attribution (see NEXUS_ENGINE.md).
++  git remote get-url ryujinx >/dev/null 2>&1 || git remote add ryujinx https://git.ryujinx.app/ryubing/ryujinx || true
++}
++
++last_merged() { git describe --tags --match 'build-*' --abbrev=0 nexus 2>/dev/null || echo build-130; }
++
++cmd=${1:-report}
++ref=${2:-}
++remote_setup
++git fetch --tags lichii
++[ -z "$ref" ] && ref=$(git tag --list 'build-*' --sort=-v:refname | head -1)
++base=$(last_merged)
++
++case "$cmd" in
++report)
++  echo "Upstream ref: $ref   last merged: $base"
++  echo "Commits: $(git rev-list --count "$base..$ref")"
++  git log --no-merges --format='  %h %s' "$base..$ref" | head -200
++  echo
++  echo "Files touched upstream that NEXUS also changed (likely conflicts):"
++  comm -12 <(git diff --name-only "$base" "$ref" | sort) <(git diff --name-only "$base" nexus | sort) | sed 's/^/  /'
++  ;;
++merge)
++  branch="sync/${ref}"
++  git switch -c "$branch" nexus
++  if git merge --no-ff -m "sync: merge upstream $ref into NEXUS engine" "$ref"; then
++    echo "Merged cleanly into $branch. Push it; CI builds and tests it before it can reach 'nexus'."
++  else
++    echo "Conflicts to resolve (NEXUS changes must be kept, upstream fixes taken):"
++    git diff --name-only --diff-filter=U | sed 's/^/  /'
++    exit 2
++  fi
++  ;;
++*) echo "usage: $0 report|merge [ref]"; exit 1 ;;
++esac

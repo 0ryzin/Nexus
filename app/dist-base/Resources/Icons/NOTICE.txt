@@ -1,0 +1,11 @@
+NEXUS SWITCH emblem and wordmark: personal build
+
+emblem.png, logo-full.png, app-icon-512.png, icon.ico and favicon.png are made
+from the logo artwork supplied by the owner of this build (StartupReworkExample).
+The same artwork is embedded in NEXUS.exe for the startup animation and icon.
+
+The emblem closely follows the design of Nintendo Switch's logo. "Nintendo
+Switch" and its logo are trademarks of Nintendo. This build is for the owner's
+personal, non-commercial use. Before sharing NEXUS with anyone, replace this
+artwork with an original design (web/assets/brand in the source) and remove
+Resources\ProfileIcons.

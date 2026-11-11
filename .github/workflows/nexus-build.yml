@@ -1,0 +1,266 @@
+# NEXUS build: one Windows job builds the NEXUS engine (upstream Lichii + engine/patches) and
+# NEXUS.exe, tests both, and packs them into one NEXUS-<version>-Windows-x64.zip. The ZIP is only
+# produced when every step passes, and it is checked again after a fresh extract: the engine is
+# loaded from the extracted folder by NEXUS.exe itself (NEXUS.exe --engine-check).
+name: nexus-build
+
+on:
+  push:
+    branches: [main, "build/**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nexus-build-${{ github.ref }}
+  # a newer push waits for the running build (whose compiler cache the next one reuses)
+  cancel-in-progress: false
+
+env:
+  NEXUS_VERSION: "2.2.0"
+
+jobs:
+  app-tests:
+    name: NEXUS tests (Linux, fast)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: app/go.sum
+      - run: go vet .
+      - run: go test -count=1 .
+
+  windows:
+    name: Engine + NEXUS (Windows x64)
+    runs-on: windows-2022
+    timeout-minutes: 330
+    env:
+      SCCACHE_DIR: ${{ github.workspace }}/engine-src/.sccache
+      SCCACHE_CACHE_SIZE: 3G
+    steps:
+      # patches must be applied byte for byte: no line-ending conversion in either checkout
+      - name: Keep line endings as committed
+        run: git config --global core.autocrlf false
+
+      - name: Check out NEXUS
+        uses: actions/checkout@v4
+
+      - name: Read engine.lock
+        id: lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          get() { grep "^$1=" app/engine.lock | cut -d= -f2; }
+          echo "repo=$(get upstream)" >> "$GITHUB_OUTPUT"
+          echo "commit=$(get upstreamCommit)" >> "$GITHUB_OUTPUT"
+          echo "base=$(get upstreamBase)" >> "$GITHUB_OUTPUT"
+          echo "version=$(get version)" >> "$GITHUB_OUTPUT"
+          echo "patchset=$(python -c "import hashlib,os;d='engine/patches';h=hashlib.sha256();[h.update(open(os.path.join(d,n),'rb').read()) for n in sorted(os.listdir(d)) if n.endswith('.patch')];print(h.hexdigest())")" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the upstream engine base
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.lock.outputs.repo }}
+          ref: ${{ steps.lock.outputs.commit }}
+          path: engine-src
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Apply the NEXUS engine patches
+        shell: bash
+        working-directory: engine-src
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ steps.lock.outputs.commit }}"
+          git tag "${{ steps.lock.outputs.base }}" HEAD
+          git -c user.name="NEXUS CI" -c user.email="nexus-ci@users.noreply.github.com" \
+            am ../engine/patches/*.patch
+          git log --oneline -12
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install LLVM (clang-cl, as upstream's Windows builds use)
+        shell: pwsh
+        working-directory: engine-src
+        run: ./tools/windows/install-llvm.ps1
+
+      - name: Install sccache
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'sccache.zip'
+          Invoke-WebRequest -OutFile $zip https://github.com/mozilla/sccache/releases/download/v0.19.0/sccache-v0.19.0-x86_64-pc-windows-msvc.zip
+          Expand-Archive $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'sccache')
+          $bin = (Get-ChildItem -Recurse -Filter sccache.exe (Join-Path $env:RUNNER_TEMP 'sccache')).DirectoryName
+          $bin | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+
+      - name: Install the Vulkan SDK
+        shell: pwsh
+        working-directory: engine-src
+        run: ./tools/windows/install-vulkan-sdk.ps1
+
+      - name: Restore CPM downloads
+        id: cpm-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: engine-src/.cache/cpm
+          key: nexus-cpm-${{ steps.lock.outputs.commit }}-${{ hashFiles('engine/patches/*.patch') }}
+          restore-keys: |
+            nexus-cpm-${{ steps.lock.outputs.commit }}-
+            nexus-cpm-
+
+      - name: Restore compiler objects
+        id: objects
+        uses: actions/cache/restore@v4
+        with:
+          path: engine-src/.sccache
+          key: nexus-objects-${{ steps.lock.outputs.commit }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            nexus-objects-${{ steps.lock.outputs.commit }}-
+            nexus-objects-
+
+      - name: Configure the engine
+        shell: bash
+        working-directory: engine-src
+        run: |
+          set -euo pipefail
+          flags="-DWIN32 -D_WINDOWS -DNOMINMAX"
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DNEXUS_ENGINE=ON \
+            -DNEXUS_ENGINE_VERSION=${{ steps.lock.outputs.version }} \
+            -DBUILD_TESTING=ON \
+            -DYUZU_TESTS=ON \
+            -DENABLE_QT=OFF \
+            -DYUZU_CMD=OFF \
+            -DYUZU_ROOM=OFF \
+            -DYUZU_ROOM_STANDALONE=OFF \
+            -DYUZU_USE_BUNDLED_SDL3=ON \
+            -DENABLE_UPDATE_CHECKER=OFF \
+            -DENABLE_WEB_SERVICE=OFF \
+            -DUSE_DISCORD_PRESENCE=OFF \
+            -DENABLE_WERROR=OFF \
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+            "-DCMAKE_C_COMPILER=$LLVM_ROOT/bin/clang-cl.exe" \
+            "-DCMAKE_CXX_COMPILER=$LLVM_ROOT/bin/clang-cl.exe" \
+            "-DCMAKE_LINKER=$LLVM_ROOT/bin/lld-link.exe" \
+            "-DCMAKE_AR=$LLVM_ROOT/bin/llvm-lib.exe" \
+            "-DCMAKE_C_FLAGS=$flags" \
+            "-DCMAKE_CXX_FLAGS=-EHsc $flags"
+
+      - name: Save CPM downloads
+        if: steps.cpm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: engine-src/.cache/cpm
+          key: ${{ steps.cpm-cache.outputs.cache-primary-key }}
+
+      - name: Build the engine and its tests
+        shell: bash
+        working-directory: engine-src
+        run: |
+          sccache --zero-stats || true
+          cmake --build build --target nexus_engine tests --parallel
+          sccache --show-stats || true
+
+      - name: Save compiler objects
+        if: always() && steps.objects.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: engine-src/.sccache
+          key: ${{ steps.objects.outputs.cache-primary-key }}
+
+      - name: Engine tests (gate)
+        shell: bash
+        working-directory: engine-src
+        run: |
+          ls build/bin
+          ./build/bin/tests.exe
+
+      - name: Engine interface smoke test
+        working-directory: engine-src
+        run: python tools/nexus/abi_smoke.py build/bin/nexus_engine.dll
+
+      - name: Package the engine
+        working-directory: engine-src
+        shell: bash
+        env:
+          GITHUB_REF_NAME: engine-v${{ steps.lock.outputs.version }}
+          NEXUS_ENGINE_UPSTREAM_BASE: ${{ steps.lock.outputs.base }}
+          NEXUS_ENGINE_PATCHSET: ${{ steps.lock.outputs.patchset }}
+        run: python tools/nexus/package_engine.py build/bin ../engine-out
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: app/go.sum
+
+      - name: NEXUS tests on Windows (gate)
+        working-directory: app
+        run: go test -count=1 .
+
+      - name: Build NEXUS.exe
+        working-directory: app
+        shell: bash
+        run: go build -ldflags "-H windowsgui -s -w -X main.AppVersion=$NEXUS_VERSION" -o NEXUS.exe .
+
+      - name: Make the NEXUS ZIP (NEXUS + engine)
+        working-directory: app
+        shell: bash
+        run: |
+          python tools/release/make_release.py --version "$NEXUS_VERSION" --exe NEXUS.exe \
+            --engine ../engine-out/nexus-engine-${{ steps.lock.outputs.version }}-win64.zip \
+            --engine-patches ../engine/patches --engine-source ../engine-src --out ../out
+
+      - name: Fresh-extract check (what a user does)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $z = Get-ChildItem out/*.zip | Select-Object -First 1
+          $fresh = Join-Path $env:RUNNER_TEMP 'fresh extract'
+          Expand-Archive $z.FullName -DestinationPath $fresh
+          $n = Join-Path $fresh 'NEXUS'
+          foreach ($f in 'NEXUS.exe', 'Engine/nexus_engine.dll', 'Engine/engine.json') {
+            if (!(Test-Path (Join-Path $n $f))) { throw "$f missing from the ZIP" }
+          }
+          # every DLL the engine imports is either in the package or a Windows system DLL
+          $libs = @(Get-ChildItem (Join-Path $n 'Engine') -Recurse -Filter *.dll | ForEach-Object { $_.Name.ToLower() })
+          $deps = dumpbin /dependents (Join-Path $n 'Engine/nexus_engine.dll') | Select-String '^\s+(\S+\.dll)$' | ForEach-Object { $_.Matches[0].Groups[1].Value.ToLower() }
+          foreach ($d in $deps) {
+            $inPkg = $libs -contains $d
+            $inSys = Test-Path (Join-Path $env:WINDIR "System32/$d")
+            $crt = $d -in 'vcruntime140.dll','vcruntime140_1.dll','msvcp140.dll'
+            Write-Host "$d  package=$inPkg system=$inSys"
+            if ($crt -and !$inPkg) { throw "$d (VC++ runtime) is not bundled" }
+            if (!$inPkg -and !$inSys) { throw "$d is needed by the engine but not in the package" }
+          }
+          python engine-src/tools/nexus/abi_smoke.py (Join-Path $n 'Engine/nexus_engine.dll')
+          # NEXUS.exe finds, verifies and loads its engine exactly as on a user's PC
+          $res = Join-Path $env:RUNNER_TEMP 'engine-check.json'
+          $p = Start-Process -FilePath (Join-Path $n 'NEXUS.exe') -ArgumentList '--engine-check', "`"$res`"" -WorkingDirectory $env:RUNNER_TEMP -Wait -PassThru
+          Get-Content $res
+          if ($p.ExitCode -ne 0) { throw "NEXUS.exe --engine-check failed (exit $($p.ExitCode))" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NEXUS-${{ env.NEXUS_VERSION }}-Windows-x64
+          path: out/*
+          retention-days: 30
+
+      - name: Publish (version tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*

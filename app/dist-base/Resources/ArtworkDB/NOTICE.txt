@@ -1,0 +1,15 @@
+NEXUS built-in artwork database: personal build
+
+index.json      the database: which games each image belongs to and the rules
+                used to recognise them (see README, "Game artwork")
+zelda-ocarina-of-time-remake.png
+                artwork supplied by the owner of this build for The Legend of
+                Zelda: Ocarina of Time (Nintendo Switch 2 remake). It shows
+                characters and logos owned by Nintendo. It is included for the
+                owner's personal, non-commercial use only. Remove it before
+                sharing NEXUS with anyone.
+
+You can add your own entries: put an image here and add an entry to index.json
+(titleIds, or names + publisher + exclude, or filenameAll). NEXUS only applies an
+entry when the game is identified with certainty, and never over artwork a user
+chose.

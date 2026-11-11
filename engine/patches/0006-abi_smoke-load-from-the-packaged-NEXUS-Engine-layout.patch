@@ -1,0 +1,28 @@
+From 1c1e5b78f3dc714133cfc64b0fec78f7190431b2 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 11 Nov 2026 00:14:04 +0000
+Subject: [PATCH 6/8] abi_smoke: load from the packaged NEXUS Engine layout
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
+---
+ tools/nexus/abi_smoke.py | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/tools/nexus/abi_smoke.py b/tools/nexus/abi_smoke.py
+index f07fd120d..1a34b6ca4 100644
+--- a/tools/nexus/abi_smoke.py
++++ b/tools/nexus/abi_smoke.py
+@@ -1,6 +1,11 @@
+ """Loads nexus_engine.dll and checks its C interface without starting a game."""
+-import ctypes, json, sys
++import ctypes, json, os, sys
+ 
++# packaged layout: dependencies live in Engine\Libraries (NEXUS adds that folder the same way)
++here = os.path.dirname(os.path.abspath(sys.argv[1]))
++for d in (here, os.path.join(here, "Libraries")):
++    if os.path.isdir(d) and hasattr(os, "add_dll_directory"):
++        os.add_dll_directory(d)
+ dll = ctypes.CDLL(sys.argv[1])
+ dll.nexus_engine_api_version.restype = ctypes.c_int32
+ dll.nexus_engine_info.restype = ctypes.c_char_p

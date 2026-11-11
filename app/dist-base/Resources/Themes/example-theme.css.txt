@@ -1,0 +1,10 @@
+/* Example NEXUS theme. Rename to "my-theme.css" to activate it (any *.css file here is loaded).
+   You can override any CSS variable used by the interface, for example: */
+.theme-dark {
+  --bg: #12141a;        /* page background */
+  --surface: #1f2330;   /* cards, rows, dock buttons */
+  --tile-bg: #262b3a;   /* empty game tiles */
+}
+/* Rounder game tiles:
+.tile { border-radius: 18px; }
+*/

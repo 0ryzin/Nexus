@@ -1,0 +1,2 @@
+Put your own legally dumped games here (NSP, XCI, NSZ, XCZ, NRO, NUP).
+Sub-folders are scanned too. NEXUS never modifies game files.
