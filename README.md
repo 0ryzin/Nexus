@@ -1,18 +1,12 @@
 # NEXUS
 
-**A console-style game library and integrated emulation environment.**
+**A console-style game library and integrated emulation environment for Windows.**
 
-NEXUS is an independent, console-inspired gaming environment being developed for desktop platforms. It brings your game library, user profiles, play statistics, controller navigation, themes and emulation settings together in one interface.
+NEXUS is an independent, console-inspired gaming environment being developed for Windows. It brings your game library, user profiles, play statistics, controller navigation, themes and emulation settings together in one interface.
 
 NEXUS is being developed around an integrated emulation engine. The intended experience is to launch and manage games from NEXUS itself, rather than asking users to choose and launch a separate emulator application.
 
 > **Development status:** NEXUS is still experimental. The supplied development package does not include a compiled NEXUS Engine build, so game launching is not yet ready for normal use. The engine source and integration are present in the supplied source package, but the engine must be built and tested before games can run. See [Engine status](docs/ENGINE_STATUS.md).
-
-## Platform support
-
-The initial release is planned for **Windows, macOS and Linux**. Windows is the platform covered by the current development package. macOS and Linux support are planned targets and should not be considered available until builds and platform-specific functionality have been completed and tested.
-
-Android is a possible future platform. iOS support is not currently planned or promised.
 
 ## Project goals
 
@@ -52,7 +46,7 @@ More detail: [Engine architecture and status](docs/ENGINE_STATUS.md).
 
 ## Requirements
 
-The current development package is intended for:
+The current Windows development package is intended for:
 
 - Windows 10 or Windows 11, 64-bit.
 - Microsoft Edge WebView2 Runtime.
@@ -60,13 +54,11 @@ The current development package is intended for:
 - A graphics driver supporting Vulkan 1.3 (recommended) or OpenGL 4.6.
 - Your own legally obtained game dumps, console keys and firmware. These are not included.
 
-Requirements for macOS and Linux builds will be documented when those platform builds are available.
-
 NEXUS does not provide games, console keys or firmware.
 
 ## Getting started
 
-1. Obtain a NEXUS development or release package when one is published for your platform.
+1. Obtain a NEXUS Windows development or release package when one is published.
 2. Extract or install the NEXUS package using the instructions supplied with that build.
 3. Run NEXUS.
 4. Create a user profile and add your game-library folders in System Settings.
