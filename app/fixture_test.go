@@ -117,3 +117,21 @@ func TestMakeV16Fixtures(t *testing.T) {
 }
 
 func init() { allowFakeEngine = true }
+
+// testNewApp / testNewAppWithPaths close the app (its log file) when the test ends, before the
+// test's temporary folders are removed: Windows cannot delete a file that is still open.
+func testNewApp(t testing.TB, root string) (*App, error) {
+	a, err := NewApp(root)
+	if a != nil {
+		t.Cleanup(a.Close)
+	}
+	return a, err
+}
+
+func testNewAppWithPaths(t testing.TB, p *Paths) (*App, error) {
+	a, err := NewAppWithPaths(p)
+	if a != nil {
+		t.Cleanup(a.Close)
+	}
+	return a, err
+}

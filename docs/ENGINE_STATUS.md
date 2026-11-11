@@ -19,32 +19,33 @@ NEXUS's emulation development draws on **Lichii, Eden, yuzu and Ryujinx**, inclu
 
 See [Third-party notices, licences and acknowledgements](../THIRD_PARTY_NOTICES.md) for the project acknowledgements and licence summary.
 
-## Current implementation status
+## Current implementation status (NEXUS 2.2)
 
-The supplied package contains:
+**The engine is compiled, tested and shipped in the NEXUS ZIP.** The repository's Windows build
+(`.github/workflows/nexus-build.yml`) checks out upstream Lichii build-150, applies the NEXUS patch
+series in `engine/patches`, and builds `nexus_engine.dll` with clang-cl. Every build then:
 
-- The NEXUS application executable and application source archive.
-- NEXUS engine integration code and emulation-engine source/patch material.
-- Engine-build management UI and verified install/rollback logic.
-- A build and test workflow description for producing an engine package.
-- Tests and a fake/stand-in engine path for application-side development.
-
-**A compiled nexus_engine.dll is not included in the supplied package.** The package documentation states that the engine could not be compiled in the environment used to prepare it. Therefore, game launching is not ready for normal use in this package.
+- runs the engine's test suite (all passing);
+- calls the DLL's C interface (interface version 2, build info, status, volume, suspend, bad-request handling);
+- runs NEXUS's own test suite on Windows and Linux;
+- builds `NEXUS.exe` and packs it with the engine (and the complete app-local VC++ runtime) into `NEXUS-<version>-Windows-x64.zip`;
+- extracts that ZIP into a fresh folder, checks that every DLL the engine imports is in the package or part of Windows, and runs `NEXUS.exe --engine-check`, which finds, verifies and loads the engine exactly as on a user's PC (result: ready, Switch core + Switch 2 experimental, Vulkan/OpenGL renderers).
 
 ## What has and has not been verified
 
-The supplied engineering notes report application-side tests for session management, play-time tracking and crash recovery, error handling, volume settings, update/DLC hand-off, engine-build verification and rollback. They also report syntax checks of NEXUS engine C++ sources and tests of the volume-gain calculation.
+Verified by the build: compiling, linking and packaging the engine; the engine's unit tests;
+loading the engine DLL in NEXUS from an extracted ZIP; NEXUS's application tests (sessions,
+play time, crash recovery, saves, settings reaching the engine, controller layouts, user limit).
 
-The supplied notes explicitly state that the following were **not** verified in a real engine build:
+**Not yet verified** (the build machine has no GPU and no games):
 
-- Compiling and loading the final engine DLL on a Windows gaming PC.
 - Launching and playing a real game.
 - Real GPU rendering and window ownership/focus behaviour.
 - Real audio output and live volume changes.
-- Controller auto-mapping during an actual game session.
+- Controller layouts and presets inside an actual game session.
 - Compatibility across commercial games.
 
-These are release-blocking validation tasks, not completed features.
+These are the first checks to do on a gaming PC with your own keys, firmware and games.
 
 ## Switch 2 status
 

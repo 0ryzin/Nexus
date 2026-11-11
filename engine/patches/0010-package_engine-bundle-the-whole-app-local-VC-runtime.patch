@@ -1,0 +1,46 @@
+From 29164b1c71d35a5b437f1203a690c49eabb0d00f Mon Sep 17 00:00:00 2001
+From: NEXUS <nexus@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 14:40:54 +0000
+Subject: [PATCH 10/10] package_engine: bundle the whole app-local VC++ runtime
+
+The engine also imports msvcp140_atomic_wait.dll and msvcp140_codecvt_ids.dll;
+without them it would not load on a PC without the VC++ Redistributable.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
+(cherry picked from commit ca81edf5f2ad0ca2265878711622993da3c537d5)
+---
+ tools/nexus/package_engine.py | 13 ++++++-------
+ 1 file changed, 6 insertions(+), 7 deletions(-)
+
+diff --git a/tools/nexus/package_engine.py b/tools/nexus/package_engine.py
+index cfaf83047..ea2885b18 100644
+--- a/tools/nexus/package_engine.py
++++ b/tools/nexus/package_engine.py
+@@ -3,9 +3,8 @@
+     nexus_engine.dll            the engine
+     engine.json                 version, interface, source commit, upstream base, SHA-256 of every file
+     Libraries\\*.dll             every other DLL the build produced (SDL3, FFmpeg, ...)
+-    Libraries\\vcruntime140.dll  Microsoft Visual C++ runtime, app-local copies (permitted by the
+-    Libraries\\vcruntime140_1.dll Visual Studio redistribution terms), so users need not install it
+-    Libraries\\msvcp140.dll
++    Libraries\\vcruntime140*.dll Microsoft Visual C++ runtime, app-local copies (permitted by the
++    Libraries\\msvcp140*.dll     Visual Studio redistribution terms), so users need not install it
+     Licences\\                   engine licence (GPL-3.0-or-later) and component licences
+ 
+ usage: package_engine.py <build/bin> <out dir>
+@@ -27,10 +26,10 @@ for f in sorted(os.listdir(src)):
+ redist = os.environ.get("VCToolsRedistDir", "")
+ crt = sorted(glob.glob(os.path.join(redist, "x64", "Microsoft.VC14*.CRT")))
+ if crt:
+-    for name in ("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll"):
+-        p = os.path.join(crt[-1], name)
+-        if os.path.exists(p):
+-            files["Libraries/" + name] = p
++    # every DLL of the runtime (vcruntime140*, msvcp140* including _atomic_wait and
++    # _codecvt_ids, concrt140): the engine imports some of the msvcp140_* helpers too
++    for p in sorted(glob.glob(os.path.join(crt[-1], "*.dll"))):
++        files["Libraries/" + os.path.basename(p)] = p
+ else:
+     print("warning: VCToolsRedistDir not set; the VC++ runtime is not bundled", file=sys.stderr)
+ 

@@ -123,7 +123,7 @@ func TestSaveOrganisationLifecycle(t *testing.T) {
 	if dirExists(filepath.Join(dir2, "Alpha Quest")) {
 		t.Fatal("assemble did not move the folder")
 	}
-	app2, _ := NewApp(root)
+	app2, _ := testNewApp(t, root)
 	app2.Library.Scan()
 	app2.Saves.OrganizeAll()
 	if readFile(t, filepath.Join(app2.Profiles.SaveDir(p.ID), "Alpha Quest", "slot1.sav")) != "alpha progress" {

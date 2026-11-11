@@ -436,6 +436,8 @@ FodyWeavers.xsd
 /app/out/
 /app/NEXUS.exe
 # Nintendo artwork supplied for personal builds is never committed
-app/dist-base/Resources/ProfileIcons/
+# (profile icons are included in the repository at the owner's request)
 app/dist-base/Resources/ArtworkDB/*.png
 app/resources/ArtworkDB/*.png
+!docs/releases/
+!docs/releases/**

@@ -1,0 +1,43 @@
+From 1c3066da22464ccb089ba4b3d4a635a9e4fe9b4d Mon Sep 17 00:00:00 2001
+From: NEXUS <nexus@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 12:39:26 +0000
+Subject: [PATCH 09/10] nexus_engine: define the Vulkan Memory Allocator
+ implementation in the engine library
+
+video_core leaves VMA's implementation to the final binary; nexus_engine.dll
+did not provide it, so linking failed with undefined vma* symbols.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
+(cherry picked from commit 7acb97298db62f0f87b0e27022c9bdeb61e1fc4c)
+---
+ src/nexus_engine/CMakeLists.txt | 1 +
+ src/nexus_engine/vma.cpp        | 7 +++++++
+ 2 files changed, 8 insertions(+)
+ create mode 100644 src/nexus_engine/vma.cpp
+
+diff --git a/src/nexus_engine/CMakeLists.txt b/src/nexus_engine/CMakeLists.txt
+index e0134426b..6235765bf 100644
+--- a/src/nexus_engine/CMakeLists.txt
++++ b/src/nexus_engine/CMakeLists.txt
+@@ -14,6 +14,7 @@ endif()
+ add_library(nexus_engine SHARED
+     include/nexus_engine.h
+     nexus_engine.cpp
++    vma.cpp
+     ../yuzu_cmd/emu_window/emu_window_sdl3.cpp
+     ../yuzu_cmd/emu_window/emu_window_sdl3.h
+     ../yuzu_cmd/emu_window/sdl_window_state.h
+diff --git a/src/nexus_engine/vma.cpp b/src/nexus_engine/vma.cpp
+new file mode 100644
+index 000000000..14ac28971
+--- /dev/null
++++ b/src/nexus_engine/vma.cpp
+@@ -0,0 +1,7 @@
++// SPDX-FileCopyrightText: 2026 NEXUS project
++// SPDX-License-Identifier: GPL-3.0-or-later
++
++// video_core leaves the Vulkan Memory Allocator's implementation to the final binary (each
++// upstream program defines it once); nexus_engine.dll is such a binary.
++#define VMA_IMPLEMENTATION
++#include "video_core/vulkan_common/vma.h"

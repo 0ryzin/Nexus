@@ -129,7 +129,7 @@ func TestArtworkDatabaseOffline(t *testing.T) {
 	// the game's own folder is lost (or the file moved): artwork comes back without the network
 	srv.Close()
 	os.RemoveAll(app.Library.GP.Dir(g.Key))
-	app2, _ := NewApp(root)
+	app2, _ := testNewApp(t, root)
 	app2.Settings.Update(func(s *GlobalSettings) { s.Library.NlibURL = "http://127.0.0.1:1" })
 	app2.Library.Scan()
 	waitOnline(app2)

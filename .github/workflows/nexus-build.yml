@@ -19,9 +19,6 @@ concurrency:
   # a newer push waits for the running build (whose compiler cache the next one reuses)
   cancel-in-progress: false
 
-env:
-  NEXUS_VERSION: "2.2.0"
-
 jobs:
   app-tests:
     name: NEXUS tests (Linux, fast)
@@ -53,6 +50,29 @@ jobs:
 
       - name: Check out NEXUS
         uses: actions/checkout@v4
+
+      # the NEXUS version is app/VERSION; a release tag must match it (v<version>)
+      - name: NEXUS version
+        shell: bash
+        run: |
+          set -euo pipefail
+          v=$(tr -d ' \r\n' < app/VERSION)
+          if [[ "$GITHUB_REF" == refs/tags/v* && "${GITHUB_REF_NAME#v}" != "$v" ]]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match app/VERSION ($v)"; exit 1
+          fi
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            test -f "docs/releases/$GITHUB_REF_NAME.md" || { echo "::error::docs/releases/$GITHUB_REF_NAME.md (release notes) is missing"; exit 1; }
+          fi
+          echo "NEXUS_VERSION=$v" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: app/go.sum
+
+      - name: NEXUS tests on Windows (gate, before the long engine build)
+        working-directory: app
+        run: go test -count=1 .
 
       - name: Read engine.lock
         id: lock
@@ -197,19 +217,11 @@ jobs:
         working-directory: engine-src
         shell: bash
         env:
-          GITHUB_REF_NAME: engine-v${{ steps.lock.outputs.version }}
           NEXUS_ENGINE_UPSTREAM_BASE: ${{ steps.lock.outputs.base }}
           NEXUS_ENGINE_PATCHSET: ${{ steps.lock.outputs.patchset }}
-        run: python tools/nexus/package_engine.py build/bin ../engine-out
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.24"
-          cache-dependency-path: app/go.sum
-
-      - name: NEXUS tests on Windows (gate)
-        working-directory: app
-        run: go test -count=1 .
+        # package_engine.py takes the version from GITHUB_REF_NAME; the runner's own value (the
+        # branch name) wins over a step env entry, so it is set on the command itself
+        run: GITHUB_REF_NAME="engine-v${{ steps.lock.outputs.version }}" python tools/nexus/package_engine.py build/bin ../engine-out
 
       - name: Build NEXUS.exe
         working-directory: app
@@ -240,8 +252,10 @@ jobs:
           $deps = dumpbin /dependents (Join-Path $n 'Engine/nexus_engine.dll') | Select-String '^\s+(\S+\.dll)$' | ForEach-Object { $_.Matches[0].Groups[1].Value.ToLower() }
           foreach ($d in $deps) {
             $inPkg = $libs -contains $d
-            $inSys = Test-Path (Join-Path $env:WINDIR "System32/$d")
-            $crt = $d -in 'vcruntime140.dll','vcruntime140_1.dll','msvcp140.dll'
+            # api-ms-win-* / ext-ms-* are Windows API sets, resolved by the loader itself
+            $inSys = ($d -like 'api-ms-win-*') -or ($d -like 'ext-ms-*') -or (Test-Path (Join-Path $env:WINDIR "System32/$d"))
+            # the VC++ runtime must come with NEXUS: users may not have the Redistributable
+            $crt = ($d -like 'vcruntime140*') -or ($d -like 'msvcp140*') -or ($d -like 'concrt140*')
             Write-Host "$d  package=$inPkg system=$inSys"
             if ($crt -and !$inPkg) { throw "$d (VC++ runtime) is not bundled" }
             if (!$inPkg -and !$inSys) { throw "$d is needed by the engine but not in the package" }
@@ -259,8 +273,14 @@ jobs:
           path: out/*
           retention-days: 30
 
-      - name: Publish (version tags only)
+      - name: Publish the release (v* tags only, after every check above passed)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: out/*
+          name: NEXUS ${{ env.NEXUS_VERSION }} — Windows x64
+          body_path: docs/releases/${{ github.ref_name }}.md
+          prerelease: ${{ contains(env.NEXUS_VERSION, '-') }}
+          make_latest: ${{ !contains(env.NEXUS_VERSION, '-') }}
+          files: |
+            out/*.zip
+            out/*.sha256

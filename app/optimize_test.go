@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -135,7 +136,7 @@ func TestOptimiseApplyRestoreAndPerGame(t *testing.T) {
 		t.Fatalf("global optimisation overwrote game B's setting: %q", v)
 	}
 	// persists across restart
-	app2, _ := NewApp(root)
+	app2, _ := testNewApp(t, root)
 	if app2.Emu.GlobalNexusSettings()["graphics.scale"] != "1.5" || app2.Emu.OptBackupInfo("") == nil {
 		t.Fatal("optimisation not persisted")
 	}
@@ -182,7 +183,7 @@ func TestOptimiseApplyRestoreAndPerGame(t *testing.T) {
 }
 
 func TestHardwareDetectionHonest(t *testing.T) {
-	app, _ := NewApp(t.TempDir())
+	app, _ := testNewApp(t, t.TempDir())
 	t.Setenv("NEXUS_HARDWARE", "")
 	hwMu.Lock()
 	hwCache = nil
@@ -192,7 +193,8 @@ func TestHardwareDetectionHonest(t *testing.T) {
 		t.Fatalf("basic detection failed: %+v", h)
 	}
 	// nothing invented for what this system cannot report
-	if len(h.GPUs) != 0 || len(h.Displays) != 0 || len(h.Notes) == 0 {
+	// (a Windows CI machine has a display but no usable GPU; Linux reports neither)
+	if len(h.GPUs) != 0 || (runtime.GOOS != "windows" && len(h.Displays) != 0) || len(h.Notes) == 0 {
 		t.Fatalf("GPU/display must be reported as not detected here, not guessed: %+v", h)
 	}
 	c := classifyDevice(h)

@@ -75,6 +75,18 @@ var EmuOptions = []EmuOption{
 	{ID: "Audio/audio_muted", Label: "Mute", Group: "Audio", Kind: "bool"},
 	{ID: "Audio/output_engine", Label: "Audio output", Group: "Audio", Kind: "enum", PerGame: true,
 		Choices: []EmuChoice{{"0", "Automatic"}, {"1", "Cubeb"}, {"2", "SDL"}, {"3", "No audio"}}},
+	// frame generation and upscaler replacement (settings.h: frame_gen*, nvidia_dlss*, amd_fsr4)
+	{ID: "Renderer/frame_gen", Label: "Frame generation", Group: "Graphics", Kind: "bool", PerGame: true},
+	{ID: "Renderer/frame_gen_type", Label: "Frame generation method", Group: "Graphics", Kind: "enum", PerGame: true,
+		Choices: []EmuChoice{{"1", "AMD FSR 3"}, {"0", "Lossless Scaling"}}},
+	{ID: "Renderer/frame_gen_multiplier", Label: "Generated frames", Group: "Graphics", Kind: "int", Min: 2, Max: 4, Step: 1, Suffix: "×", PerGame: true},
+	{ID: "Renderer/frame_gen_target_rate", Label: "Frame generation target", Group: "Graphics", Kind: "int", Min: 0, Max: 240, Step: 1, Suffix: " fps", PerGame: true},
+	{ID: "Renderer/nvidia_dlss", Label: "NVIDIA DLSS in place of the game's DLSS", Group: "Graphics", Kind: "bool", PerGame: true},
+	{ID: "Renderer/nvidia_dlss_quality", Label: "DLSS quality", Group: "Graphics", Kind: "enum", PerGame: true,
+		Choices: []EmuChoice{{"0", "Automatic"}, {"1", "Native (DLAA)"}, {"2", "Quality"}, {"3", "Balanced"}, {"4", "Performance"}, {"5", "Ultra Performance"}}},
+	{ID: "Renderer/nvidia_dlss_preset", Label: "DLSS model", Group: "Graphics", Kind: "enum", PerGame: true,
+		Choices: []EmuChoice{{"0", "Preset M"}, {"1", "NVIDIA default"}, {"2", "Preset E"}, {"3", "Preset F"}, {"4", "Preset J"}, {"5", "Preset K"}, {"6", "Preset L"}}},
+	{ID: "Renderer/amd_fsr4", Label: "AMD FSR 4 in place of FSR 3.1", Group: "Graphics", Kind: "bool", PerGame: true},
 	{ID: "System/language_index", Label: "System language", Group: "System", Kind: "int", Min: 0, Max: 17, Step: 1, PerGame: true},
 	{ID: "System/region_index", Label: "Console region", Group: "System", Kind: "int", Min: 0, Max: 6, Step: 1, PerGame: true},
 }

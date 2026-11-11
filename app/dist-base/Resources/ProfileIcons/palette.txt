@@ -1,0 +1,6 @@
+#ffcccc #ffe3cc #ffff99 #f0ff99 #d4f9c7 #bfefe1 #c0e4f0 #aed5f7 #e4ccff #ffccf9 #f5f5f5 #ebf0f7
+#ff9999 #ffc399 #ffff00 #e6ff31 #b4f49c #91e3ce #91dcf2 #80bdff #d2a8ff #ffa6e4 #d9d9d9 #c3cad9
+#ff6969 #ffb066 #ffe600 #d3f025 #86e66c #65e6c3 #5ed6eb #479bff #b66bff #ff73d4 #b3b3b3 #99a0b3
+#ff0000 #ff8400 #ffb600 #c6d600 #34d70d #00dba1 #13beed #314fff #8c19ff #ff19df #808080 #666c80
+#c80a0a #c17f3a #bfa645 #a1b026 #4fa31d #2eac8b #3496c1 #0051bd #711dbd #bf0abc #474b55 #3c4459
+#6f1010 #6e4722 #7e6c0f #67730f #247519 #0f7358 #165e72 #1c3d68 #451278 #691579 #282828 #131d45

@@ -178,7 +178,7 @@ func writeFakeFirmware(t *testing.T, root string, chars map[string][]byte, bgs m
 
 func TestFirmwareAvatarExtraction(t *testing.T) {
 	root := t.TempDir()
-	app, err := NewApp(root)
+	app, err := testNewApp(t, root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,6 +196,7 @@ func TestFirmwareAvatarExtraction(t *testing.T) {
 	}
 	f, _ := os.Open(filepath.Join(app.avatarDir(), "characters", "chr_alpha_00.png"))
 	img, err := png.Decode(f)
+	f.Close()
 	if err != nil || img.Bounds().Dx() != 256 {
 		t.Fatalf("png: %v", err)
 	}

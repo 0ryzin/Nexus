@@ -10,7 +10,7 @@ import (
 )
 
 func TestThumbnail(t *testing.T) {
-	app, _ := NewApp(t.TempDir())
+	app, _ := testNewApp(t, t.TempDir())
 	src := filepath.Join(t.TempDir(), "big.png")
 	img := image.NewNRGBA(image.Rect(0, 0, 1600, 1600))
 	for i := 0; i < len(img.Pix); i += 4 {

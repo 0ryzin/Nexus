@@ -64,7 +64,7 @@ func TestControllerLayouts(t *testing.T) {
 }
 
 func TestProfileLimitEight(t *testing.T) {
-	app, err := NewApp(t.TempDir())
+	app, err := testNewApp(t, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

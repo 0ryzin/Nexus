@@ -277,7 +277,7 @@ func (s *Server) routes() {
 			"root": a.Paths.Root, "data": a.Paths.Data, "games": a.Paths.Games, "logs": a.Paths.Logs, "artwork": a.Paths.Artwork,
 			"saves": a.Paths.Saves, "engine": a.Emu.Builds.Root(), "keys": a.Emu.KeysDir(),
 			"userdir": a.Emu.DataDir(), "enginedata": a.Emu.DataDir(), "archived": a.Paths.Trash, "resources": a.Paths.Resources, "systemfiles": a.Sys.Root(),
-			"avatars": a.avatarRoot(), "profiles": a.Paths.Profiles, "gameprofiles": filepath.Join(a.Paths.System, "GameProfiles"),
+			"avatars": a.avatarRoot(), "profiles": a.Paths.Profiles, "lossless": a.Emu.losslessDir(), "streamline": a.Emu.streamlineDir(), "gameprofiles": filepath.Join(a.Paths.System, "GameProfiles"),
 		}[b.Which]
 		if dir == "" {
 			writeErr(w, 400, errors.New("unknown folder"))
@@ -647,6 +647,31 @@ func (s *Server) routes() {
 			return
 		}
 		writeJSON(w, true)
+	})
+	// ----- frame generation, DLSS, FSR 4 (enhancements.go)
+	m.HandleFunc("GET /api/enhancements", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, a.Emu.Enhancements())
+	})
+	m.HandleFunc("POST /api/enhancements/lossless", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			Path string
+			Pick bool
+		}
+		_ = readBody(r, &b)
+		if b.Pick {
+			p, err := a.UI.PickFile("Choose Lossless.dll from the Lossless Scaling folder", "Lossless.dll|Lossless.dll|")
+			if err != nil || p == "" {
+				writeJSON(w, map[string]any{"cancelled": true})
+				return
+			}
+			b.Path = p
+		}
+		if err := a.Emu.ImportLossless(b.Path); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		a.Log.Printf("frame generation: Lossless.dll copied into the engine folder")
+		writeJSON(w, a.Emu.Enhancements())
 	})
 	// ----- controller layouts for games (controls.go)
 	m.HandleFunc("GET /api/controls/layouts", func(w http.ResponseWriter, r *http.Request) {

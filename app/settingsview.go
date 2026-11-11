@@ -35,7 +35,7 @@ type EngineChoice struct {
 func (e *Emulator) baseSettingsView() SettingsView {
 	installed, _ := e.EngineAvailable()
 	v := SettingsView{Sections: NexusSections, Settings: NexusSettings,
-		Caps:   map[string]map[string]Support{engineID: EngineCaps()},
+		Caps:   map[string]map[string]Support{engineID: e.hardwareCaps()},
 		Global: e.GlobalNexusSettings(), EngineValues: map[string]map[string]string{engineID: e.EngineValues()},
 		Engines:       []EngineChoice{{ID: engineID, Name: "NEXUS Engine", Installed: installed, FormatOK: true, Version: e.Builds.ActiveVersionLabel()}},
 		DefaultEngine: engineID, InputProfiles: e.InputProfiles()}
@@ -70,4 +70,11 @@ func (e *Emulator) GameSettingsView(g Game) SettingsView {
 	v.Compat = &c
 	v.PerGameOK, v.PerGameReason = e.PerGameSupport(g)
 	return v
+}
+
+// hardwareCaps: the engine's capabilities, minus what this PC's graphics card cannot use.
+func (e *Emulator) hardwareCaps() map[string]Support {
+	caps := EngineCaps()
+	e.applyHardwareCaps(caps)
+	return caps
 }

@@ -2,9 +2,18 @@
 
 All notable NEXUS changes will be recorded here.
 
-The project is currently in development. The first intended stable application release is **1.0.0**. Until then, development snapshots may use pre-release identifiers such as `1.0.0-dev`.
+The project is in preview. Releases are numbered from **0.0.0**; the first intended stable release is **1.0.0**. Every release, with its notes and download, is on the [Releases page](https://github.com/0ryzin/Nexus/releases).
 
-## Unreleased
+## 0.0.0 — first public preview (Windows x64)
+
+- NEXUS application with the NEXUS Engine 0.1.0 (Lichii build-150 + NEXUS patches) in one ZIP.
+- First-time setup, up to 8 users, profile colour and picture, light and dark themes.
+- Controller layouts for all games or per game; game presets.
+- Frame generation (FSR 3 / Lossless Scaling), NVIDIA DLSS in place of a game's DLSS, AMD FSR 4 — offered according to the detected graphics card.
+- Hardware detection and "Optimise for my device"; readable save folders with export/import; animated wallpapers; 0–200% game volume.
+- Release notes: [docs/releases/v0.0.0.md](docs/releases/v0.0.0.md).
+
+## Repository setup
 
 - Initial repository documentation and licensing information.
 - README rewritten to describe the current development state and engine limitations.
