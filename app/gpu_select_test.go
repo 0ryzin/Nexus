@@ -78,3 +78,10 @@ func TestSessionConfigChoosesGPU(t *testing.T) {
 		t.Fatalf("integrated preference ignored:\n%s", b)
 	}
 }
+
+func TestAssessVulkanLayers(t *testing.T) {
+	ls := assessVulkanLayers([]string{`C:\Program Files\NVIDIA Corporation\nvoglv64.json`, `C:\Program Files (x86)\Overwolf\0.250.0.4\ow-vulkan-overlay64.json`})
+	if len(ls) != 2 || ls[0].Problem != "" || !strings.Contains(ls[1].Problem, "Overwolf") {
+		t.Fatalf("%+v", ls)
+	}
+}

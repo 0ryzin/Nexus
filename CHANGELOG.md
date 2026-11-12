@@ -4,6 +4,14 @@ All notable NEXUS changes will be recorded here.
 
 The project is in preview. Releases are numbered from **0.0.0**; the first intended stable release is **1.0.0**. Every release, with its notes and download, is on the [Releases page](https://github.com/0ryzin/Nexus/releases).
 
+## 0.5.0 — in development (not released)
+
+- **Import Save from ZIP:** saves from any compatible source; nested folders, several saves per archive, a preview with per-save selection, progress, all-or-nothing import with backups; unsafe archives are refused (paths outside the target, links, passwords, unusual compression ratios, damage) with an explanation of what to change. The Lichii-specific import source is removed.
+- No other emulator names in the interface; acknowledgements are in *Settings › System › Legal* and the Licences folder (its README was out of date and is corrected).
+- **Graphics card:** on PCs with two GPUs, games run on the dedicated card (NEXUS chooses the Vulkan device instead of the engine's index 0); *Integrated graphics* is an option. Known problem Vulkan layers (Overwolf) are reported.
+- **Android (source only, not released):** the shared core runs on Android arm64 (`StartCore`, dlopen engine host, readiness check, lifecycle, thermal and memory handling); the Android app (`android/`) with WebView interface, device detection, storage access and on-screen controller; CI builds and tests it and starts it on an emulator. The NEXUS Engine is not built for Android yet, so games cannot run there. See docs/ANDROID.md.
+- Docs: ANDROID, ENGINE_RESEARCH; SOURCE_AUDIT and ARCHITECTURE updated.
+
 ## 0.4.0 — Windows x64 (preview)
 
 - Screen recording (F12): game window only, game sound and optional microphone, hardware encoding (NVIDIA NVENC, AMD, Intel Quick Sync) with software fallback, fragmented MP4 written safely with recovery after a crash, REC indicator, saved/failed messages, *Settings › Screen recording*. New module `capture/` (`nexus_capture.dll`).
@@ -15,7 +23,7 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
 - Appearance page always shows the current theme and accent.
 - `NEXUS.exe` version information: CompanyName "Nexus Development" (metadata only; NEXUS is not code-signed, docs/SIGNING.md).
 - Release page: Windows download table generated from the built ZIP with its SHA-256; the published download is downloaded again and checked, or the release returns to draft.
-- Docs: SOURCE_AUDIT, ARCHITECTURE, PERFORMANCE, SIGNING, MOBILE_RESEARCH (research only).
+- Docs: SOURCE_AUDIT, ARCHITECTURE, PERFORMANCE, SIGNING, mobile research (replaced by ANDROID in 0.5.0).
 - Release notes: [docs/releases/v0.4.0.md](docs/releases/v0.4.0.md).
 
 ## 0.3.0 — Windows x64 (preview)

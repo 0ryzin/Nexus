@@ -7,6 +7,6 @@
 NEXUS is released for Windows only. Release pages list Windows only and link only packages that
 were built, checked and published.
 
-How the code is kept portable is described in [ARCHITECTURE.md](ARCHITECTURE.md). Research into
-other devices is in [MOBILE_RESEARCH.md](MOBILE_RESEARCH.md). It is research only, not a plan
-or an announcement.
+How the code is kept portable is described in [ARCHITECTURE.md](ARCHITECTURE.md). Android support
+is in development in this repository ([ANDROID.md](ANDROID.md)). It is not released and cannot
+run games yet.

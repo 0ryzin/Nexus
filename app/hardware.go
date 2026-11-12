@@ -83,9 +83,10 @@ type DiskInfo struct {
 }
 
 type VulkanInfo struct {
-	Loader    bool   `json:"loader"`    // vulkan-1.dll present
-	Instance  string `json:"instance"`  // loader / instance version
-	Available bool   `json:"available"` // at least one Vulkan GPU
+	Loader    bool          `json:"loader"`           // vulkan-1.dll present
+	Instance  string        `json:"instance"`         // loader / instance version
+	Available bool          `json:"available"`        // at least one Vulkan GPU
+	Layers    []VulkanLayer `json:"layers,omitempty"` // enabled implicit layers (vulkanlayers.go)
 }
 
 // x86 instruction-set extensions that matter for the engine's CPU JIT and its decoders.

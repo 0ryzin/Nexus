@@ -33,6 +33,7 @@ func detectHardware() Hardware {
 	safe("Windows version", func() { detectOS(&h) })
 	safe("Graphics adapters (DXGI)", func() { detectDXGI(&h) })
 	safe("Vulkan support", func() { detectVulkan(&h) })
+	safe("Vulkan layers", func() { detectVulkanLayers(&h) })
 	safe("Display settings", func() { detectDisplays(&h) })
 	return h
 }
@@ -350,5 +351,30 @@ func detectDisplays(h *Hardware) {
 		}
 		sort.Ints(d.RefreshRates)
 		h.Displays = append(h.Displays, d)
+	}
+}
+
+// detectVulkanLayers lists the enabled implicit Vulkan layers (registry, as the Vulkan loader
+// reads them: value name = manifest path, value 0 = enabled) and warns about known problem ones.
+func detectVulkanLayers(h *Hardware) {
+	var manifests []string
+	for _, root := range []registry.Key{registry.LOCAL_MACHINE, registry.CURRENT_USER} {
+		k, err := registry.OpenKey(root, `SOFTWARE\Khronos\Vulkan\ImplicitLayers`, registry.QUERY_VALUE)
+		if err != nil {
+			continue
+		}
+		names, _ := k.ReadValueNames(0)
+		for _, n := range names {
+			if v, _, err := k.GetIntegerValue(n); err == nil && v == 0 {
+				manifests = append(manifests, n)
+			}
+		}
+		k.Close()
+	}
+	h.Vulkan.Layers = assessVulkanLayers(manifests)
+	for _, l := range h.Vulkan.Layers {
+		if l.Problem != "" {
+			h.Notes = append(h.Notes, l.Problem)
+		}
 	}
 }

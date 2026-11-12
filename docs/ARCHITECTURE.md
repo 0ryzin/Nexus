@@ -1,8 +1,8 @@
 # NEXUS architecture
 
 NEXUS is released for **Windows x64 only**. This document describes how the code is divided so
-that the platform-specific parts are small and replaceable. It is an engineering description, not
-an announcement: no other platform is being developed.
+that the platform-specific parts are small and replaceable. Android is being developed in the same
+repository (`android/`, [ANDROID.md](ANDROID.md)) and is not released.
 
 ## Components
 
@@ -11,7 +11,8 @@ NEXUS.exe (Go, app/)
 ├── Local HTTP API + event stream  ─────────►  Interface (app/web: HTML/CSS/JS in WebView2)
 ├── Library, users, saves, media, settings, updates      (portable Go)
 ├── EngineHost interface (enginehost.go)
-│     └── nexus_engine.dll — NEXUS Engine (C ABI v2, engine/patches on upstream Lichii)
+│     ├── Windows: nexus_engine.dll (LoadLibrary, enginehost_windows.go)
+│     └── Android: libnexus_engine.so (dlopen, enginehost_dl.go; engine not built yet)
 ├── captureBackend interface (recorder.go)
 │     └── nexus_capture.dll — screen recording (capture/, C++20, Windows APIs only)
 └── platform files *_windows.go / *_other.go
@@ -70,7 +71,7 @@ does not grow in ways that make them harder:
 4. **Platform files.** The `*_windows.go` features: hardware detection, overlay, Recycle Bin, credential storage, signature checks.
 5. **Packaging and signing** for that platform.
 
-Mobile devices are a different case. They are investigated separately in `docs/MOBILE_RESEARCH.md` (research only).
+Android is the first platform built on this division: its app (`android/`) starts the same core (`StartCore`), loads the engine through the same C interface with `dlopen` (`enginehost_dl.go`), and adds only what Android itself requires. See [ANDROID.md](ANDROID.md).
 
 ## Rules that keep it portable
 
