@@ -47,6 +47,7 @@ struct Status {
     bool gpu{false};
     std::string audio{"off"};
     bool mic{false};
+    bool gpu_convert{false};
     std::string path, error;
 };
 
@@ -75,11 +76,27 @@ private:
     bool Prepare(UINT w, UINT h, std::string& err);
 };
 
+/// The same conversion on the CPU, for drivers without Direct3D 11 video processing (and Microsoft's
+/// software renderer): reads the frame back, scales it (nearest) and converts it to NV12 (BT.709).
+class CpuConverter {
+public:
+    void Init(ID3D11Device* dev, int out_w, int out_h);
+    const std::vector<uint8_t>* Convert(ID3D11Texture2D* src, std::string& err); // nullptr = black
+private:
+    winrt::com_ptr<ID3D11Device> dev_;
+    winrt::com_ptr<ID3D11DeviceContext> ctx_;
+    winrt::com_ptr<ID3D11Texture2D> staging_;
+    UINT sw_{0}, sh_{0};
+    int out_w_{0}, out_h_{0};
+    std::vector<uint8_t> nv12_;
+};
+
 /// Writes NV12 frames and PCM audio to a fragmented MP4 with Media Foundation.
 class Writer {
 public:
     bool Open(const Settings& s, ID3D11Device* dev, int w, int h, int mic_rate, int mic_channels, std::string& err);
     bool WriteVideo(ID3D11Texture2D* nv12, LONGLONG time, LONGLONG duration, std::string& err);
+    bool WriteVideoBytes(const uint8_t* nv12, LONGLONG time, LONGLONG duration, std::string& err);
     bool WriteAudio(int track, const int16_t* pcm, size_t frames, int channels, int rate, LONGLONG time, std::string& err);
     bool Finish(std::string& err);
     std::string EncoderName() const { return encoder_; }
@@ -117,6 +134,8 @@ private:
     winrt::com_ptr<ID3D11Device> dev_;
     winrt::com_ptr<ID3D11DeviceContext> ctx_;
     Converter conv_;
+    CpuConverter cpu_conv_;
+    bool cpu_convert_{false};
     Writer writer_;
     int out_w_{0}, out_h_{0};
 

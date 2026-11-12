@@ -119,7 +119,7 @@ NXCAP_API int32_t nxcap_status(char* buf, int32_t buf_len) {
     std::ostringstream j;
     j << "{\"state\":\"" << st.state << "\",\"seconds\":" << st.seconds << ",\"frames\":" << st.frames << ",\"dropped\":" << st.dropped
       << ",\"width\":" << st.width << ",\"height\":" << st.height << ",\"encoder\":\"" << Esc(st.encoder) << "\",\"gpu\":" << (st.gpu ? "true" : "false")
-      << ",\"audio\":\"" << st.audio << "\",\"mic\":" << (st.mic ? "true" : "false") << ",\"path\":\"" << Esc(st.path) << "\",\"error\":\"" << Esc(st.error) << "\"}";
+      << ",\"gpuConvert\":" << (st.gpu_convert ? "true" : "false") << ",\"audio\":\"" << st.audio << "\",\"mic\":" << (st.mic ? "true" : "false") << ",\"path\":\"" << Esc(st.path) << "\",\"error\":\"" << Esc(st.error) << "\"}";
     return Out(j.str(), buf, buf_len);
 }
 

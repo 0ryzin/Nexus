@@ -231,6 +231,85 @@ ID3D11Texture2D* Converter::Convert(ID3D11Texture2D* src, std::string& err) {
     return outs_[i].get();
 }
 
+// ---------------------------------------------------------------- CPU converter
+
+void CpuConverter::Init(ID3D11Device* dev, int out_w, int out_h) {
+    dev_.copy_from(dev);
+    dev_->GetImmediateContext(ctx_.put());
+    out_w_ = out_w;
+    out_h_ = out_h;
+    nv12_.assign(size_t(out_w) * out_h * 3 / 2, 0);
+}
+
+const std::vector<uint8_t>* CpuConverter::Convert(ID3D11Texture2D* src, std::string& err) {
+    const size_t ysz = size_t(out_w_) * out_h_;
+    std::fill(nv12_.begin(), nv12_.begin() + ysz, uint8_t(16)); // black (limited range)
+    std::fill(nv12_.begin() + ysz, nv12_.end(), uint8_t(128));
+    if (!src) return &nv12_;
+    D3D11_TEXTURE2D_DESC d{};
+    src->GetDesc(&d);
+    if (!staging_ || d.Width != sw_ || d.Height != sh_) {
+        D3D11_TEXTURE2D_DESC sd = d;
+        sd.Usage = D3D11_USAGE_STAGING;
+        sd.BindFlags = 0;
+        sd.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        sd.MiscFlags = 0;
+        sd.MipLevels = 1;
+        sd.ArraySize = 1;
+        staging_ = nullptr;
+        HRESULT hr = dev_->CreateTexture2D(&sd, nullptr, staging_.put());
+        if (FAILED(hr)) {
+            err = "staging texture: " + HrText(hr);
+            return nullptr;
+        }
+        sw_ = d.Width;
+        sh_ = d.Height;
+    }
+    ctx_->CopyResource(staging_.get(), src);
+    D3D11_MAPPED_SUBRESOURCE m{};
+    HRESULT hr = ctx_->Map(staging_.get(), 0, D3D11_MAP_READ, 0, &m);
+    if (FAILED(hr)) {
+        err = "read frame: " + HrText(hr);
+        return nullptr;
+    }
+    // letterbox rectangle (even coordinates)
+    const double sa = double(sw_) / sh_, oa = double(out_w_) / out_h_;
+    int dx = 0, dy = 0, dw = out_w_, dh = out_h_;
+    if (sa > oa) {
+        dh = int(std::lround(out_w_ / sa)) & ~1;
+        dy = ((out_h_ - dh) / 2) & ~1;
+    } else if (sa < oa) {
+        dw = int(std::lround(out_h_ * sa)) & ~1;
+        dx = ((out_w_ - dw) / 2) & ~1;
+    }
+    const uint8_t* base = static_cast<const uint8_t*>(m.pData);
+    uint8_t* yp = nv12_.data();
+    uint8_t* uvp = nv12_.data() + ysz;
+    auto px = [&](int x, int y) { // source pixel for an output pixel (nearest)
+        const UINT sx = std::min<UINT>(UINT(double(x - dx) * sw_ / dw), sw_ - 1);
+        const UINT sy = std::min<UINT>(UINT(double(y - dy) * sh_ / dh), sh_ - 1);
+        return base + size_t(sy) * m.RowPitch + size_t(sx) * 4; // B G R A
+    };
+    for (int y = dy; y < dy + dh; ++y) {
+        for (int x = dx; x < dx + dw; ++x) {
+            const uint8_t* p = px(x, y);
+            const double r = p[2], g = p[1], b = p[0];
+            yp[size_t(y) * out_w_ + x] = uint8_t(std::clamp(16.0 + 0.1826 * r + 0.6142 * g + 0.0620 * b, 0.0, 255.0));
+        }
+    }
+    for (int y = dy; y < dy + dh; y += 2) {
+        for (int x = dx; x < dx + dw; x += 2) {
+            const uint8_t* p = px(x, y);
+            const double r = p[2], g = p[1], b = p[0];
+            uint8_t* uv = uvp + size_t(y / 2) * out_w_ + x;
+            uv[0] = uint8_t(std::clamp(128.0 - 0.1006 * r - 0.3386 * g + 0.4392 * b, 0.0, 255.0));
+            uv[1] = uint8_t(std::clamp(128.0 + 0.4392 * r - 0.3989 * g - 0.0403 * b, 0.0, 255.0));
+        }
+    }
+    ctx_->Unmap(staging_.get(), 0);
+    return &nv12_;
+}
+
 // ---------------------------------------------------------------- writer
 
 static winrt::com_ptr<IMFMediaType> VideoType(const GUID& sub, int w, int h, int fps, UINT32 bitrate, bool output, bool hevc) {
@@ -406,6 +485,25 @@ bool Writer::WriteVideo(ID3D11Texture2D* nv12, LONGLONG time, LONGLONG duration,
     return true;
 }
 
+bool Writer::WriteVideoBytes(const uint8_t* nv12, LONGLONG time, LONGLONG duration, std::string& err) {
+    const DWORD size = DWORD(w_) * h_ * 3 / 2;
+    winrt::com_ptr<IMFMediaBuffer> buf;
+    NX_CHECK(MFCreateMemoryBuffer(size, buf.put()), "frame memory");
+    BYTE* dst = nullptr;
+    buf->Lock(&dst, nullptr, nullptr);
+    std::memcpy(dst, nv12, size);
+    buf->Unlock();
+    buf->SetCurrentLength(size);
+    winrt::com_ptr<IMFSample> sample;
+    NX_CHECK(MFCreateSample(sample.put()), "sample");
+    sample->AddBuffer(buf.get());
+    sample->SetSampleTime(time);
+    sample->SetSampleDuration(duration);
+    std::scoped_lock lk{mu_};
+    NX_CHECK(writer_->WriteSample(video_stream_, sample.get()), "encode video");
+    return true;
+}
+
 bool Writer::WriteAudio(int track, const int16_t* pcm, size_t frames, int channels, int rate, LONGLONG time, std::string& err) {
     const DWORD stream = track == 0 ? audio_stream_ : mic_stream_;
     if (stream == MAXDWORD || frames == 0) return true;
@@ -562,7 +660,13 @@ bool Recorder::Start(const Settings& s, std::string& err) {
         err = "The game window is too small to record";
         return false;
     }
-    if (!conv_.Init(dev_.get(), out_w_, out_h_, s_.fps, err)) return false;
+    std::string gpu_conv_err;
+    if (!conv_.Init(dev_.get(), out_w_, out_h_, s_.fps, gpu_conv_err)) {
+        // no GPU colour conversion: convert on the CPU (and encode from memory)
+        cpu_convert_ = true;
+        s_.gpu_device = false;
+        cpu_conv_.Init(dev_.get(), out_w_, out_h_);
+    }
 
     // microphone format (its own track)
     int mic_rate = 0, mic_ch = 0;
@@ -602,6 +706,7 @@ bool Recorder::Start(const Settings& s, std::string& err) {
         st_.height = out_h_;
         st_.encoder = writer_.EncoderName();
         st_.gpu = writer_.Gpu();
+        st_.gpu_convert = !cpu_convert_;
         st_.path = Narrow(s_.path);
     }
     if (cap_) {
@@ -716,16 +821,23 @@ void Recorder::VideoThread() {
                 for (int x = 0; x < 1280; ++x)
                     pixels[size_t(y) * 1280 + x] = 0xFF000000u | (uint32_t((x + index * 8) & 255) << 16) | (uint32_t(y & 255) << 8) | uint32_t((index * 4) & 255);
             ctx_->UpdateSubresource(synth.get(), 0, nullptr, pixels.data(), 1280 * 4, 0);
-            nv12 = conv_.Convert(synth.get(), err);
-        } else {
-            winrt::com_ptr<ID3D11Texture2D> src;
-            {
-                std::scoped_lock lk{frame_mu_};
-                if (have_frame_) src = latest_;
-            }
-            nv12 = src ? conv_.Convert(src.get(), err) : conv_.Black();
         }
-        if (!nv12 || !writer_.WriteVideo(nv12, due, frame_100ns, err)) {
+        winrt::com_ptr<ID3D11Texture2D> src;
+        if (s_.synthetic) {
+            src = synth;
+        } else {
+            std::scoped_lock lk{frame_mu_};
+            if (have_frame_) src = latest_;
+        }
+        bool ok;
+        if (cpu_convert_) {
+            const std::vector<uint8_t>* bytes = cpu_conv_.Convert(src.get(), err);
+            ok = bytes && writer_.WriteVideoBytes(bytes->data(), due, frame_100ns, err);
+        } else {
+            nv12 = src ? conv_.Convert(src.get(), err) : conv_.Black();
+            ok = nv12 && writer_.WriteVideo(nv12, due, frame_100ns, err);
+        }
+        if (!ok) {
             Fail(err.empty() ? "video encoding failed" : err);
             break;
         }
@@ -1106,7 +1218,7 @@ std::string SelfTest(const std::wstring& path, int seconds) {
         rerr = "the file is incomplete";
     }
     j << "{\"ok\":" << (ok ? "true" : "false") << ",\"encoder\":\"" << Esc(st.encoder) << "\",\"gpu\":" << (st.gpu ? "true" : "false")
-      << ",\"mic\":" << (st.mic ? "true" : "false") << ",\"videoSamples\":" << vs << ",\"audioSamples\":" << as << ",\"duration\":" << dur
+      << ",\"gpuConvert\":" << (st.gpu_convert ? "true" : "false") << ",\"mic\":" << (st.mic ? "true" : "false") << ",\"videoSamples\":" << vs << ",\"audioSamples\":" << as << ",\"duration\":" << dur
       << ",\"width\":" << st.width << ",\"height\":" << st.height << ",\"error\":\"" << Esc(!err.empty() ? err : rerr) << "\"}";
     return j.str();
 }
