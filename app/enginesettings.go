@@ -56,6 +56,9 @@ var NexusSettings = []NSetting{
 		Help:    "The highest frame rate Switch 2 games may render at (30–240). Switch 1 games run at their own rate (usually 30 or 60) whatever is set here — a higher limit never speeds a game up. Frame generation adds frames on top."},
 	{ID: "graphics.fps_match_display", Section: "graphics", Label: "Match my display’s refresh rate", Kind: "bool",
 		Help: "Sets the frame rate limit above to the refresh rate of your display when the game starts."},
+	{ID: "graphics.gpu", Section: "graphics", Label: "Graphics card", Kind: "enum",
+		Choices: []EmuChoice{{"auto", "Fastest card (recommended)"}, {"integrated", "Integrated graphics (longer battery life)"}},
+		Help:    "On PCs with two graphics processors (most gaming laptops) NEXUS makes games run on the faster, dedicated card. Choose integrated graphics to save battery. PCs with one graphics card are not affected."},
 	{ID: "graphics.fullscreen", Section: "graphics", Label: "Fullscreen behaviour", Kind: "enum",
 		Choices: []EmuChoice{{"borderless", "Borderless window"}, {"exclusive", "Exclusive fullscreen"}}},
 	{ID: "graphics.aa", Section: "graphics", Label: "Anti-aliasing", Kind: "enum",
@@ -291,7 +294,7 @@ func EngineCaps() map[string]Support {
 			sup = Support{Note: s.Help}
 		case "controls.profile":
 			sup = Support{Available: true, PerGame: true}
-		case "graphics.fps_match_display": // applied by NEXUS when the session starts
+		case "graphics.fps_match_display", "graphics.gpu": // applied by NEXUS when the session starts
 			sup = Support{Available: true, PerGame: true}
 		case "controls.mapping":
 			sup.Note = "Buttons are set in Controllers (your layout for all games) or in a game's Controls page (its own layout)."

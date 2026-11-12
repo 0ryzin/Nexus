@@ -1,6 +1,7 @@
 # NEXUS for Android: development check only. It builds the shared NEXUS core for Android arm64
-# and the Android app, and runs their tests. Nothing is published or uploaded: there is no
-# Android release, and the APK built here is discarded with the runner.
+# and the Android app, runs their tests and starts the app on an emulator. Nothing is published:
+# there is no Android release, and the APK built here is discarded with the runner (only the
+# smoke test's log and screenshot are kept, for a few days, for the developers).
 name: nexus-android (development check)
 
 on:
@@ -73,3 +74,29 @@ jobs:
           readelf -h apk-libs/lib/arm64-v8a/libnexus_core.so | grep -q AArch64
           ls -la "$apk"
           echo "APK built and checked; it is not uploaded or released."
+
+      # smoke test: an x86_64 emulator image runs the arm64 app through Android's ARM translation
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Start NEXUS on an Android emulator (API 34)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          ram-size: 4096M
+          disk-size: 4G
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash android/ci/smoke.sh
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-smoke
+          path: android-smoke/
+          retention-days: 3
+          if-no-files-found: ignore

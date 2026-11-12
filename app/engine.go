@@ -240,6 +240,20 @@ func (e *Emulator) writeSessionConfig(g *Game, pr *Profile) (string, error) {
 			ini.SetSetting("Renderer", "nx2_frame_rate_limit", strconv.Itoa(int(clampF(float64(hz), 30, 240))))
 		}
 	}
+	// the graphics card (gpu_select.go): by default the fastest one, not whatever the Vulkan
+	// loader happens to list first
+	pref := firstNonEmpty(s.Engine["graphics.gpu"], gpuAuto)
+	if g != nil {
+		if v, ok := gameNexusSettings(e.app.Library.GP.Get(g.Key))["graphics.gpu"]; ok && v != "" {
+			pref = v
+		}
+	}
+	if devs, err := vulkanDevices(); err == nil {
+		if idx, why := ChooseVulkanDevice(devs, pref); idx >= 0 {
+			ini.SetSetting("Renderer", "vulkan_device", strconv.Itoa(idx))
+			e.app.Log.Printf("graphics: %s (Vulkan device %d of %d, %s)", devs[idx].Name, idx, len(devs), why)
+		}
+	}
 	if g != nil && g.TitleID != "" {
 		writeDisabledAddOns(ini, g.TitleID, e.app.Content.DisabledMods(g.TitleID)) // mods switched off for this game
 	}
