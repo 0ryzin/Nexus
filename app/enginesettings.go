@@ -294,8 +294,10 @@ func EngineCaps() map[string]Support {
 			sup = Support{Note: s.Help}
 		case "controls.profile":
 			sup = Support{Available: true, PerGame: true}
-		case "graphics.fps_match_display", "graphics.gpu": // applied by NEXUS when the session starts
+		case "graphics.fps_match_display": // applied by NEXUS when the session starts
 			sup = Support{Available: true, PerGame: true}
+		case "graphics.gpu": // NEXUS chooses the Vulkan device (gpu_select.go)
+			sup = Support{Available: true, PerGame: true, Choices: []string{gpuAuto, gpuIntegrated}}
 		case "controls.mapping":
 			sup.Note = "Buttons are set in Controllers (your layout for all games) or in a game's Controls page (its own layout)."
 		case "controls.sensitivity":
