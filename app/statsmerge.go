@@ -9,6 +9,7 @@ package main
 // regional versions and editions have different Title IDs and are never merged.
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -87,4 +88,40 @@ func (st *ProfileStore) MergeStatAliases(aliases map[string]string) int {
 		st.mu.Unlock()
 	}
 	return n
+}
+
+// SetPlaytime corrects a game's total play time for a user (Play time per game › Correct play
+// time). The total shown is this device's time plus what other devices reported, so the
+// difference is added to this device's record and noted as a correction; sessions recorded later
+// keep adding to it.
+func (st *ProfileStore) SetPlaytime(id, key string, total int64) (GameStat, error) {
+	if total < 0 || total > 100000*3600 {
+		return GameStat{}, fmt.Errorf("Enter a play time between 0 and 100,000 hours.")
+	}
+	if _, ok := st.Get(id); !ok {
+		return GameStat{}, fmt.Errorf("That user does not exist.")
+	}
+	shown := int64(0)
+	if g := st.Stats(id).Games[key]; g != nil {
+		shown = g.Seconds
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	s := st.loadStatsLocked(id)
+	g := s.Games[key]
+	if g == nil {
+		g = &GameStat{}
+		s.Games[key] = g
+	}
+	delta := total - shown
+	g.Seconds += delta
+	if g.Seconds < 0 { // other devices alone already count more than the total entered
+		delta -= g.Seconds
+		g.Seconds = 0
+	}
+	g.Adjusted += delta
+	if err := writeJSONAtomic(st.statsPath(id), s); err != nil {
+		return GameStat{}, err
+	}
+	return *g, nil
 }

@@ -43,10 +43,10 @@ import (
 // empty until the service is deployed; then users only choose "Create account" or "Sign in".
 var defaultAccountServer = ""
 
-var SyncCategories = []string{"profile", "library", "prefs", "emulation", "amiibo"}
+var SyncCategories = []string{"profile", "playtime", "library", "prefs", "emulation", "amiibo"}
 
 func defaultSyncCategories() map[string]bool {
-	return map[string]bool{"profile": true, "library": true, "prefs": true, "emulation": false, "amiibo": true}
+	return map[string]bool{"profile": true, "playtime": true, "library": true, "prefs": true, "emulation": false, "amiibo": true}
 }
 
 type syncBase struct {
@@ -94,6 +94,8 @@ type accountState struct {
 	Offline     bool                       `json:"offline,omitempty"`
 	Devices     []accountDevice            `json:"devices,omitempty"`
 	OnboardSeen bool                       `json:"onboardSeen,omitempty"`
+	Provider    string                     `json:"provider,omitempty"` // github | server
+	GistID      string                     `json:"gistId,omitempty"`
 	Remote      map[string]json.RawMessage `json:"-"`
 }
 
@@ -143,6 +145,7 @@ type Account struct {
 	wake   chan struct{}
 	stop   chan struct{}
 	touch  *time.Timer
+	ghFlow *ghFlow // GitHub sign-in in progress
 }
 
 type linkClaim struct {
@@ -261,6 +264,8 @@ type AccountStatus struct {
 	History      []SyncEvent       `json:"history"`
 	Devices      []accountDevice   `json:"devices"`
 	Linking      *linkClaimView    `json:"linking,omitempty"`
+	Provider     string            `json:"provider"`         // github (default) | server (self-hosted NEXUS account service)
+	GitHub       map[string]any    `json:"github,omitempty"` // sign-in code while signing in with GitHub
 	OnboardSeen  bool              `json:"onboardSeen"`
 	TokenStorage string            `json:"tokenStorage"`
 }
@@ -286,7 +291,14 @@ func (ac *Account) Status() AccountStatus {
 		SyncOn: ac.st.SyncOn, Pending: pending, LastSync: ac.st.LastSync, LastError: ac.st.LastError, Categories: ac.st.Categories,
 		Conflicts: append([]AccountConflict{}, ac.st.Conflicts...), History: append([]SyncEvent{}, ac.st.History...),
 		Devices: append([]accountDevice{}, ac.st.Devices...), OnboardSeen: ac.st.OnboardSeen, TokenStorage: secretStorageName}
-	st.Available = st.Server != ""
+	st.Available = st.Server != "" || githubClientID != ""
+	st.Provider = "server"
+	if ac.st.SignedIn && ac.st.Provider == "github" || !ac.st.SignedIn && st.Server == "" {
+		st.Provider = "github"
+	}
+	if f := ac.ghFlow; f != nil {
+		st.GitHub = map[string]any{"userCode": f.UserCode, "uri": f.URI, "expires": f.Expires.Unix()}
+	}
 	for i := range st.Conflicts { // the interface needs the titles, not the data
 		st.Conflicts[i].Local, st.Conflicts[i].Remote = nil, nil
 	}
@@ -444,7 +456,7 @@ func (ac *Account) startSession(server string, r sessionResult, how string) erro
 	if !sameAccount { // another account: start synchronisation from scratch (local data kept)
 		ac.st.Cursor, ac.st.Base, ac.st.ProfileMap, ac.st.Conflicts = 0, map[string]syncBase{}, nil, nil
 	}
-	ac.st.SyncOn = true
+	ac.st.SyncOn, ac.st.Provider = true, "server"
 	ac.noteLocked(how, fmt.Sprintf("Signed in as %s on %s.", r.Account.Email, ac.st.DeviceName))
 	ac.saveLocked()
 	ac.mu.Unlock()
@@ -499,7 +511,12 @@ func (ac *Account) Recover(email, code, newPassword, deviceName string) (string,
 // SignOut ends this device's sign-in at the service (when reachable) and here. Local data,
 // users, saves and amiibo stay on this device.
 func (ac *Account) SignOut() error {
-	err := ac.call("DELETE", "/v1/sessions/current", nil, nil)
+	var err error
+	if ac.isGitHub() {
+		ac.ghSignOut() // leaves the device list; best effort when offline
+	} else {
+		err = ac.call("DELETE", "/v1/sessions/current", nil, nil)
+	}
 	var ae *accountError
 	if err != nil && !errors.Is(err, errOffline) && !(errors.As(err, &ae) && ae.Status == 401) {
 		return err
@@ -519,6 +536,9 @@ func (ac *Account) SignOut() error {
 
 // Refresh reloads the account and its devices.
 func (ac *Account) Refresh() error {
+	if ac.isGitHub() {
+		return ac.ghRefresh()
+	}
 	var v struct {
 		Email, DisplayName string
 		Devices            []accountDevice
@@ -534,6 +554,16 @@ func (ac *Account) Refresh() error {
 }
 
 func (ac *Account) UpdateAccount(patch map[string]any) error {
+	if ac.isGitHub() {
+		if n, ok := patch["deviceName"].(string); ok {
+			if err := ac.ghRenameDevice(n); err != nil {
+				return err
+			}
+			ac.changed()
+			return nil
+		}
+		return errors.New("Your name and password are managed by GitHub (github.com/settings).")
+	}
 	var v struct {
 		Email, DisplayName string
 		Devices            []accountDevice
@@ -562,7 +592,14 @@ func (ac *Account) RemoveDevice(id string) error {
 		return ac.SignOut()
 	}
 	var v struct{ Devices []accountDevice }
-	if err := ac.call("DELETE", "/v1/devices/"+url.PathEscape(id), nil, &v); err != nil {
+	if ac.isGitHub() {
+		if err := ac.ghRemoveDevice(id); err != nil {
+			return err
+		}
+		ac.mu.Lock()
+		v.Devices = ac.st.Devices
+		ac.mu.Unlock()
+	} else if err := ac.call("DELETE", "/v1/devices/"+url.PathEscape(id), nil, &v); err != nil {
 		return err
 	}
 	ac.mu.Lock()
@@ -797,6 +834,16 @@ func (ac *Account) localItems(cats map[string]bool, pmap map[string]string) map[
 			out["profile/"+x.ID] = canon(x)
 		}
 	}
+	if cats["playtime"] { // this device's own play time per user; other devices' arrive as their own items
+		ac.mu.Lock()
+		me := ac.st.DeviceID
+		ac.mu.Unlock()
+		for _, p := range a.Profiles.List() {
+			if me != "" {
+				out["playtime/"+userKey(p.ID)+"."+me] = canon(a.Profiles.LocalStats(p.ID))
+			}
+		}
+	}
 	if cats["library"] || cats["emulation"] {
 		entries, _ := os.ReadDir(a.Library.GP.root)
 		for _, e := range entries {
@@ -949,6 +996,34 @@ func (ac *Account) applyItem(key string, data []byte, deleted bool, from string)
 			}
 		}
 		return nil
+	case "playtime":
+		// another device's play time for a user: kept next to this device's own (Stats adds them)
+		i := strings.LastIndex(name, ".")
+		if i < 0 || deleted {
+			return nil
+		}
+		user, dev := name[:i], name[i+1:]
+		ac.mu.Lock()
+		me := ac.st.DeviceID
+		if m, ok := ac.st.ProfileMap[user]; ok {
+			user = m
+		}
+		ac.mu.Unlock()
+		if dev == me || !regexp.MustCompile(`^[0-9a-zA-Z_-]{1,64}$`).MatchString(dev) {
+			return nil
+		}
+		if _, ok := a.Profiles.Get(user); !ok {
+			return nil
+		}
+		var stats ProfileStats
+		if err := json.Unmarshal(data, &stats); err != nil {
+			return err
+		}
+		dir := filepath.Join(a.Paths.Profiles, user, "stats-devices")
+		_ = os.MkdirAll(dir, 0o755)
+		err := writeJSONAtomic(filepath.Join(dir, "account-"+dev+".json"), map[string]any{"stats": stats, "device": from})
+		a.Profiles.dropStatsCache(user)
+		return err
 	case "library":
 		var x syncLibrary
 		if !deleted {
@@ -1202,6 +1277,8 @@ func itemTitle(key string, data []byte) string {
 	switch cat {
 	case "profile":
 		return "User " + firstNonEmpty(v.Name, name)
+	case "playtime":
+		return "Play time"
 	case "amiibo":
 		return "Amiibo " + firstNonEmpty(v.Name, name)
 	case "library":
@@ -1217,8 +1294,20 @@ func itemTitle(key string, data []byte) string {
 	return key
 }
 
-func (ac *Account) syncOnce(cursor int64, sum *SyncSummary) error {
-	// 1. what changed on the service
+// syncBackend is where synchronised items live: the NEXUS account service (accountd) or the
+// user's own GitHub account (account_github.go).
+type syncBackend interface {
+	// changes returns items changed since the cursor (all items for backends without one)
+	changes(cursor int64) (map[string]remoteItem, int64, error)
+	// put uploads an item based on baseVersion; conflict != nil when the stored version differs
+	put(key string, baseVersion int64, deleted bool, data []byte) (res remoteItem, conflict *remoteItem, err error)
+	// flush writes what put collected (backends that write in one request)
+	flush() error
+}
+
+type serverBackend struct{ ac *Account }
+
+func (b serverBackend) changes(cursor int64) (map[string]remoteItem, int64, error) {
 	remote := map[string]remoteItem{}
 	rev := cursor
 	for {
@@ -1227,16 +1316,49 @@ func (ac *Account) syncOnce(cursor int64, sum *SyncSummary) error {
 			Items []remoteItem
 			More  bool
 		}
-		if err := ac.call("GET", fmt.Sprintf("/v1/sync?since=%d", rev), nil, &page); err != nil {
-			return err
+		if err := b.ac.call("GET", fmt.Sprintf("/v1/sync?since=%d", rev), nil, &page); err != nil {
+			return nil, 0, err
 		}
 		for _, it := range page.Items {
 			remote[it.Key] = it
 		}
 		rev = page.Rev
 		if !page.More {
-			break
+			return remote, rev, nil
 		}
+	}
+}
+
+func (b serverBackend) put(key string, base int64, deleted bool, data []byte) (remoteItem, *remoteItem, error) {
+	var res remoteItem
+	err := b.ac.call("PUT", "/v1/sync/"+key, map[string]any{"baseVersion": base, "deleted": deleted, "data": data}, &res)
+	var ae *accountError
+	if errors.As(err, &ae) && ae.Status == 409 {
+		var c struct{ Current *remoteItem }
+		_ = json.Unmarshal(ae.Body, &c)
+		if c.Current == nil {
+			c.Current = &remoteItem{Key: key}
+		}
+		return res, c.Current, nil
+	}
+	return res, nil, err
+}
+
+func (b serverBackend) flush() error { return nil }
+
+func (ac *Account) backend() syncBackend {
+	if ac.isGitHub() {
+		return &gistBackend{ac: ac}
+	}
+	return serverBackend{ac}
+}
+
+func (ac *Account) syncOnce(cursor int64, sum *SyncSummary) error {
+	be := ac.backend()
+	// 1. what changed on the service
+	remote, rev, err := be.changes(cursor)
+	if err != nil {
+		return err
 	}
 	ac.mu.Lock()
 	myDevice := ac.st.DeviceID
@@ -1302,30 +1424,32 @@ func (ac *Account) syncOnce(cursor int64, sum *SyncSummary) error {
 	}
 
 	// 3. send this device's changes
-	_, _, base = ac.snapshot()
+	_, pm, base = ac.snapshot()
+	local = ac.localItems(cats, pm) // after what arrived (new users, amiibo) was applied
 	pk := ac.pendingKeys()
+	var sent []func()
 	for _, k := range pk {
 		if !cats[keyCategory(k)] || ac.conflicted(k) {
 			continue
 		}
 		data, ok := local[k]
-		var res remoteItem
-		err := ac.call("PUT", "/v1/sync/"+k, map[string]any{"baseVersion": base[k].Version, "deleted": !ok, "data": data}, &res)
-		var ae *accountError
-		if errors.As(err, &ae) && ae.Status == 409 {
-			var c struct{ Current *remoteItem }
-			_ = json.Unmarshal(ae.Body, &c)
-			if c.Current != nil {
-				ac.addConflict(AccountConflict{Key: k, Kind: "change", Title: itemTitle(k, firstBytes(data, c.Current.Data)), Local: data, Remote: c.Current.Data, RemoteVer: c.Current.Version, RemoteDel: c.Current.Deleted, RemoteFrom: c.Current.DeviceName})
-				sum.Conflicts++
-			}
-			continue
-		}
+		res, cur, err := be.put(k, base[k].Version, !ok, data)
 		if err != nil {
 			return err
 		}
-		ac.setBase(k, syncBase{res.Version, hashBytes(data)})
+		if cur != nil {
+			ac.addConflict(AccountConflict{Key: k, Kind: "change", Title: itemTitle(k, firstBytes(data, cur.Data)), Local: data, Remote: cur.Data, RemoteVer: cur.Version, RemoteDel: cur.Deleted, RemoteFrom: cur.DeviceName})
+			sum.Conflicts++
+			continue
+		}
+		sent = append(sent, func() { ac.setBase(k, syncBase{res.Version, hashBytes(data)}) })
 		sum.Uploaded++
+	}
+	if err := be.flush(); err != nil { // nothing counts as sent unless it was written
+		return err
+	}
+	for _, f := range sent {
+		f()
 	}
 	ac.mu.Lock()
 	ac.st.Cursor = rev

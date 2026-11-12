@@ -111,6 +111,8 @@ type winUI struct {
 	fullscreen bool
 	saved      rect
 	savedMax   bool // the window was maximised before full screen
+	fsMu       sync.Mutex
+	fsWant     bool
 	mu         sync.Mutex
 	queue      []func()
 	shown      bool
@@ -137,11 +139,36 @@ func (u *winUI) dispatchWait(fn func()) {
 	<-done
 }
 
-func (u *winUI) IsFullscreen() bool { return u.fullscreen }
+// IsFullscreen is the state the window is in or is being put in: toggles in quick succession
+// (F11 pressed twice, F11 from the game and from NEXUS at once, a busy UI thread while a game
+// compiles shaders) each flip the latest wanted state, so none is lost or undone by a stale read.
+func (u *winUI) IsFullscreen() bool {
+	u.fsMu.Lock()
+	defer u.fsMu.Unlock()
+	return u.fsWant
+}
 
-func (u *winUI) SetFullscreen(on bool) { u.dispatch(func() { u.applyFullscreen(on) }) }
+func (u *winUI) SetFullscreen(on bool) {
+	u.fsMu.Lock()
+	u.fsWant = on
+	u.fsMu.Unlock()
+	u.dispatch(func() { u.applyFullscreen(u.IsFullscreen()) })
+}
+
+// ToggleFullscreen flips the wanted state atomically.
+func (u *winUI) ToggleFullscreen() bool {
+	u.fsMu.Lock()
+	u.fsWant = !u.fsWant
+	on := u.fsWant
+	u.fsMu.Unlock()
+	u.dispatch(func() { u.applyFullscreen(u.IsFullscreen()) })
+	return on
+}
 
 func (u *winUI) applyFullscreen(on bool) {
+	if !on && !u.fullscreen {
+		return
+	}
 	if on {
 		if !u.fullscreen {
 			z, _, _ := procIsZoomed.Call(u.hwnd)
@@ -400,6 +427,7 @@ func runUI(a *App, url string) {
 	}
 	a.UI = u
 	if settings.Display.Fullscreen {
+		u.fsWant = true
 		u.applyFullscreen(true)
 	} else {
 		procShowWindow.Call(u.hwnd, 5 /*SW_SHOW*/)
@@ -414,9 +442,10 @@ func runUI(a *App, url string) {
 	chromium.AcceleratorKeyCallback = func(vk uint) bool {
 		if vk == 0x7A { // F11
 			go func() {
-				on := !u.fullscreen
-				u.SetFullscreen(on)
-				_, _ = a.Settings.Update(func(g *GlobalSettings) { g.Display.Fullscreen = on })
+				on := u.ToggleFullscreen()
+				if !a.Emu.State().Running { // during a game F11 is the game's full screen, not the start-up choice
+					_, _ = a.Settings.Update(func(g *GlobalSettings) { g.Display.Fullscreen = on })
+				}
 			}()
 			return true
 		}

@@ -1,5 +1,7 @@
 # NEXUS Account and synchronisation
 
+> **Since 0.6.0 the NEXUS Account is your GitHub account** (`app/account_github.go`): *Sign in with GitHub* shows a code to enter at github.com/login/device; data is synchronised through a private Gist in your own GitHub account (files `nexus-*.json`, one per kind of data, plus `nexus-devices.json`). No NEXUS server is needed and nothing costs money. The NEXUS OAuth app's client ID is built in (public; device flow uses no client secret). Removing a device marks it removed in the device list and it signs itself out at its next synchronisation; *Revoke NEXUS on GitHub* (github.com/settings/applications) ends every device's access. A Gist has no atomic compare-and-set: NEXUS re-reads before writing and keeps per-item versions, so conflicting edits are still detected, but two devices writing within the same second could overwrite one change. The self-hosted service described below remains available under *Advanced*. Play time now synchronises too (each device's own time per user, added up on every device).
+
 **Status (NEXUS 0.5.0, in development):** the account service (`app/accountd`) and the account
 and synchronisation code in NEXUS are implemented and tested with automated tests that run the real
 service and two NEXUS instances. **The service has not been deployed anywhere.** Until it is,

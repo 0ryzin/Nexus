@@ -570,9 +570,9 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 				e.app.Events.Emit("amiibo.scanning", map[string]any{"title": st.Title})
 			}
 		}
-		if es.FullscreenPresses > fullscreenSeen {
-			fullscreenSeen = es.FullscreenPresses
-			e.app.UI.SetFullscreen(!e.app.UI.IsFullscreen())
+		for fullscreenSeen < es.FullscreenPresses { // every press counts, also several between two checks
+			fullscreenSeen++
+			toggleUIFullscreen(e.app.UI)
 		}
 		// the recording key (F12) in the game window: NEXUS records
 		if es.RecordPresses > recordSeen {
@@ -641,6 +641,9 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 	e.app.Profiles.Checkpoint(nil)
 	e.setState(RunState{Volume: e.Volume()}) // session over: allows the save organiser to run
 	e.app.Saves.Tidy(st.ProfileID)           // saves an older engine wrote in its own layout
+	if e.app.Account != nil {
+		e.app.Account.Kick() // the game closed: play time and changes go to the account now
+	}
 	e.app.Compat.Record(st.GameKey, st.Title, gameSystem, sawGame, crashed, secs, final.Code)
 	e.app.Log.Printf("engine: session ended state=%s code=%s after %s (played %ds)", final.State, final.Code,
 		time.Since(start).Round(time.Second), secs)
@@ -882,4 +885,13 @@ func (e *Emulator) checkMemoryLayout(g *Game, s GlobalSettings) error {
 		e.app.Log.Printf("engine: experimental %d GB memory layout", gb)
 	}
 	return nil
+}
+
+// toggleUIFullscreen flips the NEXUS window's full screen atomically where the window supports it.
+func toggleUIFullscreen(ui UIHost) {
+	if t, ok := ui.(interface{ ToggleFullscreen() bool }); ok {
+		t.ToggleFullscreen()
+		return
+	}
+	ui.SetFullscreen(!ui.IsFullscreen())
 }

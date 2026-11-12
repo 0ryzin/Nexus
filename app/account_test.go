@@ -59,6 +59,9 @@ func mustSync(t *testing.T, a *App) SyncSummary {
 
 func TestAccountUnavailableWithoutService(t *testing.T) {
 	t.Setenv("NEXUS_ACCOUNT_SERVER", "")
+	old := githubClientID
+	githubClientID = "" // a build without GitHub sign-in and without a service
+	defer func() { githubClientID = old }()
 	app, _ := newTestApp(t, "")
 	st := app.Account.Status()
 	if st.Available || st.State != "unavailable" || st.SignedIn {
@@ -202,7 +205,7 @@ func TestAccountTwoDevices(t *testing.T) {
 	waitUntil(t, "the deck's game to end", func() bool { return !deck.Emu.State().Running })
 	time.Sleep(100 * time.Millisecond) // the session record is written after the state changes
 	// a second synchronisation changes nothing and duplicates nothing
-	if sum := mustSync(t, deck); sum.Downloaded+sum.Uploaded != 1 { // the resolved user goes up once
+	if sum := mustSync(t, deck); sum.Conflicts != 0 { // the resolved user and the deck's play time go up
 		t.Fatalf("second sync %+v", sum)
 	}
 	mustSync(t, pc)

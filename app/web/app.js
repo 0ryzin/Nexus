@@ -1104,6 +1104,26 @@ async function profilePage(id) {
   S.profilePage = layer;
   await build();
 }
+// Correct play time: hours and minutes, behind a clearly labelled button and a confirmation.
+async function correctPlaytime(key, title, seconds, pid = S.profile?.id) {
+  const cur = Math.round((seconds || 0) / 60);
+  const v = await formDlg({ title: 'Correct play time', text: `${title}: NEXUS has ${fmtDur(seconds || 0)} for ${profileById(pid)?.name || 'this user'}. Enter the correct total. Play time recorded from now on is added to it, and the correction is synchronised with your account.`, ok: 'Save',
+    fields: [{ id: 'hours', label: 'Hours', type: 'number', value: String(Math.floor(cur / 60)), max: 6 }, { id: 'minutes', label: 'Minutes', type: 'number', value: String(cur % 60), max: 2 }],
+    validate: v => {
+      const hh = Number(v.hours), mm = Number(v.minutes);
+      if (!Number.isInteger(hh) || hh < 0 || hh > 100000) return 'Hours: a whole number from 0.';
+      if (!Number.isInteger(mm) || mm < 0 || mm > 59) return 'Minutes: a whole number from 0 to 59.';
+      return null;
+    } });
+  if (!v) return false;
+  try {
+    await api(`/api/profiles/${pid}/playtime`, { body: { key, hours: Number(v.hours), minutes: Number(v.minutes) } });
+    toast(`Play time for ${title} set to ${v.hours} h ${v.minutes} min`, I.check);
+    await loadGames().catch(() => { });
+    return true;
+  } catch (e) { alertDlg('Not saved', e.message); return false; }
+}
+
 function gameStatsSheet(gs) {
   sheet(gs.title, (body, layer) => {
     body.append(gameStatsBlock(gs));
@@ -1114,6 +1134,7 @@ function gameStatsSheet(gs) {
       body.append(tbl);
     }
     const g = gameByKey(gs.key);
+    body.append(rowButton('Correct play time\u2026', { sub: 'If NEXUS shows less (or more) time than you played.', onClick: async () => { if (await correctPlaytime(gs.key, gs.title, gs.seconds)) { layer.close(); S.profilePage?.close(); profilePage(S.profile.id); } } }));
     if (g && isPlayable(g) && !g.hidden) body.append(rowButton('Play', { icon: I.play, onClick: () => { layer.close(); S.profilePage?.close(); launchGame(g.key); } }));
   });
 }
@@ -1666,6 +1687,7 @@ function gameInfo(key) {
       st.lastPlayed ? h('span', {}, 'Last played ' + fmtAgo(st.lastPlayed)) : '',
       h('span', {}, 'Runs in the NEXUS engine'))));
     body.append(gameStatsBlock(st));
+    body.append(rowButton('Correct play time\u2026', { sub: 'If NEXUS shows less (or more) time than you played.', onClick: async () => { if (await correctPlaytime(g.key, g.title, st.seconds)) { rebuild(); } } }));
     if (isPlayable(g) && !g.hidden) body.append(rowButton('Play', { icon: I.play, onClick: () => { layer.close(); launchGame(g.key); } }));
     body.append(rowButton('Options…', { onClick: () => { layer.close(); gameMenu(key); } }));
     body.append(rowButton('Rename', { value: g.title, onClick: async () => {
@@ -2042,10 +2064,14 @@ async function launchGame(key, force = false) {
   }
   Launch.busy = true;
   try {
-    const st = await api('/api/launch', { body: { key, profileId: S.profile.id, force } });
+    const launching = api('/api/launch', { body: { key, profileId: S.profile.id, force } });
     Sound.play('launch'); Pad.rumble(160, .5);
+    // Stage B: the launch animation plays on the game's own icon on the Home screen; the
+    // loading screen appears only when it has finished
+    const fromTile = await Launch.tileAnimation(key);
+    const st = await launching;
     S.playing = st;
-    Launch.open(g, st);   // Stage B + C; Stage D when the engine shows the game
+    Launch.open(g, st, fromTile);   // Stage C; Stage D when the engine shows the game
   } catch (e) {
     Launch.busy = false;
     Sound.play('error');
@@ -2081,6 +2107,7 @@ function whoIsPlaying(g) {
       Sound.play('select'); Pad.rumble(60, .3);
       btn?.classList.add('picked');
       card.classList.add('confirmed');
+      $$('button', card).forEach(b => b.setAttribute('disabled', '')); // no second pick or late cancel
       setTimeout(() => { layer.close(); resolve(pid); }, S.anim === 'off' ? 0 : 420);
     };
     for (const p of S.profiles) {
@@ -2089,6 +2116,9 @@ function whoIsPlaying(g) {
       b.addEventListener('click', () => finish(p.id, b));
       row.append(b);
     }
+    const cancel = h('button', { class: 'btn wp-cancel', 'data-nav': true }, 'Cancel');
+    cancel.addEventListener('click', () => finish(null));
+    card.append(h('div', { class: 'wp-actions' }, cancel));
     const cur = $$('.wp-user', row)[S.profiles.findIndex(p => p.id === S.profile?.id)] || $('.wp-user', row);
     Nav.setFocus(cur, { silent: true });
   });
@@ -2136,12 +2166,24 @@ function launchArt(g, cls) {
 const Launch = {
   busy: false, el: null, key: null, t0: 0,
   STAGES: { preparing: ['Preparing your session', 0], loading: ['Loading the game', 1], shaders: ['Preparing shaders', 1], starting: ['Starting', 2] },
-  open(g, st) {
+  // the selected icon on Home: a press, a bright pulse and a zoom toward the viewer, in place
+  tileAnimation(key) {
+    const tile = S.screen === 'home' && S.anim !== 'off' ? $$('#tiles .tile').find(t => t._game?.key === key) : null;
+    if (!tile) return Promise.resolve(false);
+    tile.classList.remove('launching'); void tile.offsetWidth;
+    tile.classList.add('launching');
+    return new Promise(res => {
+      const done = () => { tile.removeEventListener('animationend', done); res(true); setTimeout(() => tile.classList.remove('launching'), 400); };
+      tile.addEventListener('animationend', done);
+      setTimeout(done, 900); // safety
+    });
+  },
+  open(g, st, fromTile = false) {
     this.close(true);
-    this.key = g.key; this.t0 = performance.now();
-    const ghost = launchArt(g, 'lx-ghost'), art = launchArt(g, 'lx-art');
+    this.key = g.key; this.t0 = performance.now() - (fromTile ? 1500 : 0);
+    const ghost = fromTile ? null : launchArt(g, 'lx-ghost'), art = launchArt(g, 'lx-art');
     const steps = h('div', { class: 'lx-steps' }, ['preparing', 'loading', 'starting'].map(k => h('span', {}, h('i'), this.STAGES[k][0])));
-    const el = h('div', { class: 'launchfx' + (S.anim === 'off' ? ' no-anim' : ''), role: 'status' },
+    const el = h('div', { class: 'launchfx' + (S.anim === 'off' ? ' no-anim' : '') + (fromTile ? ' from-tile loading' : ''), role: 'status' },
       h('div', { class: 'lx-backdrop', style: g.artSource ? { backgroundImage: `url("/art/${g.key}?v=${g.artRev || 0}&w=640")` } : {} }),
       h('div', { class: 'lx-stage' }, h('div', { class: 'lx-artwrap' }, ghost, art),
         h('div', { class: 'lx-info' }, h('h1', {}, g.title), h('div', { class: 'lx-status' }, ''), h('div', { class: 'lx-bar' }, h('i')), steps)),
@@ -2155,7 +2197,7 @@ const Launch = {
     Nav.push(this.layer); renderHints();
     requestAnimationFrame(() => el.classList.add('in'));
     // Stage B → C: after the opening animation the loading screen takes over
-    setTimeout(() => el.classList.add('loading'), S.anim === 'off' ? 0 : 950);
+    if (!fromTile) setTimeout(() => el.classList.add('loading'), S.anim === 'off' ? 0 : 950);
     this.update(st);
   },
   update(st) {
@@ -2174,22 +2216,33 @@ const Launch = {
   // backdrop, then NEXUS asks the engine to show the game (which fades in on top). The loading
   // screen stays underneath until the game covers it, so there is never an empty or black frame.
   enter() {
-    const el = this.el; if (!el || el.classList.contains('revealing')) return;
+    const el = this.el; if (!el || el.classList.contains('revealing') || this.cancelling) return;
     const wait = Math.max(0, (S.anim === 'off' ? 0 : 1500) - (performance.now() - this.t0)); // let the opening finish
     setTimeout(() => {
-      if (this.el !== el) return;
+      if (this.el !== el || this.cancelling) return;
       $('.lx-status', el).textContent = 'Have fun!';
       $$('.lx-steps span', el).forEach(s => { s.classList.add('done'); s.classList.remove('on'); });
       el.classList.add('revealing');
       setTimeout(() => {
+        if (this.el !== el || this.cancelling) return;
         api('/api/emulator/reveal', { body: {} }).catch(() => { });
         setTimeout(() => { showPlaying(true); this.close(); }, S.anim === 'off' ? 200 : 900);
       }, S.anim === 'off' ? 0 : 320);
     }, wait);
   },
-  async cancel() {
-    if (!this.el || this.el.classList.contains('out')) return;
-    if (await confirmDlg('Stop starting the game?', 'NEXUS closes the game before it opens.', 'Stop', true)) api('/api/emulator/stop', { body: {} }).catch(() => { });
+  // Cancel: the game has not started for the user yet, so it stops at once (no question that
+  // the game could appear over), the loading screen closes, and nothing is revealed afterwards.
+  cancel() {
+    if (!this.el || this.el.classList.contains('out') || this.cancelling) return;
+    this.cancelling = true;
+    const el = this.el;
+    $('.lx-status', el).textContent = 'Stopping\u2026';
+    $('.lx-cancel', el)?.setAttribute('disabled', '');
+    api('/api/emulator/stop', { body: {} }).catch(() => { }).finally(() => {
+      if (this.el === el) this.close();
+      this.cancelling = false;
+      if (S.screen !== 'home') goHome();
+    });
   },
   close(now) {
     if (this.layer) { Nav.pop(this.layer); this.layer = null; renderHints(); }
@@ -2638,6 +2691,7 @@ const AccountUI = {
   PLAT: { windows: 'Windows PC', linux: 'Linux', macos: 'Mac', android: 'Android', ios: 'iPhone / iPad', other: 'Device' },
   CATS: [
     ['profile', 'Users', 'Names, pictures, colours and themes, and controller layouts.'],
+    ['playtime', 'Play time', 'Each device\u2019s play time per game, added up on every device, including corrections you make.'],
     ['library', 'Game library', 'Names you gave games, hidden games, artwork choices and each game’s controller layout.'],
     ['prefs', 'NEXUS preferences', 'Sounds, the start-up animation, shortcut keys and what Home does.'],
     ['amiibo', 'Amiibo library', 'Names, details and owners of your amiibo, and NEXUS virtual amiibo. Imported amiibo dumps stay on the device you imported them on.'],
@@ -2676,7 +2730,7 @@ const AccountUI = {
     const seen = () => api('/api/account/onboard-seen', { body: {} }).then(st => { this.st = st; renderBanner(); }).catch(() => { });
     go.addEventListener('click', () => { seen(); showSettings('account'); });
     no.addEventListener('click', seen);
-    b.append(ic, h('span', { class: 'grow' }, h('b', {}, 'Play on more than one device? '), 'A free NEXUS account keeps your users, settings and amiibo the same on every PC and on a Steam Deck. NEXUS works fully without one.'), go, no);
+    b.append(ic, h('span', { class: 'grow' }, h('b', {}, 'Play on more than one device? '), 'Sign in with your free GitHub account to keep your users, play time, settings and amiibo the same on every PC and on a Steam Deck. NEXUS works fully without it.'), go, no);
     return true;
   },
   async run(fn, okMsg) {
@@ -2685,6 +2739,35 @@ const AccountUI = {
   },
   async showRecovery(code, first) {
     await dialog({ title: first ? 'Your account is ready' : 'Your new recovery code', text: 'Write this recovery code down and keep it somewhere safe. It is the only way to set a new password if you forget yours, and NEXUS shows it only now.', pre: code, buttons: [{ label: 'I have saved it', value: true, primary: true }] });
+  },
+  // Sign in with GitHub: NEXUS shows a code; the user enters it at github.com/login/device
+  async githubSignIn() {
+    let v;
+    try { v = await api('/api/account/github/start', { body: { deviceName: this.st.deviceName } }); } catch (e) { return alertDlg('Sign in with GitHub', e.message); }
+    let open = true;
+    const status = h('p', { class: 'note' }, 'Waiting for you to approve NEXUS on GitHub…');
+    const openBtn = h('button', { 'data-nav': true, class: 'primary' }, 'Open github.com/login/device');
+    const cancel = h('button', { 'data-nav': true }, 'Cancel');
+    const box = h('div', { class: 'dialog' }, h('div', { class: 'd-body' }, h('h2', {}, 'Sign in with GitHub'),
+      h('ol', { class: 'steps' }, h('li', {}, 'On this PC, your phone or any computer, open github.com/login/device and sign in to GitHub.'), h('li', {}, 'Enter this code:')),
+      h('div', { class: 'pair-code' }, v.userCode),
+      h('ol', { class: 'steps', start: 3 }, h('li', {}, 'Approve “NEXUS”. NEXUS only gets access to Gists, where it keeps your sync data in a private Gist.')),
+      h('p', { class: 'note' }, `The code works until ${new Date(v.expires * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`), status),
+      h('div', { class: 'd-actions', 'data-row': 'strict' }, cancel, openBtn));
+    const close = () => { if (!open) return; open = false; layer.close(); };
+    openBtn.addEventListener('click', () => api('/api/app/open-link', { body: { which: 'github-device' } }).catch(e => toast(e.message, I.warn)));
+    cancel.addEventListener('click', () => { api('/api/account/github/cancel', { body: {} }).catch(() => { }); close(); });
+    const layer = openLayer(box, { onBack: () => cancel.click(), initial: openBtn });
+    while (open) {
+      await sleep(2500);
+      if (!open) break;
+      const r = await api('/api/account/github/status', { body: {} }).catch(e => ({ status: 'pending', error: e.message }));
+      if (r.status === 'approved') { close(); toast(`Signed in as ${r.account?.email || 'your GitHub account'}`, I.check, 4000); break; }
+      if (r.status === 'denied') { close(); alertDlg('Not signed in', r.error || 'NEXUS was not approved on GitHub.'); break; }
+      if (r.status === 'expired' || r.status === 'none') { close(); if (r.status === 'expired') alertDlg('The code expired', 'Choose Sign in with GitHub again for a new code.'); break; }
+      if (r.error) status.textContent = r.error;
+    }
+    await this.load(); if (S.screen === 'settings' && curCat === 'account') rebuildPanel();
   },
   unavailable() {
     return alertDlg('NEXUS accounts are not available yet', 'Creating an account and signing in need the NEXUS account service on the internet, and it has not been put online for this version of NEXUS. Nothing is wrong with your PC or your data, and everything else in NEXUS works without an account.\n\nIf you run your own NEXUS account service, enter its address under Advanced \u203a Account service address.');
@@ -2793,7 +2876,7 @@ const AccountUI = {
     const st = await this.load() || {};
     p.append(h('h2', {}, 'NEXUS Account'));
     if (!st.signedIn) {
-      p.append(h('p', { class: 'note' }, 'A NEXUS account lets you use the same users, settings and amiibo on several devices: your PC, another PC, and NEXUS for Linux on a Steam Deck. Sign in on each device, or link a device with a one-time code. Everything in NEXUS works without an account.'));
+      p.append(h('p', { class: 'note' }, st.provider === 'github' ? 'Your NEXUS account keeps your users, play time, settings and amiibo the same on all your devices: this PC, another PC and, later, a Steam Deck. It uses your free GitHub account: sign in with GitHub on each device. Everything in NEXUS works without an account.' : 'A NEXUS account lets you use the same users, settings and amiibo on several devices. Sign in on each device, or link a device with a one-time code. Everything in NEXUS works without an account.'));
       if (st.ended) p.append(h('p', { class: 'banner-inline warn' }, st.ended));
       p.append(infoRow('Account', 'Not signed in', `This device: ${st.deviceName} (${this.PLAT[st.platform] || st.platform})`));
       if (st.linking) {
@@ -2806,6 +2889,17 @@ const AccountUI = {
         p.append(infoRow('Account service', 'Not set up yet', 'NEXUS accounts need the NEXUS account service on the internet. It has not been put online for this version of NEXUS yet, so you cannot create an account in this build. Nothing else in NEXUS is affected.'));
       }
       const need = fn => () => st.available ? fn() : this.unavailable();
+      if (st.provider === 'github') {
+        p.append(rowButton('Sign in with GitHub', { icon: I.cloud, sub: 'Use your free GitHub account as your NEXUS account. NEXUS shows a code; you enter it at github.com/login/device. Do the same on your other PCs and your Steam Deck to link them. Your sync data is kept in a private Gist in your GitHub account; no NEXUS server is involved.', onClick: () => this.githubSignIn() }));
+        p.append(h('p', { class: 'note' }, 'No GitHub account yet? Create one for free at github.com, then come back here.'));
+        p.append(h('h3', {}, 'Advanced'));
+        p.append(rowButton('Use a self-hosted NEXUS account service', { value: st.custom ? st.server : 'Off', sub: 'Only if you run your own NEXUS account service (docs/ACCOUNTS.md).', onClick: async () => {
+          const v = await dialog({ title: 'Account service address', text: 'Leave empty to use GitHub.', input: { value: st.custom ? st.server : '', placeholder: 'https://accounts.example.org', max: 200 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Save', value: true, primary: true }] });
+          if (v !== null) this.run(() => api('/api/account/server', { body: { server: v } }), 'Saved');
+        } }));
+        return;
+      }
+
       p.append(rowButton('Create a NEXUS account', { icon: I.plus, sub: 'With your e-mail address and a password. On this device (your PC, for example).', onClick: need(() => this.create()) }));
       p.append(rowButton('Sign in', { sub: 'You already have an account: sign in on this device too.', onClick: need(() => this.signIn()) }));
       p.append(rowButton('Link this device with a code', { sub: 'Another device is signed in: it shows a code, you enter it here and approve it there. Handy on a Steam Deck.', onClick: need(() => this.linkThis()) }));
@@ -2837,7 +2931,8 @@ const AccountUI = {
         if (await confirmDlg(`Remove ${d.name}?`, 'It is signed out of your NEXUS account at once and stops synchronising. Nothing on that device is deleted.', 'Remove', true)) this.run(() => api('/api/account/devices/remove', { body: { id: d.id } }), `${d.name} removed`);
       } }));
     }
-    p.append(rowButton('Link another device…', { icon: I.plus, sub: 'Another PC, or NEXUS for Linux on a Steam Deck. Shows a one-time code to enter there. Or simply sign in there with your e-mail and password.', onClick: () => this.linkOther() }));
+    if (st.provider === 'github') p.append(infoRow('Link another device', 'Sign in with GitHub there', 'On your other PC or NEXUS on a Steam Deck: NEXUS Account \u203a Sign in with GitHub, with the same GitHub account. It appears in this list.'));
+    else p.append(rowButton('Link another device\u2026', { icon: I.plus, sub: 'Another PC, or NEXUS for Linux on a Steam Deck. Shows a one-time code to enter there. Or simply sign in there with your e-mail and password.', onClick: () => this.linkOther() }));
     p.append(h('h3', {}, 'What synchronises'));
     for (const [id, label, sub] of this.CATS) p.append(rowToggle(label, !!st.categories?.[id], v => this.run(() => api('/api/account/sync/settings', { body: { categories: { [id]: v } } })), sub));
     p.append(h('p', { class: 'note' }, 'Never synchronised: games, updates and DLC, keys and firmware, imported amiibo dumps, shader caches, screenshots and recordings. Game saves stay on each device for now: synchronising saves safely needs version history on the service, which is not built yet.'));
@@ -2845,7 +2940,19 @@ const AccountUI = {
       p.append(h('h3', {}, 'Recent activity'));
       for (const e of [...st.history].reverse().slice(0, 8)) p.append(infoRow(e.message, new Date(e.at * 1000).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })));
     }
-    p.append(h('h3', {}, 'Account'));
+    if (st.provider === 'github') {
+      p.append(rowButton('Rename this device', { value: st.deviceName, onClick: async () => {
+        const n = await dialog({ title: 'Name of this device', input: { value: st.deviceName, max: 60 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Save', value: true, primary: true }] });
+        if (n && n.trim()) this.run(() => api('/api/account/update', { body: { deviceName: n.trim() } }), 'Saved');
+      } }));
+      p.append(rowButton('Name, picture and password', { value: 'On GitHub', sub: 'Your GitHub account is your NEXUS account.', onClick: () => api('/api/app/open-link', { body: { which: 'github-settings' } }) }));
+      p.append(rowButton('Revoke NEXUS on GitHub', { sub: 'Signs every device out for good: github.com › Settings › Applications.', onClick: () => api('/api/app/open-link', { body: { which: 'github-apps' } }) }));
+      p.append(infoRow('Sign-in on this device', 'Stored safely', `Kept with ${st.tokenStorage}.`));
+      p.append(rowButton('Sign out on this device', { danger: true, sub: 'Your users, saves and amiibo stay on this device.', onClick: async () => {
+        if (await confirmDlg('Sign out?', 'This device stops synchronising and leaves your device list. Nothing on this device is deleted.', 'Sign out', true)) this.run(() => api('/api/account/signout', { body: {} }), 'Signed out');
+      } }));
+      return;
+    }
     p.append(rowButton('Your name', { value: st.displayName, onClick: async () => {
       const n = await dialog({ title: 'Your name', input: { value: st.displayName, max: 40 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Save', value: true, primary: true }] });
       if (n && n.trim()) this.run(() => api('/api/account/update', { body: { displayName: n.trim() } }), 'Saved');
@@ -2950,8 +3057,8 @@ const Panels = {
     p.append(rowVolume('Game volume', +(S.settings.engine?.['audio.volume'] ?? 100), sendVolume, '0% is silent, 100% is the game’s own level, up to 200% boosts quiet games (a soft limiter prevents harsh clipping). Also adjustable while playing.'));
     p.append(rowChoice('Ask who\u2019s playing', [{ v: 'several', l: 'When there is more than one user' }, { v: 'always', l: 'Always' }, { v: 'never', l: 'Never (the current user plays)' }], es.whoPlays || 'several', v => saveSettings({ emulator: { whoPlays: v } }), 'Before a game starts, NEXUS asks which user is playing. Play time, saves and controller layout belong to that user.'));
     p.append(h('h3', {}, 'NEXUS Home while playing'));
-    p.append(rowButton('Home key', { value: es.homeKey || 'Off', sub: 'Press it in a game to go back to NEXUS Home; the game keeps running. If the key is one of the game\u2019s controls, it stays with the game. When a game\u2019s standard keyboard layout uses the Home key for a button, NEXUS moves that button to a free key for the session and tells you which.', onClick: async () => {
-      const k = await captureKey(); if (k === undefined) return;
+    p.append(rowButton('Home key', { value: es.homeKey || 'Off', sub: 'Press it in a game to go back to NEXUS Home; the game keeps running. Standard: Shift+H, so H alone stays a game control. A single key that is one of the game\u2019s controls stays with the game.', onClick: async () => {
+      const k = await captureKey({ mods: true }); if (k === undefined) return;
       saveSettings({ emulator: { homeKey: k } }).then(rebuildPanel);
     } }));
     p.append(rowChoice('When you press Home in a game', [{ v: 'background', l: 'Keep the game running (muted)' }, { v: 'pause', l: 'Pause the game' }], es.homeAction || 'background', v => saveSettings({ emulator: { homeAction: v } }),
@@ -3619,7 +3726,7 @@ function connectEvents() {
           S.playing = st;
           if (st.keyboardMoves && S._movesShown !== st.started) { // once per session
             S._movesShown = st.started;
-            toast(`Keyboard: ${st.keyboardMoves.replace(/(\w+) (\S+) -> (\S+)/g, (_, b, f, t) => `${b} moved from ${f} to ${t}`)}, so ${S.settings.emulator?.homeKey || 'H'} opens NEXUS Home.`, I.info || I.check, 6000);
+            toast(`Keyboard: ${st.keyboardMoves.replace(/(\w+) (\S+) -> (\S+)/g, (_, b, f, t) => `${b} moved from ${f} to ${t}`)}, so ${S.settings.emulator?.homeKey || 'Shift+H'} opens NEXUS Home.`, I.info || I.check, 6000);
           }
           if (Launch.el) { Launch.update(st); if (st.phase !== 'playing') break; }
           if (was && !st.suspended && S.screen === 'home') showPlaying(true); // resumed (e.g. with the Home button)

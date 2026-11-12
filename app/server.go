@@ -275,6 +275,20 @@ func (s *Server) routes() {
 		a.Log.Printf("ui[%s]: %s", b.Level, b.Message)
 		writeJSON(w, true)
 	})
+	m.HandleFunc("POST /api/app/open-link", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Which string }
+		_ = readBody(r, &b)
+		link := map[string]string{"github-device": "https://github.com/login/device", "github-apps": "https://github.com/settings/applications", "github-settings": "https://github.com/settings/profile"}[b.Which]
+		if link == "" {
+			writeErr(w, 400, errors.New("unknown link"))
+			return
+		}
+		if err := openInExplorer(link); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, true)
+	})
 	m.HandleFunc("POST /api/app/open-folder", func(w http.ResponseWriter, r *http.Request) {
 		var b struct{ Which string }
 		_ = readBody(r, &b)
@@ -1355,6 +1369,24 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/profiles/{id}/stats", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, a.ProfileSummary(r.PathValue("id")))
 	})
+	m.HandleFunc("POST /api/profiles/{id}/playtime", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			Key            string
+			Hours, Minutes int64
+		}
+		_ = readBody(r, &b)
+		if b.Key == "" || b.Minutes < 0 || b.Minutes > 59 || b.Hours < 0 {
+			writeErr(w, 400, errors.New("Enter hours and minutes (0-59)."))
+			return
+		}
+		g, err := a.Profiles.SetPlaytime(r.PathValue("id"), b.Key, b.Hours*3600+b.Minutes*60)
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		a.Events.Emit("stats.changed", map[string]any{"profileId": r.PathValue("id"), "key": b.Key})
+		writeJSON(w, g)
+	})
 
 	m.HandleFunc("GET /api/profiles", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, a.Profiles.List()) })
 	m.HandleFunc("POST /api/profiles", func(w http.ResponseWriter, r *http.Request) {
@@ -2196,6 +2228,25 @@ func (s *Server) routes() {
 		}
 		writeJSON(w, d)
 	})
+	m.HandleFunc("POST /api/account/github/start", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ DeviceName string }
+		_ = readBody(r, &b)
+		v, err := a.Account.StartGitHubSignIn(b.DeviceName)
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, v)
+	})
+	m.HandleFunc("POST /api/account/github/status", func(w http.ResponseWriter, r *http.Request) {
+		st, err := a.Account.GitHubSignInStatus()
+		if err != nil && st != "pending" {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, map[string]any{"status": st, "account": a.Account.Status()})
+	})
+	m.HandleFunc("POST /api/account/github/cancel", func(w http.ResponseWriter, r *http.Request) { a.Account.CancelGitHubSignIn(); acct(w, nil) })
 	m.HandleFunc("POST /api/account/onboard-seen", func(w http.ResponseWriter, r *http.Request) { a.Account.SetOnboardSeen(); acct(w, nil) })
 }
 

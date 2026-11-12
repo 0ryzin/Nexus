@@ -532,7 +532,7 @@ type SessionResult struct {
 	RecoveryCode string      `json:"recoveryCode,omitempty"` // only at registration and recovery
 }
 
-var keyRe = regexp.MustCompile(`^(profile|library|prefs|emulation|amiibo|amiibo-file)/[A-Za-z0-9._-]{1,80}$`)
+var keyRe = regexp.MustCompile(`^(profile|playtime|library|prefs|emulation|amiibo|amiibo-file)/[A-Za-z0-9._-]{1,80}$`)
 
 // ---------------------------------------------------------------- routes
 

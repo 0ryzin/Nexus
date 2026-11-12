@@ -82,7 +82,8 @@ type GameStat struct {
 	ByEmulator map[string]int64 `json:"byEmulator,omitempty"`
 	FirstPlay  int64            `json:"firstPlayed,omitempty"`
 	Last       *SessionRec      `json:"lastSession,omitempty"`
-	History    []SessionRec     `json:"history,omitempty"` // most recent first, capped
+	History    []SessionRec     `json:"history,omitempty"`  // most recent first, capped
+	Adjusted   int64            `json:"adjusted,omitempty"` // seconds added (or removed) by manual corrections
 }
 
 // SessionRec is one play session.

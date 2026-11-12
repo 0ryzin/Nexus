@@ -811,3 +811,12 @@ input.am-filter:focus,input.am-filter.focus{border-color:var(--accent)}
 .hud-seg b{font-size:1.05em}
 .hud-seg small{color:#989ca4;font-size:.72em;font-weight:600}
 .hud-seg.fps i,.hud-seg.frame i{color:#64d2ff}.hud-seg.cpu i{color:#0a84ff}.hud-seg.gpu i{color:#30d158}.hud-seg.mem i{color:#bf5af2}.hud-seg.temp i{color:#ff9f0a}
+
+.wp-actions{display:flex;justify-content:center;margin-top:1.4em}
+.wp-cancel{min-width:9em}
+
+/* launch animation on the selected Home icon (0.6.0): press, glow, zoom toward the viewer */
+#tiles .tile.launching{animation:tile-launch .62s cubic-bezier(.3,.7,.2,1) both;z-index:5;position:relative}
+@keyframes tile-launch{0%{transform:scale(1)}18%{transform:scale(.94)}45%{transform:scale(1.1);box-shadow:0 0 0 4px var(--accent),0 0 48px 6px color-mix(in srgb,var(--accent) 60%,transparent)}100%{transform:scale(1.22);opacity:0;filter:brightness(1.6)}}
+.launchfx.from-tile{transition:opacity .35s ease}
+.launchfx.from-tile .lx-art{animation:none}

@@ -32,3 +32,22 @@ func TestStatsMergeOldFileKey(t *testing.T) {
 		t.Fatal("not saved")
 	}
 }
+
+// TestSetPlaytime: a corrected total is kept after a restart and later sessions add to it.
+func TestSetPlaytime(t *testing.T) {
+	app, _ := newTestApp(t, "")
+	p, _ := app.Profiles.Create("Tom", Avatar{Kind: "glyph"})
+	app.Profiles.AddSession(p.ID, "t-0100aaaa00010000", "Alpha Quest", SessionRec{Start: 1, End: 3601, Seconds: 3600})
+	if _, err := app.Profiles.SetPlaytime(p.ID, "t-0100aaaa00010000", 15*3600+30*60); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Profiles.SetPlaytime(p.ID, "t-0100aaaa00010000", -5); err == nil {
+		t.Fatal("negative accepted")
+	}
+	app.Profiles.AddSession(p.ID, "t-0100aaaa00010000", "Alpha Quest", SessionRec{Start: 9000, End: 9600, Seconds: 600})
+	again, _ := LoadProfiles(app.Paths)
+	g := again.Stats(p.ID).Games["t-0100aaaa00010000"]
+	if g.Seconds != 15*3600+30*60+600 || g.Adjusted != 14*3600+30*60 || g.Sessions != 2 {
+		t.Fatalf("%+v", g)
+	}
+}

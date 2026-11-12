@@ -26,7 +26,7 @@ type GlobalSettings struct {
 	PerfMonitor PerfMonitorSettings `json:"perfMonitor"`
 	// Recording: screen recording (recorder.go)
 	Recording RecordingSettings `json:"recording"`
-	// KeysVersion: 2 = F12 records and Alt+F12 takes screenshots (NEXUS 0.4.0)
+	// KeysVersion: 2 = F12 records and Alt+F12 takes screenshots (NEXUS 0.4.0); 3 = Home is Shift+H (0.6.0)
 	KeysVersion int `json:"keysVersion"`
 
 	Startup struct {
@@ -109,7 +109,7 @@ func DefaultSettings() GlobalSettings {
 	s.PerfMonitor = PerfMonitorSettings{Mode: "off", Position: "top", Opacity: 80, Scale: 100,
 		Metrics: []string{"fps", "frametime", "cpu", "gpu", "vram", "ram"}}
 	s.Recording = DefaultRecordingSettings()
-	s.KeysVersion = 2
+	s.KeysVersion = 3
 	s.Startup.Enabled = true
 	s.Startup.Color = "#e60012"
 	s.Startup.Style = "standard"
@@ -125,7 +125,7 @@ func DefaultSettings() GlobalSettings {
 	s.Library.ArtProviders = []string{}
 	s.Engine = map[string]string{"graphics.gpu": gpuAuto}
 	s.Updates = UpdateSettings{AutoCheck: true, Repo: defaultReleaseRepo}
-	s.Emulator = EmulatorSettings{Fullscreen: true, QuitCombo: true, ManageSaves: true, WhoPlays: "several", HomeKey: "H", HomeButton: true,
+	s.Emulator = EmulatorSettings{Fullscreen: true, QuitCombo: true, ManageSaves: true, WhoPlays: "several", HomeKey: "Shift+H", HomeButton: true,
 		FullscreenKey: "F11", ScreenshotKey: "Alt+F12", CaptureButton: true, FadeIn: true, HomeAction: "background", Overrides: map[string]string{}}
 	return s
 }
@@ -188,6 +188,13 @@ func LoadSettings(p *Paths) (*SettingsStore, error) {
 			st.s.Emulator.HomeAction = "background"
 		}
 		st.s.KeysVersion, changed = 2, true
+	}
+	if st.s.KeysVersion < 3 {
+		// 0.6.0: Home is Shift+H (H alone belongs to the game)
+		if st.s.Emulator.HomeKey == "H" || st.s.Emulator.HomeKey == "h" {
+			st.s.Emulator.HomeKey = "Shift+H"
+		}
+		st.s.KeysVersion, changed = 3, true
 	}
 	if _, ok := st.s.Engine["graphics.gpu"]; !ok { // 0.5.0: the fastest graphics card by default
 		st.s.Engine["graphics.gpu"], changed = gpuAuto, true

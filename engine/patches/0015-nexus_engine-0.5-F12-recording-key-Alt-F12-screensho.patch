@@ -1,7 +1,7 @@
 From bf8a6e3478a512f67c3023ccabb4fb47b64d063c Mon Sep 17 00:00:00 2001
 From: NEXUS <nexus@localhost>
 Date: Thu, 12 Nov 2026 11:34:44 +0000
-Subject: [PATCH 15/16] nexus_engine 0.5: F12 recording key, Alt+F12
+Subject: [PATCH 15/17] nexus_engine 0.5: F12 recording key, Alt+F12
  screenshots, games keep running behind NEXUS Home
 
 - shortcuts with modifiers ("Alt+F12"); a shortcut with modifiers never conflicts with a game key;

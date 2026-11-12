@@ -1,0 +1,131 @@
+From 9f681abc7703d78030871914c880ba1c44a658b7 Mon Sep 17 00:00:00 2001
+From: NEXUS <nexus@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 21:19:58 +0000
+Subject: [PATCH 17/17] NEXUS engine 0.7: Shift+H Home shortcut, controller
+ hot-plug, keyboard focus for the embedded game
+
+- The Home shortcut may have modifiers (default Shift+H): plain H stays the game's.
+- Controllers connected or disconnected during a game are mapped at once (player 1 goes back to
+  the keyboard layout when none is left); Home/capture stay reserved.
+- While the game is in front inside the NEXUS window, it keeps the keyboard focus (clicks on a
+  child window and full-screen changes no longer leave it with the NEXUS interface).
+---
+ src/nexus_engine/nexus_engine.cpp | 67 ++++++++++++++++++++++++++++---
+ 1 file changed, 62 insertions(+), 5 deletions(-)
+
+diff --git a/src/nexus_engine/nexus_engine.cpp b/src/nexus_engine/nexus_engine.cpp
+index e69d24d7a..dabf4c6f2 100644
+--- a/src/nexus_engine/nexus_engine.cpp
++++ b/src/nexus_engine/nexus_engine.cpp
+@@ -306,6 +306,24 @@ void ShowEmbedded(SDL_Window* window) {
+     SetFocus(hwnd);
+ }
+ 
++/// Gives the embedded game the keyboard while the NEXUS window is the active window.
++void KeepEmbeddedFocus(SDL_Window* window) {
++    HWND hwnd = GameHwnd(window);
++    if (hwnd == nullptr || !IsWindowVisible(hwnd)) {
++        return;
++    }
++    HWND root = GetAncestor(hwnd, GA_ROOT);
++    if (root == nullptr || GetForegroundWindow() != root) {
++        return;
++    }
++    GUITHREADINFO gi{};
++    gi.cbSize = sizeof(gi);
++    if (GetGUIThreadInfo(GetWindowThreadProcessId(root, nullptr), &gi) && gi.hwndFocus != hwnd &&
++        gi.hwndCapture == nullptr) {
++        SetFocus(hwnd); // the queues are attached (child window), so this works across threads
++    }
++}
++
+ /// Keeps the embedded game the size of the NEXUS window's client area.
+ void SyncEmbeddedSize(SDL_Window* window) {
+     HWND hwnd = GameHwnd(window);
+@@ -824,6 +842,8 @@ void RunSession(Request req) {
+         system.SetFilesystem(std::make_shared<FileSys::RealVfsFilesystem>());
+         system.GetFileSystemController().CreateFactories(*system.GetFilesystem());
+         RegisterExternalContent(manual_provider, system, req.contents);
++        // player 1's keyboard layout, to go back to when the last controller is disconnected
++        const auto keyboard_player = Settings::values.players.GetValue()[0];
+         if (req.auto_map_controller) {
+             AutoMapController(input, system, req.button_map, req.controller_type, req.controllers);
+         }
+@@ -891,10 +911,12 @@ void RunSession(Request req) {
+             const SDL_Scancode k = name.empty() ? SDL_SCANCODE_UNKNOWN : SDL_GetScancodeFromName(name.c_str());
+             return k != SDL_SCANCODE_UNKNOWN && !KeyUsedByGameControls(k) ? k : SDL_SCANCODE_UNKNOWN;
+         };
+-        const SDL_Scancode home_key =
+-            req.home_key.empty() ? SDL_SCANCODE_UNKNOWN : SDL_GetScancodeFromName(req.home_key.c_str());
+-        const bool home_key_usable = home_key != SDL_SCANCODE_UNKNOWN && !KeyUsedByGameControls(home_key);
+-        e.home_key_conflict = home_key != SDL_SCANCODE_UNKNOWN && !home_key_usable;
++        // the Home shortcut may have modifiers (Shift+H, the default since NEXUS 0.6): then the
++        // plain key stays the game's, and only the exact combination opens NEXUS Home
++        const Shortcut home_sc = ParseShortcut(req.home_key);
++        const bool home_key_usable = home_sc.key != SDL_SCANCODE_UNKNOWN &&
++                                     (home_sc.mods != SDL_KMOD_NONE || !KeyUsedByGameControls(home_sc.key));
++        e.home_key_conflict = home_sc.key != SDL_SCANCODE_UNKNOWN && !home_key_usable;
+         if (e.home_key_conflict) {
+             LOG_WARNING(Frontend, "NEXUS Engine: the Home key {} is a game control; it goes to the game",
+                         req.home_key);
+@@ -926,6 +948,11 @@ void RunSession(Request req) {
+         auto fade_start = std::chrono::steady_clock::time_point{};
+         bool fading = false;
+ 
++        // controller hot-plug: a connect/disconnect is handled shortly after (the input layer
++        // registers the device from the same event first)
++        auto remap_at = std::chrono::steady_clock::time_point{};
++        auto last_focus_check = std::chrono::steady_clock::time_point{};
++
+         // Event loop: input, window events, live volume, stop requests.
+         int applied_volume = e.volume.load();
+         while (!e.stop_requested && window->IsOpen()) {
+@@ -937,7 +964,7 @@ void RunSession(Request req) {
+                     const bool pad = event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN ||
+                                      event.type == SDL_EVENT_GAMEPAD_BUTTON_UP;
+                     const bool pad_down = event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN;
+-                    if (key && home_key_usable && event.key.scancode == home_key) {
++                    if (key && home_key_usable && home_sc.Matches(event.key)) {
+                         if (key_down) {
+                             home_press();
+                         }
+@@ -975,9 +1002,39 @@ void RunSession(Request req) {
+                         continue;
+                     }
+                     window->OnEvent(event);
++                    if (req.auto_map_controller &&
++                        (event.type == SDL_EVENT_GAMEPAD_ADDED || event.type == SDL_EVENT_GAMEPAD_REMOVED)) {
++                        remap_at = std::chrono::steady_clock::now() + std::chrono::milliseconds(400);
++                    }
+                 } while (SDL_PollEvent(&event));
+             }
+             const auto now = std::chrono::steady_clock::now();
++            if (remap_at != std::chrono::steady_clock::time_point{} && now >= remap_at) {
++                remap_at = {};
++                const auto devices = input.GetInputDevices();
++                const bool any_pad = std::any_of(devices.begin(), devices.end(), [](const auto& d) {
++                    const auto engine = d.Get("engine", "");
++                    return engine == "sdl" || engine == "joycon" || engine == "gcpad";
++                });
++                if (any_pad) {
++                    AutoMapController(input, system, req.button_map, req.controller_type, req.controllers);
++                } else {
++                    Settings::values.players.GetValue()[0] = keyboard_player;
++                    Settings::values.players.GetValue()[0].connected = true;
++                    system.HIDCore().ReloadInputDevices();
++                    LOG_INFO(Frontend, "NEXUS: no controller left, player 1 uses the keyboard again");
++                }
++                ReserveSystemButtons(system, req.home_button, req.capture_button);
++            }
++#ifdef _WIN32
++            // keyboard focus for the game drawn inside the NEXUS window: a click on a child window
++            // does not move the keyboard to it, and full-screen changes of the NEXUS window give
++            // it to the NEXUS interface; while the game is in front, it belongs to the game
++            if (e.embedded && e.shown && !e.suspended && now - last_focus_check > std::chrono::milliseconds(150)) {
++                last_focus_check = now;
++                KeepEmbeddedFocus(window->GetSDLWindow());
++            }
++#endif
+             // the first frame: NEXUS fades its loading screen out, then the game window appears
+             // (or after reveal_timeout_ms, or 20 s if a program never presents a frame), so no
+             // empty window covers the NEXUS loading screen

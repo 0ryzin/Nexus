@@ -4,7 +4,21 @@ All notable NEXUS changes will be recorded here.
 
 The project is in preview. Releases are numbered from **0.0.0**; the first intended stable release is **1.0.0**. Every release, with its notes and download, is on the [Releases page](https://github.com/0ryzin/Nexus/releases).
 
-## 0.5.0 — in development (not released)
+## 0.6.0 — test build (pre-release)
+
+0.5.0 was never released; its changes below ship in 0.6.0 together with:
+
+- **NEXUS Account with GitHub** (sign in with a code at github.com/login/device; synchronisation through a private Gist in the user's own GitHub account; no NEXUS server). Play time synchronises (each device's time, added up). Automatic synchronisation when a game closes. The self-hosted account service (`app/accountd`) remains for advanced use.
+- **Home is Shift+H** (H alone goes to the game; existing installations moved from H).
+- **Controller hot-plug** during a game (NEXUS Engine 0.7.0, patch 0017).
+- **Keyboard focus** stays with a game drawn in the NEXUS window (patch 0017).
+- **F11** no longer gets stuck (atomic full-screen state; every press counted).
+- **Cancel** on the loading screen stops at once; *Who's playing?* has a Cancel button.
+- **Launch animation** on the game's Home icon, then the loading screen.
+- **Correct play time** (hours and minutes) per game and user.
+- Published as a pre-release (`<!-- nexus:prerelease -->` in the release notes).
+
+## 0.5.0 — not released (included in 0.6.0)
 
 - **Import Save from ZIP:** saves from any compatible source; nested folders, several saves per archive, a preview with per-save selection, progress, all-or-nothing import with backups; unsafe archives are refused (paths outside the target, links, passwords, unusual compression ratios, damage) with an explanation of what to change. The Lichii-specific import source is removed.
 - No other emulator names in the interface; acknowledgements are in *Settings › System › Legal* and the Licences folder (its README was out of date and is corrected).
