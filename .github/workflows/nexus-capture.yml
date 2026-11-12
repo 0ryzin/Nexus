@@ -21,6 +21,6 @@ jobs:
         shell: pwsh
         run: |
           cd build-capture
-          ./nexus_capture_test.exe "$PWD\selftest.mp4"
+          ./nexus_capture_test.exe "$PWD\selftest.mp4" "$PWD\window.mp4"
           if ($LASTEXITCODE -ne 0) { throw "capture self-test failed" }
           Get-Item selftest.mp4 | Format-List Name,Length
