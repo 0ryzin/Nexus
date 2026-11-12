@@ -151,6 +151,9 @@ type App struct {
 	logFile  *os.File
 	migrated []string
 	mu       sync.Mutex
+
+	mobileOnce sync.Once // platform state reported by a mobile app (platform_mobile.go)
+	mobileSt   *mobileState
 }
 
 func NewApp(root string) (*App, error) { return NewAppWithPaths(NewPaths(root)) }

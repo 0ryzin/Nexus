@@ -8,7 +8,7 @@ NEXUS is a console-style game system for Windows. It starts with a power-on anim
 - **Media:** screenshots (Alt+F12, or your controller's Share / Capture button while playing) in `Media\Screenshots`, and recordings in `Media\Recordings`, shown in the Media tab with their game and date; filter, sort, view, open, show in folder, delete (to the Recycle Bin).
 - **Screen recording:** F12 while playing starts and stops a recording of the game window (never the NEXUS screens), with the game's sound and optionally the microphone. A red *REC* indicator with a timer shows while it records; *Recording saved* or the reason it failed afterwards. NEXUS uses the graphics card's encoder (NVIDIA NVENC, AMD, Intel Quick Sync) when there is one and software encoding otherwise. *Settings › Screen recording*: on/off, shortcut, resolution, frame rate, quality / bit rate, H.264 or HEVC, game sound, microphone, folder. Files are fragmented MP4 written as `<name>.mp4.part` until the recording stops, so a crash still leaves a playable file, renamed "… (interrupted).mp4" at the next start.
 - **NEXUS Home while playing:** one press of the Home key or the controller's Home/Guide button goes to NEXUS Home. By default the game keeps running in the background, muted and receiving no input (a green dot on its tile and a *running in the background* banner) until *Resume*; *Settings › Game sessions & saves › When you press Home in a game › Pause the game* stops it instead. The button never reaches the game itself. The record and screenshot shortcuts work on Home too.
-- **Import saves from Lichii:** *Save Data › Import › From Lichii* reads Lichii's save folder (`%APPDATA%\lichii\nand\user\save`), shows the player, game, slots, account and option data it found, and imports into the NEXUS user you choose. Lichii's files are only read; a NEXUS save is replaced only after confirming, and after a backup.
+- **Import Save from ZIP:** *Save Data › Import* takes a ZIP archive of Switch save data from any compatible source: zip the save folders (the game folders named with their 16-character ID, or the player folder that holds them), choose the ZIP, and NEXUS lists every save it recognises, with its player, game, slots, account and option data, so you pick which to import and into which user. The archive is only read; NEXUS refuses unsafe or damaged archives, checks every file before anything changes, and backs up a save before replacing it (only after you confirm).
 - **F11** switches the game between fullscreen and a window without restarting it.
 - **Controllers:** NEXUS remembers every controller (by serial number where it has one), lets each user choose which controller is player 1, 2 … (multiplayer), and gives a controller its own button layout if you want.
 - **Game Updates and Mods** in each game's *Configure Game Settings*: NEXUS reads a package and accepts it only if it really is an update for that game; mods install for that game only and can be switched on and off.
@@ -24,14 +24,14 @@ NEXUS is a console-style game system for Windows. It starts with a power-on anim
 - **One download.** `NEXUS-<version>-Windows-x64.zip` contains NEXUS *and* its engine (`NEXUS\Engine`). Extract it and run `NEXUS.exe`; nothing else to install. The engine is found relative to `NEXUS.exe`, so the folder works wherever you put it, and it is updated together with NEXUS.
 - **Hardware information** and **Optimise for my device** (*Emulation settings*): NEXUS reads your CPU, GPU, memory, Windows version and display, and recommends engine settings with *Performance*, *Balanced* or *Quality* profiles, for all games or for one game. You see every change first, choose which to apply, and can restore the previous settings.
 - **Animated wallpapers** (GIF, animated WebP, MP4, WebM) with a preview, and **Home transitions** (how the Home screen appears when you press Home, including from a game); *Resume* takes you back to the game.
-- **NEXUS runs games itself.** The NEXUS engine (Switch emulation core built on the yuzu/Eden code base) is loaded inside NEXUS. When you press Play, NEXUS opens the game window, plays the game and brings you back to the home screen. No other emulator program is started, and there is no emulator to choose.
+- **NEXUS runs games itself.** The NEXUS engine is loaded inside NEXUS (it is built from open-source Switch emulation code; see *Licensing*). When you press Play, NEXUS opens the game window, plays the game and brings you back to the home screen. No other emulator program is started, and there is no emulator to choose.
 - **NEXUS Engine** settings: status, supported systems, engine builds with verified install and rollback.
 - **Game volume 0–200 %** with a NEXUS slider: in *Game sessions & saves*, *Emulation settings › Audio*, per game, and live on the playing screen. 100 % is the game's own level; above it a soft limiter prevents harsh clipping.
 - **Compatibility** per game, from what actually happens when you play it in NEXUS, plus your own rating.
 - Updates and DLC in your game folders are applied automatically; player 1 is mapped to your controller automatically.
 - Fast library: tiles use cached, downscaled artwork.
 
-> **About this package.** This ZIP was produced by the project's Windows build (GitHub Actions, `.github/workflows/nexus-build.yml`): it compiles the NEXUS engine from upstream Lichii build-160 plus the NEXUS patches in `engine/patches`, runs the engine's test suite (its full test suite), loads the DLL and checks its interface, runs NEXUS's own tests on Windows, builds `NEXUS.exe`, packs both into this ZIP, then extracts the ZIP into a fresh folder and has `NEXUS.exe --engine-check` find, verify and load the engine there. The build machine has no GPU and no games, so **running real games has not been tested yet** (see *Known limitations*).
+> **About this package.** This ZIP was produced by the project's Windows build (GitHub Actions, `.github/workflows/nexus-build.yml`): it compiles the NEXUS engine from the engine source pinned in `engine.lock` plus the NEXUS patches in `engine/patches`, runs the engine's test suite (its full test suite), loads the DLL and checks its interface, runs NEXUS's own tests on Windows, builds `NEXUS.exe`, packs both into this ZIP, then extracts the ZIP into a fresh folder and has `NEXUS.exe --engine-check` find, verify and load the engine there. The build machine has no GPU and no games, so **running real games has not been tested yet** (see *Known limitations*).
 
 NEXUS is an independent project. It is not affiliated with or endorsed by Nintendo. It contains **no games, keys or firmware**.
 
@@ -200,7 +200,7 @@ The picker has:
 - a search box;
 - a grid of thumbnails with the current pick highlighted;
 - a large preview with the icon's name;
-- background colours, like Eden's dialog, plus backgrounds if the archive contains them.
+- background colours, plus backgrounds if the archive contains them.
 
 Your choice is saved per user and reopens selected after a restart. A new user starts with nothing selected, so you choose the icon yourself.
 
@@ -315,7 +315,7 @@ A full page per game: **General** (title, version, Title ID, type, file, **compa
 ### Saves
 *Settings › Save Data* (or *User settings › Save Data*) shows one user at a time: each game with its **game ID**, size, last change and the save's own slots and files (*Slot 00*, *Account Data*, *Option Data* …).
 
-- **Import saves…:** choose a save folder (a game's folder, or a folder with several, such as another emulator's `<user ID>` folder) or a ZIP. NEXUS inspects it and shows which **player** and **game** each save belongs to (from the folder names' IDs, or from a Ryujinx save's own metadata). If the game cannot be identified, you choose it — NEXUS never guesses. A game that already has a save is only replaced when you confirm, and a backup is made first.
+- **Import Save from ZIP** (or a save folder): NEXUS inspects the archive, finds every save in it however deeply it is nested, and shows which **player** and **game** each belongs to (from the folder names' IDs, or from the save's own metadata file). You select which saves to import. Unsafe archives (paths leading outside, links, password protection, unusual compression ratios) and damaged ones are refused with an explanation, and every file is checked before anything changes: if one save cannot be read, nothing is imported. If the game cannot be identified, you choose it — NEXUS never guesses. A game that already has a save is only replaced when you confirm, and a backup is made first.
 - **Export** (one game or all), **Back up**, **Restore…** (the current save is backed up first), **Delete…** (backed up first), **Open** the folder.
 - Backups: `UserData\Backups\Saves\<player folder>\`.
 - If two copies of a game's save exist (for example after an older engine wrote one in its own layout), both are kept: the second is shown as *other copy* and *Use this copy* switches them.
@@ -375,7 +375,7 @@ If something is missing, NEXUS explains it instead of failing silently:
 Developers can add other engine builds (*NEXUS Engine › Add an engine build*); they live in your data folder and you can always switch back to the included engine.
 
 ### Engine builds and updates
-NEXUS never downloads or swaps an emulator executable. The engine is built from its source (a fork of Lichii build 130, Eden lineage) by CI, which runs the engine's tests and an interface smoke test before a build is published. Upstream changes are merged on a separate branch, built and tested, and only then released (see `NEXUS_ENGINE.md` §4). In NEXUS, a new build is verified file by file against its manifest and installed beside the old one; *Go back to the previous build* restores it.
+NEXUS never downloads or swaps an emulator executable. The engine is built from its source (the base pinned in `engine.lock` plus the NEXUS patches) by CI, which runs the engine's tests and an interface smoke test before a build is published. Upstream changes are merged on a separate branch, built and tested, and only then released (see `NEXUS_ENGINE.md` §4). In NEXUS, a new build is verified file by file against its manifest and installed beside the old one; *Go back to the previous build* restores it.
 
 ## 6. Controller support
 
@@ -455,7 +455,7 @@ NEXUS never downloads or swaps an emulator executable. The engine is built from 
 ## 10. Licensing
 
 - **NEXUS is free software under the GNU GPL v3.0 or later** (`Licences\NEXUS-GPL-3.0.txt`), because it loads the GPL engine in-process. Full source: `Source\NEXUS-source.zip`.
-- **The NEXUS engine** is GPL-3.0-or-later, built on Lichii (github.com/zortos293/Lichii), Eden, yuzu and other projects. Corresponding source: `Source\engine\nexus-engine-source.tar.gz` (the exact tree that was compiled: Lichii build-150 with the NEXUS patches applied); the patches themselves are in the NEXUS source (`engine/patches`). Component licences: `Licences\engine-third-party\`.
+- **The NEXUS engine** is GPL-3.0-or-later, built on Lichii (github.com/zortos293/Lichii), Eden, yuzu and other projects. Corresponding source: `Source\engine\nexus-engine-source.tar.gz` (the exact tree that was compiled: the pinned upstream base with the NEXUS patches applied); the patches themselves are in the NEXUS source (`engine/patches`). Component licences: `Licences\engine-third-party\`.
 - **Ryujinx** (MIT) is used only as a technical reference; no Ryujinx code is included. Its licence is kept in `Licences\` for any fix ported in future.
 - Libraries in NEXUS.exe: go-webview2 (MIT, with Microsoft's WebView2Loader), go-winloader (ISC), golang.org/x/sys and the Go standard library (BSD). Fonts: Inter and Outfit (both SIL Open Font License 1.1).
 - "Switch" and "Nintendo Switch" are trademarks of Nintendo. **Personal build:** the NEXUS SWITCH emblem, `Resources\ProfileIcons` and the Ocarina of Time artwork are artwork you supplied (Nintendo designs); replace/remove them before sharing (see the NOTICE files).
@@ -467,4 +467,4 @@ NEXUS never downloads or swaps an emulator executable. The engine is built from 
 
 NEXUS: Go 1.24+; `GOOS=windows GOARCH=amd64 go build -ldflags "-H windowsgui -s -w -X main.AppVersion=0.0.0" -o NEXUS.exe .`; `go test .` (the tests use the stand-in engine; `NEXUS_FAKE_ENGINE=1 go run .` starts the UI for development on Linux).
 
-Engine by hand: apply the patches to Lichii build-150 and build on Windows (Visual Studio 2022 + LLVM clang-cl + Vulkan SDK): `cmake -B build -G Ninja -DNEXUS_ENGINE=ON -DYUZU_TESTS=ON -DENABLE_QT=OFF -DYUZU_CMD=OFF -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl`, then `cmake --build build --target nexus_engine tests`.
+Engine by hand: apply the patches to the upstream base in `engine.lock` (currently build-160) and build on Windows (Visual Studio 2022 + LLVM clang-cl + Vulkan SDK): `cmake -B build -G Ninja -DNEXUS_ENGINE=ON -DYUZU_TESTS=ON -DENABLE_QT=OFF -DYUZU_CMD=OFF -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl`, then `cmake --build build --target nexus_engine tests`.

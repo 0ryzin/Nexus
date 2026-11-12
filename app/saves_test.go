@@ -281,7 +281,7 @@ func TestSaveImportIdentifiesAndProtects(t *testing.T) {
 	binary.LittleEndian.PutUint64(extra[8:], 1)
 	os.WriteFile(filepath.Join(ryu, "ExtraData0"), extra, 0o644)
 	insp4, _ := app.Saves.Inspect(filepath.Join(src, "ryujinx"), nil, "")
-	if len(insp4.Candidates) != 1 || insp4.Candidates[0].TitleID != "0100AAAA00030000" || !insp4.Candidates[0].Confident || insp4.Format != "Ryujinx save" {
+	if len(insp4.Candidates) != 1 || insp4.Candidates[0].TitleID != "0100AAAA00030000" || !insp4.Candidates[0].Confident || insp4.Format != "Switch saves with metadata" {
 		t.Fatalf("ryujinx %+v", insp4)
 	}
 
@@ -318,52 +318,6 @@ func TestSaveImportIdentifiesAndProtects(t *testing.T) {
 	}
 	if _, err := app.Saves.folderFor(tom.ID, `..\x`); err == nil {
 		t.Fatal("path escape accepted")
-	}
-}
-
-// TestLichiiSaveImport: Lichii's own save folder (nand/user/save) is found, inspected without
-// changing it, and its saves identified by player and game; caches are not offered as saves.
-func TestLichiiSaveImport(t *testing.T) {
-	app, _ := newTestApp(t, "")
-	app.Library.Scan()
-	tom, _ := app.Profiles.Create("Tom", Avatar{Kind: "glyph"})
-	ad := t.TempDir()
-	t.Setenv("APPDATA", ad)
-	save := filepath.Join(ad, "lichii", "nand", "user", "save")
-	writeOOTSave(t, filepath.Join(save, "0000000000000000", testUID, "0100AAAA00010000"), "lichii")
-	writeSave(t, filepath.Join(save, "0000000000000000", "00000000000000000000000000000000", "0100AAAA00010000", "dev.bin"), "device")
-	writeSave(t, filepath.Join(save, "cache", "0100AAAA00010000", "shader.bin"), "cache")
-	if lichiiSaveDir() != save {
-		t.Fatalf("lichii dir %q", lichiiSaveDir())
-	}
-	before := mustHash(t, save)
-	insp, err := app.Saves.Inspect(save, nil, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(insp.Candidates) != 2 {
-		t.Fatalf("%d candidates: %+v", len(insp.Candidates), insp.Candidates)
-	}
-	var picks []SaveImportPick
-	for _, c := range insp.Candidates {
-		if c.TitleID != "0100AAAA00010000" || !c.Confident {
-			t.Fatalf("%+v", c)
-		}
-		if !c.Device && (c.PlayerID != testUID || len(c.Items) != 8) {
-			t.Fatalf("account save %+v", c)
-		}
-		picks = append(picks, SaveImportPick{ID: c.ID, TitleID: c.TitleID, Device: c.Device})
-	}
-	if _, err := app.Saves.Import(insp.Token, tom.ID, picks); err != nil {
-		t.Fatal(err)
-	}
-	dir := app.Profiles.SaveDir(tom.ID)
-	if readFile(t, filepath.Join(dir, "0100AAAA00010000-AQ", "account.sav")) != "lichii account" ||
-		readFile(t, filepath.Join(dir, "0100AAAA00010000-AQ (device)", "dev.bin")) != "device" {
-		t.Fatal("import")
-	}
-	if mustHash(t, save) != before {
-		t.Fatal("the Lichii folder was changed")
 	}
 }
 

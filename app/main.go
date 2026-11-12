@@ -19,12 +19,59 @@ func main() {
 		return
 	}
 	data, portable := resolveData(root)
-	app, err := NewAppWithPaths(NewPathsSplit(root, data, portable))
+	port, _ := strconv.Atoi(os.Getenv("NEXUS_PORT"))
+	core, err := StartCore(CoreOptions{Root: root, Data: data, Portable: portable, Port: port, Args: os.Args})
 	if err != nil {
-		fatalBox(fmt.Sprintf("NEXUS could not start.\n\n%v", err))
+		fatalBox(err.Error())
 		os.Exit(1)
 	}
-	defer app.Close()
+	defer core.Close()
+	app, url := core.App, core.URL
+	runUI(app, url)
+	// make sure a running game isn't orphaned silently
+	if st := app.Emu.State(); st.Running {
+		app.Log.Printf("NEXUS closed while %q was running; the emulator keeps running", st.Title)
+	}
+	app.Log.Printf("NEXUS exited")
+}
+
+// CoreOptions: where NEXUS keeps its program and data, and the interface port (0 = any free).
+type CoreOptions struct {
+	Root, Data string
+	Portable   bool
+	Port       int
+	Args       []string // command line (update hand-over flags)
+	GamesDir   string   // the Games folder, if not <Root>\Games (Android: shared storage)
+}
+
+// Core is a running NEXUS: data, library, engine host and the local interface server. Every
+// platform starts it the same way; only the window that shows the interface differs (WebView2
+// on Windows, the Android app's WebView on Android).
+type Core struct {
+	App     *App
+	Server  *Server
+	URL     string
+	closers []func()
+}
+
+func (c *Core) Close() {
+	for i := len(c.closers) - 1; i >= 0; i-- {
+		c.closers[i]()
+	}
+	c.App.Close()
+}
+
+// StartCore prepares NEXUS's data, starts the background work and the interface server.
+func StartCore(o CoreOptions) (*Core, error) {
+	paths := NewPathsSplit(o.Root, o.Data, o.Portable)
+	if o.GamesDir != "" {
+		paths.Games = o.GamesDir
+	}
+	app, err := NewAppWithPaths(paths)
+	if err != nil {
+		return nil, fmt.Errorf("NEXUS could not start.\n\n%v", err)
+	}
+	c := &Core{App: app}
 	app.migrateToDataDir()
 	// the engine's data folder and configuration belong to NEXUS: create them if missing (other
 	// emulators' data is only imported when the user chooses to, see enginedata.go)
@@ -54,17 +101,17 @@ func main() {
 	app.Saves.TidyAll()
 	app.Library.RemoveImportedGameListCache()
 	app.Recorder.RecoverInterrupted() // recordings cut off by a crash: kept, playable
-	app.Emu.cleanDLSSPartials() // an interrupted DLSS download leaves no half files
+	app.Emu.cleanDLSSPartials()       // an interrupted DLSS download leaves no half files
 	// started by the updater (updater.go): use the engine that came with the update and report a
 	// good start, or show why an update was rolled back
-	for i := 1; i+1 < len(os.Args); i++ {
-		switch os.Args[i] {
+	for i := 1; i+1 < len(o.Args); i++ {
+		switch o.Args[i] {
 		case "--update-applied":
 			app.preferBundledEngine()
-			app.confirmUpdateStart(os.Args[i+1])
+			app.confirmUpdateStart(o.Args[i+1])
 		case "--update-failed":
-			app.updateFailed = os.Args[i+1]
-			app.Log.Printf("update: rolled back (%s)", os.Args[i+1])
+			app.updateFailed = o.Args[i+1]
+			app.Log.Printf("update: rolled back (%s)", o.Args[i+1])
 		}
 	}
 
@@ -102,16 +149,16 @@ func main() {
 			app.Log.Printf("device link: %v", err)
 		} else {
 			app.Link = l
-			defer l.Close()
+			c.closers = append(c.closers, func() { l.Close() })
 		}
 	}
-	port, _ := strconv.Atoi(os.Getenv("NEXUS_PORT"))
 	srv := NewServer(app)
-	url, err := srv.Start(port)
+	url, err := srv.Start(o.Port)
 	if err != nil {
-		fatalBox("NEXUS could not start its local interface server: " + err.Error())
-		os.Exit(1)
+		app.Close()
+		return nil, fmt.Errorf("NEXUS could not start its local interface server: %v", err)
 	}
+	c.Server, c.URL = srv, url
 	app.Log.Printf("UI server at %s", srv.ln.Addr())
 	// Load and verify the bundled engine in the background while the interface starts, so the
 	// first game launch does not wait for it and the engine status is ready on the home screen.
@@ -125,10 +172,5 @@ func main() {
 		}
 		app.Events.Emit("engine.ready", map[string]any{"installed": ok, "problem": msg})
 	})
-	runUI(app, url)
-	// make sure a running game isn't orphaned silently
-	if st := app.Emu.State(); st.Running {
-		app.Log.Printf("NEXUS closed while %q was running; the emulator keeps running", st.Title)
-	}
-	app.Log.Printf("NEXUS exited")
+	return c, nil
 }

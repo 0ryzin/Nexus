@@ -72,7 +72,7 @@ type EngineRequest struct {
 	// F11 / F12 by default ("" = off); keys used by the game controls go to the game
 	FullscreenKey string `json:"fullscreenKey"`
 	ScreenshotKey string `json:"screenshotKey"`
-	RecordKey     string `json:"recordKey"` // presses are counted (recordPresses); NEXUS records
+	RecordKey     string `json:"recordKey"`     // presses are counted (recordPresses); NEXUS records
 	CaptureButton bool   `json:"captureButton"` // controller capture/share button: screenshot
 	ScreenshotDir string `json:"screenshotDir,omitempty"`
 	// ScreenshotName starts the screenshot file name (the game's short name)

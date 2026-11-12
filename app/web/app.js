@@ -768,6 +768,7 @@ async function loadState() {
   const st = await api('/api/state');
   Object.assign(S, { app: st.app, settings: st.settings, profiles: st.profiles || [], emulator: st.emulator, engine: st.engine || {}, formats: st.formats, scanDirs: st.scanDirs, gamesDir: st.gamesDir, avatarColors: st.avatarColors, avatarGlyphs: st.avatarGlyphs, maxProfiles: st.maxProfiles || 8, library: st.library, features: st.features || {} });
   if (S.profile) S.profile = profileById(S.profile.id) || null;
+  api('/api/platform').then(pl => { S.platform = pl; }).catch(() => { });
 }
 async function loadGames() {
   const r = await api('/api/games?profile=' + encodeURIComponent(S.profile?.id || ''));
@@ -807,6 +808,13 @@ function homeTransition(fromGame) {
   home.classList.remove('ht-zoom', 'ht-fade', 'ht-slide', 'ht-game'); void home.offsetWidth;
   home.classList.add('ht-' + style); if (fromGame) home.classList.add('ht-game');
   setTimeout(() => home.classList.remove('ht-zoom', 'ht-fade', 'ht-slide', 'ht-game'), 600);
+}
+// Android: the app shows the game surface instead of this interface while a game is in front
+// (MainActivity.kt). On Windows the game has its own window and this does nothing.
+function syncGameInFront() {
+  if (!window.NexusAndroid) return;
+  const st = S.playing;
+  try { NexusAndroid.gameVisible(!!(st?.running && st.phase === 'playing' && !st.suspended)); } catch { }
 }
 async function suspendGame() {
   try { await api('/api/emulator/suspend', { body: { on: true } }); } catch (e) { toast(e.message, I.warn); }
@@ -2193,6 +2201,7 @@ function showPlaying(justLaunched = false) {
   if (!sl) { sl = volumeSlider({ value: st.volume ?? S.emulator?.volume ?? 100, onChange: sendVolume, compact: true, label: 'Game volume' }); vh.append(sl); }
   else if (!sl.classList.contains('drag') && Nav.cur !== sl) sl.setValue(st.volume ?? 100);
   show('playing', { initial: $('#play-return'), anim: !justLaunched });
+  syncGameInFront();
 }
 Screens.playing = { onBack: () => resumeGame() };
 $('#play-perf').addEventListener('click', async () => {
@@ -2511,8 +2520,10 @@ const Panels = {
     } }));
     p.append(h('h3', {}, 'Updates'));
     p.append(h('p', { class: 'note' }, 'NEXUS and its engine update together (Settings › Updates): the update is checked before it is installed, and the previous version comes back if the new one does not start. Your data is never touched.'));
+    if (S.platform?.readiness) p.append(...readinessRows(S.platform));
     p.append(h('h3', {}, 'Legal'));
-    p.append(h('p', { class: 'note' }, 'NEXUS is independent software, not affiliated with or endorsed by Nintendo. NEXUS and its engine are free software under the GPL-3.0-or-later; the engine is built on the yuzu/Eden emulator core and other open-source projects — see Settings › NEXUS Engine and the Licences folder for notices and source code. NEXUS does not include games, keys or firmware: use only content you legally own.'));
+    p.append(h('p', { class: 'note' }, 'NEXUS is independent software, not affiliated with or endorsed by Nintendo. NEXUS and its engine are free software under the GPL-3.0-or-later. The NEXUS Engine still contains code from open-source Switch emulation projects; their names, licences and notices are acknowledged in the Licences folder, and the complete source code is in the Source folder. NEXUS does not include games, keys or firmware: use only content you legally own.'));
+    p.append(rowButton('Licences and acknowledgements', { sub: 'Open the Licences folder: NEXUS, the NEXUS Engine and every third-party component.', onClick: () => api('/api/app/open-folder', { body: { which: 'licences' } }).catch(e => toast(e.message, I.warn)) }));
   },
 };
 // ---------- hardware information and "Optimise for my device"
@@ -2849,7 +2860,7 @@ async function renderEngine(p) {
     h('dt', {}, 'Status'), h('dd', {}, e.state?.running ? pill('ok', 'Running a game') : e.installed ? pill('ok', 'Ready') : pill('bad', 'Not installed')),
     h('dt', {}, 'Engine'), h('dd', {}, e.active === 'bundled' ? `Included with NEXUS — version ${e.activeLabel}` : e.active ? `Added build ${e.activeLabel}` : 'Missing from the NEXUS folder'),
     h('dt', {}, 'Location'), h('dd', {}, e.engineDir || '—'),
-    info.upstream ? [h('dt', {}, 'Open-source base'), h('dd', {}, `${info.upstream.project || ''} ${info.upstream.describe || ''} ${(info.upstream.commit || '').slice(0, 10)}`.trim())] : '',
+    info.upstream ? [h('dt', {}, 'Engine source'), h('dd', {}, `${info.upstream.describe || ''} ${(info.upstream.commit || '').slice(0, 10)} · acknowledgements in System › Legal`.trim())] : '',
     h('dt', {}, 'Interface'), h('dd', {}, `version ${e.apiVersion}`),
     h('dt', {}, 'Keys'), h('dd', {}, e.keys ? pill('ok', 'Installed') : pill('bad', 'Missing')),
     h('dt', {}, 'Firmware'), h('dd', {}, e.firmware ? pill('ok', 'Installed') : pill('bad', 'Missing')),
@@ -3094,6 +3105,7 @@ function connectEvents() {
           if (S.screen === 'home') renderBanner();
         }
         Wall.update();
+        syncGameInFront();
         break;
       }
       case 'input.home': // Home pressed while NEXUS shows: go to the Home screen (never back to the game)
@@ -3111,6 +3123,10 @@ function connectEvents() {
         if (S.screen === 'media') { await Media.load(); Media.render(); }
         break;
       case 'recording.failed': RecUI.stop(); Sound.play('error'); alertDlg('The recording could not be made', m.data.error || 'Unknown error.'); break;
+      case 'saves.import': SaveImportUI.update(m.data); break;
+      case 'platform.device': S.platform = await api('/api/platform').catch(() => S.platform); if (S.screen === 'settings' && curCat === 'system') rebuildPanel(); break;
+      case 'platform.thermal': if (S.platform) S.platform.device = { ...(S.platform.device || {}), thermalStatus: m.data.status };
+        if (m.data.hot) toast(`Your device is very warm (${m.data.name}). Games slow down until it cools; take a break or remove a case.`, I.warn, 6000); break;
       case 'media.changed': if (S.screen === 'media') { await Media.load(); Media.render(); } break;
       case 'dlss.job':
         if (!m.data.running) { if (m.data.ok) toast('NVIDIA DLSS installed', I.check, 3000); else if (m.data.error) alertDlg('NVIDIA DLSS was not installed', m.data.error + '\n\nNothing incomplete was kept.'); }
@@ -3127,10 +3143,12 @@ function connectEvents() {
         Sound.play('home_pop');
         goHome({ fromGame: true });
         Wall.update();
+        syncGameInFront();
         break;
       }
       case 'emulator.exit': {
         S.playing = null;
+        syncGameInFront();
         Launch.close();
         await loadGames();
         await refreshEmu();
@@ -3275,16 +3293,33 @@ async function restoreDlg(pid, g, done) {
   try { await api(`/api/profiles/${pid}/saves/restore`, { body: { file: pick, confirm: true } }); toast('Restored', I.check); done(); } catch (e) { alertDlg('Could not restore', e.message); }
 }
 
+// Device readiness (mobile only): what the device has against NEXUS's requirements.
+function readinessRows(pl) {
+  const r = pl.readiness, d = pl.device || {};
+  const icon = { ok: '✓', warn: '!', fail: '✕' };
+  const rows = [h('h3', {}, 'Device readiness'),
+    h('p', { class: 'note' }, `${[d.manufacturer, d.model].filter(Boolean).join(' ')}${d.socModel ? ' · ' + d.socModel : ''}. ` + (r.ready ? 'This device meets NEXUS’s minimum requirements.' : 'This device does not meet all of NEXUS’s requirements yet (see below).'))];
+  for (const it of r.items) rows.push(rowButton(`${icon[it.state] || ''} ${it.label}`, { value: it.value, sub: it.detail || '' }));
+  rows.push(h('p', { class: 'note' }, 'Minimum: Android 13, 64-bit ARM, Vulkan 1.1, 8 GB RAM. Recommended: Snapdragon 8 Gen 2 class (Adreno 730 or newer) or a recent Mali/Immortalis GPU, Vulkan 1.3, 12–16 GB RAM.'));
+  return rows;
+}
+const SaveImportUI = {
+  el: null,
+  update(d) {
+    if (!this.el || this.el.hidden) return;
+    const pct = d.total ? Math.round(d.done / d.total * 100) : 0;
+    this.el.textContent = d.phase === 'backup' ? 'Backing up the saves that will be replaced…' : d.phase === 'done' ? 'Finishing…' : `Copying and checking saves… ${pct}%`;
+  },
+};
 // Import: pick a folder or ZIP → NEXUS inspects it → shows what it found (player, game, slots) →
 // the user confirms the user and game → import (existing saves only replaced after confirming).
 async function saveImportWizard(pid, gameId, done) {
-  const how = await dialog({ title: 'Import saves', text: 'Choose a save folder (a game’s folder with slot_00, account.sav…, or a folder holding several games, from NEXUS, Eden, yuzu or another PC) or a ZIP archive of one. From Lichii reads Lichii’s own save folder on this PC. NEXUS looks inside and shows what it found before anything is copied; the originals are never changed.',
-    buttons: [{ label: 'Cancel', value: null }, { label: 'From Lichii', value: 'lichii' }, { label: 'ZIP archive…', value: 'zip' }, { label: 'Folder…', value: 'folder', primary: true }] });
+  const how = await dialog({ title: 'Import saves', text: 'Select a ZIP archive containing your Nintendo Switch save data. NEXUS will inspect the archive and identify compatible saves before importing them. You can also choose a save folder. Nothing is copied until you confirm, and the archive or folder is never changed.',
+    buttons: [{ label: 'Cancel', value: null }, { label: 'Folder…', value: 'folder' }, { label: 'Import Save from ZIP', value: 'zip', primary: true }] });
   if (!how) return;
   let insp;
   try {
-    if (how === 'lichii') insp = await api('/api/saves/inspect', { body: { pick: 'lichii' } });
-    else if (!S.app.native && how === 'folder') {
+    if (!S.app.native && how === 'folder') {
       const v = await dialog({ title: 'Folder', text: 'Full path of the save folder on this PC.', input: { value: '', max: 500 }, buttons: [{ label: 'Cancel', value: null }, { label: 'OK', value: true, primary: true }] });
       if (!v) return;
       insp = await api('/api/saves/inspect', { body: { path: v } });
@@ -3294,12 +3329,17 @@ async function saveImportWizard(pid, gameId, done) {
     } else insp = await api('/api/saves/inspect', { body: { pick: how } });
   } catch (e) { alertDlg('Could not read that', e.message); return; }
   if (!insp || insp.cancelled) return;
-  if (!insp.candidates?.length) { alertDlg('No saves found', insp.note || 'No save data was found there.'); return; }
+  if (!insp.candidates?.length) { alertDlg('No saves found in the archive', insp.note || 'No save data was found there.'); return; }
   const libGames = S.games.filter(g => g.titleId && g.kind !== 'update' && g.kind !== 'dlc');
   const picks = insp.candidates.map(c => ({ c, on: !gameId || !c.titleId || c.titleId === gameId, titleId: c.titleId || gameId || '' }));
   let target = (insp.candidates.find(c => c.profileId)?.profileId) || pid;
+  let running = false;
+  const progressEl = h('p', { class: 'note import-progress', hidden: true, role: 'status' });
+  SaveImportUI.el = progressEl;
   const l = sheet('Import saves', (body, layer, rebuild) => {
-    body.append(h('dl', { class: 'kv' }, h('dt', {}, 'From'), h('dd', {}, insp.source), h('dt', {}, 'Recognised as'), h('dd', {}, insp.format)));
+    body.append(h('dl', { class: 'kv' }, h('dt', {}, 'From'), h('dd', {}, insp.source), h('dt', {}, 'Recognised as'), h('dd', {}, insp.format),
+      h('dt', {}, 'Saves found'), h('dd', {}, String(insp.candidates.length))));
+    if (insp.note) body.append(h('p', { class: 'note' }, insp.note));
     body.append(rowChoice('Import into', S.profiles.map(p => ({ v: p.id, l: p.name })), target, v => { target = v; rebuild(); },
       insp.candidates.some(c => c.playerId && !c.profileId) ? 'The player ID in these saves does not belong to a NEXUS user, so choose who gets them.' : 'Matched by player ID where the saves carry one.'));
     for (const p of picks) {
@@ -3317,23 +3357,26 @@ async function saveImportWizard(pid, gameId, done) {
       }
       body.append(card);
     }
-    const go = h('button', { class: 'btn primary', 'data-nav': true }, 'Import');
+    const go = h('button', { class: 'btn primary', 'data-nav': true }, 'Import selected saves');
     go.addEventListener('click', () => run(false));
-    body.append(go);
+    body.append(go, progressEl);
   });
   async function run(replace) {
+    if (running) return;
     const sel = picks.filter(p => p.on);
     if (!sel.length) { toast('Nothing selected', I.warn); return; }
     if (sel.some(p => !p.titleId)) { alertDlg('Choose the game', 'Choose the game for every save NEXUS could not identify.'); return; }
+    running = true; progressEl.hidden = false; progressEl.textContent = 'Importing…';
     try {
       await api('/api/saves/import', { body: { token: insp.token, profileId: target, picks: sel.map(p => ({ id: p.c.id, titleId: p.titleId, device: p.c.device, replace })) } });
-      toast('Saves imported', I.check); l.close(); done?.();
+      toast(`${sel.length} save${sel.length === 1 ? '' : 's'} imported into ${profileById(target)?.name || 'the user'}`, I.check, 3500); l.close(); done?.();
     } catch (e) {
+      progressEl.hidden = true;
       if (e.status === 409 && e.data?.conflicts) {
         const names = e.data.conflicts.map(c => '• ' + c.title).join('\n');
         if (await confirmDlg('Replace existing saves?', `${profileById(target)?.name || 'This user'} already has saves for:\n${names}\n\nThey are backed up first, and can be restored from Save Data › Restore.`, 'Replace', true)) run(true);
-      } else alertDlg('Could not import', e.message);
-    }
+      } else alertDlg('The saves were not imported', e.message);
+    } finally { running = false; }
   }
 }
 

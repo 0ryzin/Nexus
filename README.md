@@ -44,7 +44,7 @@ Every release lists what it brings. Download `NEXUS-<version>-Windows-x64.zip`, 
 - Save Data: every user's saves in `UserData\Saves\<PLAYER_ID>-<name>\<GAME_ID>-<SHORT>` (for example `0400486024DEC000-OOT`), with easy import (player and game identified), export, backup, restore and delete — never without confirmation and a backup.
 - Media tab: screenshots (Alt+F12 or the controller's capture button) and **screen recordings (F12)** with their game and date.
 - Screen recording of the game window only, with the game's sound and optionally your microphone, using the graphics card's video encoder (NVIDIA NVENC, AMD, Intel Quick Sync) when present; settings for resolution, frame rate, quality, format and folder.
-- Save import from Lichii's save folder (read only; NEXUS backs up before replacing anything).
+- **Import Save from ZIP:** a ZIP of Switch save data from any compatible source; NEXUS finds and identifies the saves, lets you choose which to import, refuses unsafe or damaged archives, and backs up before replacing anything.
 - NEXUS Home with one press of the Home key or the controller's Home button; F11 for fullscreen/window while playing.
 - Remembered controllers and a chosen controller per player.
 - Game Updates and Mods per game, checked before they are accepted.

@@ -23,7 +23,6 @@ package main
 
 import (
 	"archive/zip"
-	"bytes"
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
@@ -57,7 +56,8 @@ var (
 	rePlayerDir  = regexp.MustCompile(`^([0-9A-Fa-f]{32})(-.*)?$`)
 	reSlotDir    = regexp.MustCompile(`(?i)^slot_?(\d+)$`)
 	winReserved  = map[string]bool{"CON": true, "PRN": true, "AUX": true, "NUL": true, "COM1": true, "COM2": true, "COM3": true,
-		"COM4": true, "COM5": true, "COM6": true, "COM7": true, "COM8": true, "COM9": true, "LPT1": true, "LPT2": true, "LPT3": true}
+		"COM4": true, "COM5": true, "COM6": true, "COM7": true, "COM8": true, "COM9": true, "LPT1": true, "LPT2": true, "LPT3": true,
+		"LPT4": true, "LPT5": true, "LPT6": true, "LPT7": true, "LPT8": true, "LPT9": true}
 )
 
 // safeFolderName makes a name valid as a Windows folder name.
@@ -840,7 +840,11 @@ func extractZipFile(f *zip.File, target string) error {
 	if err != nil {
 		return err
 	}
-	_, err = io.Copy(out, rc)
+	// never more than the entry declares (the ZIP reader also checks size and CRC at the end)
+	n, err := io.Copy(out, io.LimitReader(rc, int64(f.UncompressedSize64)+1))
+	if err == nil && uint64(n) != f.UncompressedSize64 {
+		err = fmt.Errorf("%s is damaged (its size does not match the archive)", f.Name)
+	}
 	if cerr := out.Close(); err == nil {
 		err = cerr
 	}
@@ -1196,11 +1200,12 @@ func ryujinxExtra(b []byte) (titleID, userID string, ok bool) {
 }
 
 // inspect finds game saves in a folder or ZIP. Rules, most specific first:
-//   - an engine user folder: <user 32 hex>/<game 16 hex>/… (Lichii, Eden, yuzu and the NEXUS
-//     engine), also with the user/save/0000000000000000 parents;
+//   - an engine user folder: <user 32 hex>/<game 16 hex>/… (the layout of the Switch's own
+//     save filesystem, used by the NEXUS engine and many other tools), also with the
+//     user/save/0000000000000000 parents;
 //   - NEXUS folders: <PLAYER_ID>-<name>/<GAME_ID>-<SHORT>/…, or a single <GAME_ID>-<SHORT>;
 //   - a single game folder named by its 16-hex game ID (its parent may be a 32-hex user);
-//   - a Ryujinx save folder (0/, 1/, ExtraData0): game and user from its metadata;
+//   - a save with a metadata file (0/, 1/, ExtraData0): game and user from its metadata;
 //   - otherwise, if it contains files, a save whose game cannot be identified.
 func (o *SaveOrganizer) inspect(v saveVFS, rootName string) ([]SaveCandidate, string) {
 	var out []SaveCandidate
@@ -1223,12 +1228,12 @@ func (o *SaveOrganizer) inspect(v saveVFS, rootName string) ([]SaveCandidate, st
 	}
 	var scan func(dir, name, parent string, depth int)
 	scan = func(dir, name, parent string, depth int) {
-		if depth > 6 || len(out) > 500 {
+		if depth > 14 || len(out) > 500 {
 			return
 		}
 		join := func(n string) string { return strings.TrimPrefix(dir+"/"+n, "/") }
 		entries := v.list(dir)
-		// Ryujinx save: 0/ and ExtraData0
+		// a save with its metadata: 0/ (and 1/) plus ExtraData0
 		var extra []byte
 		hasZero := false
 		for _, fi := range entries {
@@ -1242,9 +1247,9 @@ func (o *SaveOrganizer) inspect(v saveVFS, rootName string) ([]SaveCandidate, st
 		if hasZero && extra != nil {
 			if tid, uid, ok := ryujinxExtra(extra); ok {
 				if format == "" {
-					format = "Ryujinx save"
+					format = "Switch saves with metadata"
 				}
-				add(join("0"), uid, baseTitleOf(tid), false, true, "Game and player read from the save's Ryujinx metadata (ExtraData0).")
+				add(join("0"), uid, baseTitleOf(tid), false, true, "Game and player read from the save's own metadata (ExtraData0).")
 				return
 			}
 		}
@@ -1256,7 +1261,7 @@ func (o *SaveOrganizer) inspect(v saveVFS, rootName string) ([]SaveCandidate, st
 			case m[2] != "":
 				ev, f = "NEXUS save folder of game "+strings.ToUpper(m[1])+".", "NEXUS saves"
 			case reUserDir.MatchString(parent):
-				f = "Lichii / Eden / yuzu save folder"
+				f = "Switch save folders (player and game IDs)"
 			}
 			if format == "" {
 				format = f
@@ -1276,10 +1281,10 @@ func (o *SaveOrganizer) inspect(v saveVFS, rootName string) ([]SaveCandidate, st
 			}
 		}
 		for _, fi := range entries {
-			if n := strings.ToLower(fi.Name()); n == "cache" || n == "temp" || n == "system" {
-				continue // engine caches and system saves, not game saves
+			if notSaveFolder[strings.ToLower(fi.Name())] {
+				continue // engine caches, mods, system saves …: never game saves
 			}
-			if fi.IsDir() && fi.Name() != "user" || fi.IsDir() && depth == 0 {
+			if fi.IsDir() {
 				scan(join(fi.Name()), fi.Name(), name, depth+1)
 			}
 		}
@@ -1297,6 +1302,12 @@ func (o *SaveOrganizer) inspect(v saveVFS, rootName string) ([]SaveCandidate, st
 	return out, format
 }
 
+// notSaveFolder: folders of an emulator's data tree that can contain game-ID folders but no
+// game saves (shader caches, mods, dumps, system saves, the SD card …).
+var notSaveFolder = map[string]bool{"cache": true, "temp": true, "system": true, "load": true, "dump": true, "sdmc": true,
+	"shader": true, "shaders": true, "screenshots": true, "keys": true, "crash_dumps": true, "log": true, "logs": true,
+	"amiibo": true, "mods": true}
+
 // Inspect looks at a folder or ZIP the user selected and reports what it contains.
 func (o *SaveOrganizer) Inspect(path string, zipData []byte, displayName string) (SaveInspection, error) {
 	src := &saveSource{}
@@ -1304,9 +1315,9 @@ func (o *SaveOrganizer) Inspect(path string, zipData []byte, displayName string)
 	rootName := ""
 	switch {
 	case zipData != nil:
-		zr, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
+		zr, err := openSaveZip(zipData)
 		if err != nil {
-			return SaveInspection{}, errors.New("That file is not a ZIP archive.")
+			return SaveInspection{}, err
 		}
 		src.zr, src.data = zr, zipData
 		v = newZipVFS(zr)
@@ -1319,7 +1330,10 @@ func (o *SaveOrganizer) Inspect(path string, zipData []byte, displayName string)
 		}
 		if !fi.IsDir() {
 			if strings.EqualFold(filepath.Ext(path), ".zip") {
-				data, err := os.ReadFile(path)
+				if fi.Size() > maxSaveZipBytes {
+					return SaveInspection{}, errZipTooLarge
+				}
+				data, err := os.ReadFile(path) // read only: the archive itself is never changed
 				if err != nil {
 					return SaveInspection{}, err
 				}
@@ -1355,7 +1369,9 @@ func (o *SaveOrganizer) Inspect(path string, zipData []byte, displayName string)
 	src.insp.Format = format
 	src.insp.Candidates = cands
 	if len(cands) == 0 {
-		src.insp.Note = "No save data was found there."
+		src.insp.Note = "No save data was found there. " + unsupportedZipHelp
+	} else if len(cands) == 1 && cands[0].TitleID == "" {
+		src.insp.Note = "NEXUS found files but no game ID, so you choose the game. " + unsupportedZipHelp
 	}
 	src.insp.Token = o.remember(src)
 	return src.insp, nil
@@ -1424,39 +1440,80 @@ func (o *SaveOrganizer) Import(token, profileID string, picks []SaveImportPick) 
 	if len(conflicts) > 0 {
 		return conflicts, errSaveConflict
 	}
+	// 1. copy every selected save into a staging folder next to its destination (archive
+	//    entries are decompressed and CRC-checked here); if any fails, nothing has changed
+	type staged struct {
+		c          SaveCandidate
+		name, path string
+		replace    bool
+	}
+	var total int64
+	for _, p := range picks {
+		total += byID[p.ID].Bytes
+	}
+	progress := func(done int64, phase string) {
+		o.app.Events.Emit("saves.import", map[string]any{"done": done, "total": total, "phase": phase})
+	}
+	var plan []staged
+	cleanup := func() {
+		for _, st := range plan {
+			os.RemoveAll(st.path)
+		}
+	}
+	var done int64
+	progress(0, "copy")
 	for _, p := range picks {
 		c := byID[p.ID]
 		tid := strings.ToUpper(p.TitleID)
 		name := gameDir(dir, tid, p.Device)
-		if name != "" && hasSaveData(filepath.Join(dir, name)) {
-			if _, err := o.Backup(profileID, name, "before-import"); err != nil {
-				return nil, err
-			}
-		}
+		replace := name != "" && hasSaveData(filepath.Join(dir, name))
 		if name == "" {
 			name = o.wantGameFolder(tid, names[tid], p.Device)
 		}
+		for _, st := range plan { // two saves for the same game in one selection
+			if strings.EqualFold(st.name, name) {
+				cleanup()
+				return nil, fmt.Errorf("Two of the selected saves are for the same game (%s). Select only one of them.", firstNonEmpty(names[tid], tid))
+			}
+		}
 		stage := filepath.Join(dir, name+".nexus-new")
 		_ = os.RemoveAll(stage)
+		plan = append(plan, staged{c: c, name: name, path: stage, replace: replace})
 		var err error
 		if src.dir != "" {
-			from := filepath.Join(src.dir, filepath.FromSlash(c.path))
-			err = backupTree(from, stage)
+			err = backupTree(filepath.Join(src.dir, filepath.FromSlash(c.path)), stage)
 		} else {
 			err = extractPrefix(src.zr, c.path, stage)
 		}
 		if err != nil {
-			os.RemoveAll(stage)
-			return nil, fmt.Errorf("the save could not be copied: %w", err)
+			cleanup()
+			return nil, fmt.Errorf("Nothing was imported: %s could not be read (%v). Your existing saves are unchanged.", firstNonEmpty(c.Title, c.TitleID, "a save"), err)
 		}
+		done += c.Bytes
+		progress(done, "copy")
+	}
+	// 2. back up every save that will be replaced; if a backup fails, nothing is replaced
+	progress(done, "backup")
+	for _, st := range plan {
+		if st.replace {
+			if _, err := o.Backup(profileID, st.name, "before-import"); err != nil {
+				cleanup()
+				return nil, fmt.Errorf("Nothing was imported because the backup of %s failed: %v", st.name, err)
+			}
+		}
+	}
+	// 3. put the staged saves in place
+	for _, st := range plan {
 		o.mu.Lock()
-		err = swapDir(stage, filepath.Join(dir, name))
+		err := swapDir(st.path, filepath.Join(dir, st.name))
 		o.mu.Unlock()
 		if err != nil {
+			cleanup()
 			return nil, err
 		}
-		o.app.Log.Printf("saves: imported %s into %s/%s", firstNonEmpty(c.path, src.insp.Source), filepath.Base(dir), name)
+		o.app.Log.Printf("saves: imported %s into %s/%s", firstNonEmpty(st.c.path, src.insp.Source), filepath.Base(dir), st.name)
 	}
+	progress(total, "done")
 	return nil, nil
 }
 
@@ -1474,10 +1531,19 @@ func extractPrefix(zr *zip.Reader, prefix, dst string) error {
 				continue
 			}
 		}
-		if rest == "" || name == saveExportMarker || strings.Contains(rest, "..") || strings.Contains(rest, ":") {
+		if rest == "" || name == saveExportMarker {
 			continue
 		}
+		if _, err := cleanZipName(rest); err != nil {
+			return fmt.Errorf("unsafe path in the archive: %w", err)
+		}
+		if f.Mode()&os.ModeType&^os.ModeDir != 0 {
+			return fmt.Errorf("%s is not an ordinary file", name)
+		}
 		target := filepath.Join(dst, filepath.FromSlash(rest))
+		if rel, err := filepath.Rel(dst, target); err != nil || strings.HasPrefix(rel, "..") {
+			return fmt.Errorf("unsafe path in the archive: %s", name)
+		}
 		if strings.HasSuffix(f.Name, "/") {
 			_ = os.MkdirAll(target, 0o755)
 			continue
@@ -1667,22 +1733,6 @@ func (o *SaveOrganizer) SharedEngineSaves() string {
 	p := filepath.Join(o.app.Emu.DataDir(), "nand", "user", "save")
 	if hasSaveData(p) {
 		return p
-	}
-	return ""
-}
-
-// lichiiSaveDir is Lichii's save folder on this PC ("" if Lichii is not installed for this user).
-// Save import only reads it.
-func lichiiSaveDir() string {
-	for _, base := range []string{os.Getenv("APPDATA"), os.Getenv("NEXUS_LICHII_DIR")} {
-		if base == "" {
-			continue
-		}
-		for _, d := range []string{filepath.Join(base, "lichii", "nand", "user", "save"), filepath.Join(base, "nand", "user", "save")} {
-			if dirExists(d) {
-				return d
-			}
-		}
 	}
 	return ""
 }

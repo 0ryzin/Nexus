@@ -277,7 +277,7 @@ func (s *Server) routes() {
 		dir := map[string]string{
 			"root": a.Paths.Root, "data": a.Paths.Data, "games": a.Paths.Games, "logs": a.Paths.Logs, "artwork": a.Paths.Artwork,
 			"saves": a.Paths.Saves, "media": a.Paths.Media, "screenshots": filepath.Join(a.Paths.Media, "Screenshots"), "recordings": filepath.Join(a.Paths.Media, "Recordings"), "savebackups": filepath.Join(a.Paths.UserData, "Backups", "Saves"), "engine": a.Emu.Builds.Root(), "keys": a.Emu.KeysDir(),
-			"userdir": a.Emu.DataDir(), "enginedata": a.Emu.DataDir(), "archived": a.Paths.Trash, "resources": a.Paths.Resources, "systemfiles": a.Sys.Root(),
+			"userdir": a.Emu.DataDir(), "enginedata": a.Emu.DataDir(), "archived": a.Paths.Trash, "resources": a.Paths.Resources, "licences": a.Paths.Licences, "systemfiles": a.Sys.Root(),
 			"avatars": a.avatarRoot(), "profiles": a.Paths.Profiles, "lossless": a.Emu.losslessDir(), "streamline": a.Emu.streamlineDir(), "gameprofiles": filepath.Join(a.Paths.System, "GameProfiles"),
 		}[b.Which]
 		if dir == "" {
@@ -989,6 +989,35 @@ func (s *Server) routes() {
 		}
 		fakeLast.PressRecord()
 		writeJSON(w, true)
+	})
+	// ----- platform (platform_mobile.go): device readiness on mobile; nothing on Windows
+	m.HandleFunc("GET /api/platform", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, a.PlatformInfo()) })
+	m.HandleFunc("POST /api/dev/fake-device", func(w http.ResponseWriter, r *http.Request) {
+		// development only: what the Android app reports, to test the interface on a PC
+		if !fakeEngineEnabled() {
+			writeErr(w, 404, errors.New("not available"))
+			return
+		}
+		var b struct {
+			Device    *DeviceProfile
+			Lifecycle int
+			Thermal   *int
+			Trim      int
+		}
+		_ = readBody(r, &b)
+		if b.Device != nil {
+			a.SetDevice(*b.Device)
+		}
+		if b.Lifecycle != 0 {
+			a.OnLifecycle(LifecycleEvent(b.Lifecycle))
+		}
+		if b.Thermal != nil {
+			a.OnThermal(*b.Thermal)
+		}
+		if b.Trim != 0 {
+			a.OnTrimMemory(b.Trim)
+		}
+		writeJSON(w, a.PlatformInfo())
 	})
 	// ----- screen recording (recorder.go) and screenshots on request
 	m.HandleFunc("GET /api/recording", func(w http.ResponseWriter, r *http.Request) {
@@ -1825,9 +1854,13 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/saves/inspect", func(w http.ResponseWriter, r *http.Request) {
 		ct := r.Header.Get("Content-Type")
 		if strings.HasPrefix(ct, "application/zip") || strings.HasPrefix(ct, "application/octet-stream") {
-			data, err := io.ReadAll(io.LimitReader(r.Body, 1<<30))
+			data, err := io.ReadAll(io.LimitReader(r.Body, maxSaveZipBytes+1))
 			if err != nil {
 				writeErr(w, 400, err)
+				return
+			}
+			if int64(len(data)) > maxSaveZipBytes {
+				writeErr(w, 400, errZipTooLarge)
 				return
 			}
 			insp, err := a.Saves.Inspect("", data, firstNonEmpty(r.URL.Query().Get("name"), "saves.zip"))
@@ -1851,18 +1884,8 @@ func (s *Server) routes() {
 				writeErr(w, 404, errors.New("There are no saves in the NEXUS engine's shared storage."))
 				return
 			}
-		case path == "" && b.Pick == "lichii":
-			// Lichii's own save folder when it is on this PC (only read, never changed),
-			// otherwise the user points to it (a portable Lichii, another PC's copy …)
-			if path = lichiiSaveDir(); path == "" {
-				p, ok := pick(w, "", "Lichii's save folder was not found. Choose it (Lichii's user\\nand\\user\\save folder, a player folder or a game folder)", "", true)
-				if !ok {
-					return
-				}
-				path = p
-			}
 		case path == "" && b.Pick == "zip":
-			p, ok := pick(w, "", "Choose a ZIP archive of saves", "ZIP archive (*.zip)|*.zip|", false)
+			p, ok := pick(w, "", "Import Save from ZIP: choose the ZIP archive", "ZIP archive (*.zip)|*.zip|", false)
 			if !ok {
 				return
 			}

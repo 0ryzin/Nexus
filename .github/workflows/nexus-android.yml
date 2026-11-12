@@ -1,0 +1,75 @@
+# NEXUS for Android: development check only. It builds the shared NEXUS core for Android arm64
+# and the Android app, and runs their tests. Nothing is published or uploaded: there is no
+# Android release, and the APK built here is discarded with the runner.
+name: nexus-android (development check)
+
+on:
+  push:
+    branches: [main, "android-dev", "android-dev/**"]
+    paths: ["android/**", "app/**", ".github/workflows/nexus-android.yml"]
+  pull_request:
+    paths: ["android/**", "app/**", ".github/workflows/nexus-android.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nexus-android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android arm64 (core + app, not released)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: app/go.sum
+
+      - name: Shared core tests (Linux, including the dlopen engine host)
+        working-directory: app
+        run: go test -count=1 .
+
+      - name: Shared core compiles for Android without cgo (vet)
+        working-directory: app
+        run: GOOS=android GOARCH=arm64 CGO_ENABLED=0 go vet .
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+
+      - name: Build the core (NDK) and the app; run the app's unit tests
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_LATEST_HOME }}
+        run: gradle -p android --no-daemon :app:testDebugUnitTest :app:assembleDebug
+
+      - name: Check the APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=$(ls android/app/build/outputs/apk/debug/*.apk)
+          unzip -l "$apk" | tee contents.txt | grep -E "lib/arm64-v8a/libnexus_core.so|assets/nexus/Licences/README.txt|classes.dex"
+          grep -q "lib/arm64-v8a/libnexus_core.so" contents.txt
+          grep -q "assets/nexus/Licences/" contents.txt
+          grep -q "assets/nexus/Resources/" contents.txt
+          if grep -q "libnexus_engine.so" contents.txt; then echo "engine library present"; else echo "::notice::the NEXUS Engine is not built for Android yet (libnexus_engine.so absent; see docs/ANDROID.md)"; fi
+          # every JNI entry point NexusCore.kt declares is exported by the core library
+          unzip -o -q "$apk" lib/arm64-v8a/libnexus_core.so -d apk-libs
+          nm="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+          "$nm" -D --defined-only apk-libs/lib/arm64-v8a/libnexus_core.so | grep Java_dev_nexus_android_NexusCore_ | tee jni.txt
+          for f in nativeStart nativeStop nativeDevice nativeLifecycle nativeThermal nativeTrimMemory nativeSurface nativeTouch; do
+            grep -q "NexusCore_$f\$" jni.txt || { echo "::error::$f is not exported"; exit 1; }
+          done
+          readelf -h apk-libs/lib/arm64-v8a/libnexus_core.so | grep -q AArch64
+          ls -la "$apk"
+          echo "APK built and checked; it is not uploaded or released."

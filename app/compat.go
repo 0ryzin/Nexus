@@ -55,7 +55,7 @@ type CompatEpoch struct {
 // collected with an older engine no longer marks these games: they show as not tested since the
 // fix until they are played again (never as "works" without new evidence).
 var knownFixes = map[string][]struct{ Engine, Text string }{
-	"0400486024DEC000": {{"0.4.0", "The Castle Town guard house freeze (with Max Resolution) is fixed in NEXUS Engine 0.4.0 (upstream Lichii build-160, #1313)."}},
+	"0400486024DEC000": {{"0.4.0", "The Castle Town guard house freeze (with Max Resolution) is fixed in NEXUS Engine 0.4.0 (engine fix #1313)."}},
 }
 
 type CompatView struct {
