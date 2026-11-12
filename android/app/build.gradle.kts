@@ -23,21 +23,33 @@ fun ndkDir(): File {
         ?: throw GradleException("The Android NDK was not found (set ANDROID_NDK_HOME)")
 }
 
-val buildNexusCore by tasks.registering(Exec::class) {
-    description = "Builds the shared NEXUS core (Go) for Android arm64 as libnexus_core.so"
-    val out = goLibs.get().file("arm64-v8a/libnexus_core.so").asFile
+// arm64-v8a is the target. Development builds can add x86_64 (-PnexusAbis=arm64-v8a,x86_64) to
+// run on an x86_64 Android emulator: Android's ARM translation cannot run Go programs (it does
+// not emulate the CPU-ID register reads the Go runtime makes).
+val nexusAbis = (findProperty("nexusAbis") as String? ?: "arm64-v8a").split(",").map { it.trim() }.filter { it.isNotEmpty() }
+val goArch = mapOf("arm64-v8a" to ("arm64" to "aarch64-linux-android"), "x86_64" to ("amd64" to "x86_64-linux-android"))
+
+val buildNexusCore by tasks.registering {
+    description = "Builds the shared NEXUS core (Go) for Android as libnexus_core.so"
     inputs.dir(appDir).withPropertyName("nexusSource")
-    outputs.file(out)
-    workingDir = appDir
-    doFirst {
-        out.parentFile.mkdirs()
+    inputs.property("abis", nexusAbis)
+    outputs.dir(goLibs)
+    doLast {
         val host = File(ndkDir(), "toolchains/llvm/prebuilt").listFiles()!!.first()
-        environment("GOOS", "android")
-        environment("GOARCH", "arm64")
-        environment("CGO_ENABLED", "1")
-        environment("CC", File(host, "bin/aarch64-linux-android$minApi-clang").absolutePath)
+        for (abi in nexusAbis) {
+            val (arch, triple) = goArch[abi] ?: throw GradleException("unsupported ABI $abi")
+            val out = goLibs.get().file("$abi/libnexus_core.so").asFile
+            out.parentFile.mkdirs()
+            project.exec {
+                workingDir = appDir
+                environment("GOOS", "android")
+                environment("GOARCH", arch)
+                environment("CGO_ENABLED", "1")
+                environment("CC", File(host, "bin/$triple$minApi-clang").absolutePath)
+                commandLine("go", "build", "-buildmode=c-shared", "-trimpath", "-ldflags", "-s -w", "-o", out.absolutePath, ".")
+            }
+        }
     }
-    commandLine("go", "build", "-buildmode=c-shared", "-trimpath", "-ldflags", "-s -w", "-o", out.absolutePath, ".")
 }
 
 val nexusResources by tasks.registering(Copy::class) {
@@ -58,7 +70,7 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = appDir.resolve("VERSION").readText().trim() + "-android-dev"
-        ndk { abiFilters += "arm64-v8a" }
+        ndk { abiFilters += nexusAbis }
     }
     buildTypes {
         release {

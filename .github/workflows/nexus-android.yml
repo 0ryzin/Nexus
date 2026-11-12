@@ -76,6 +76,12 @@ jobs:
           echo "APK built and checked; it is not uploaded or released."
 
       # smoke test: an x86_64 emulator image runs the arm64 app through Android's ARM translation
+      # the emulator is x86_64: build the same app with an x86_64 core as well (development only)
+      - name: Build an x86_64 variant for the emulator
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_LATEST_HOME }}
+        run: gradle -p android --no-daemon :app:assembleDebug -PnexusAbis=arm64-v8a,x86_64
+
       - name: Free disk space for the emulator
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/share/boost /usr/local/lib/node_modules "$AGENT_TOOLSDIRECTORY/CodeQL" /usr/share/swift
