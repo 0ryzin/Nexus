@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestMakeFixtures writes synthetic (non-copyrighted) game files for UI testing.
@@ -124,6 +125,7 @@ func testNewApp(t testing.TB, root string) (*App, error) {
 	a, err := NewApp(root)
 	if a != nil {
 		t.Cleanup(a.Close)
+		t.Cleanup(func() { stopTestSession(a) })
 	}
 	return a, err
 }
@@ -134,4 +136,16 @@ func testNewAppWithPaths(t testing.TB, p *Paths) (*App, error) {
 		t.Cleanup(a.Close)
 	}
 	return a, err
+}
+
+// stopTestSession ends a test's game session and waits until NEXUS has written its records, so
+// nothing writes into the test folder while it is removed.
+func stopTestSession(a *App) {
+	if !a.Emu.State().Running {
+		return
+	}
+	_ = a.Emu.Stop(true)
+	for i := 0; i < 250 && a.Emu.State().Running; i++ {
+		time.Sleep(20 * time.Millisecond)
+	}
 }

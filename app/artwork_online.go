@@ -35,6 +35,22 @@ type OnlineArtwork struct {
 	done      int
 	client    *http.Client
 	last      string
+	wg        sync.WaitGroup // the lookup worker (Close waits for it)
+	closed    bool
+}
+
+// Close stops queued lookups and waits (up to 5 s) for the one in progress, so nothing writes
+// into NEXUS data after NEXUS has closed.
+func (o *OnlineArtwork) Close() {
+	o.mu.Lock()
+	o.closed, o.queue, o.queued = true, nil, map[string]bool{}
+	o.mu.Unlock()
+	done := make(chan struct{})
+	go func() { o.wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+	}
 }
 
 func NewOnlineArtwork(a *App, l *Library) *OnlineArtwork {
@@ -79,9 +95,10 @@ func (o *OnlineArtwork) Queue(games []Game, force bool) {
 			o.queue = append(o.queue, g.Key)
 		}
 	}
-	start := !o.busy && len(o.queue) > 0
+	start := !o.busy && len(o.queue) > 0 && !o.closed
 	if start {
 		o.busy = true
+		o.wg.Add(1)
 	}
 	o.mu.Unlock()
 	if start {
@@ -90,6 +107,7 @@ func (o *OnlineArtwork) Queue(games []Game, force bool) {
 }
 
 func (o *OnlineArtwork) run() {
+	defer o.wg.Done()
 	changed := 0
 	for {
 		o.mu.Lock()

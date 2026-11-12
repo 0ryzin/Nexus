@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"nexus/accountd"
 )
@@ -198,6 +199,8 @@ func TestAccountTwoDevices(t *testing.T) {
 		t.Fatalf("placed a dump that is not here: %v", err)
 	}
 	deck.Emu.Stop(true)
+	waitUntil(t, "the deck's game to end", func() bool { return !deck.Emu.State().Running })
+	time.Sleep(100 * time.Millisecond) // the session record is written after the state changes
 	// a second synchronisation changes nothing and duplicates nothing
 	if sum := mustSync(t, deck); sum.Downloaded+sum.Uploaded != 1 { // the resolved user goes up once
 		t.Fatalf("second sync %+v", sum)

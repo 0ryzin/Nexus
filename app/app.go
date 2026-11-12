@@ -212,6 +212,9 @@ func (a *App) openLog() {
 }
 
 func (a *App) Close() {
+	if a.Library != nil && a.Library.online != nil {
+		a.Library.online.Close()
+	}
 	if a.logFile != nil {
 		_ = a.logFile.Close()
 	}
