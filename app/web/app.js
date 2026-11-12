@@ -3136,13 +3136,14 @@ async function perfToggleGame(key, on) {
 function perfOn(key) { const pm = S.settings.perfMonitor || {}; return pm.mode === 'all' || (pm.mode === 'selected' && (pm.games || []).includes(key)); }
 async function renderPerfSettings(p) {
   const pm = S.settings.perfMonitor || {};
-  p.append(h('h2', {}, 'Performance Monitor'), h('p', { class: 'note' }, 'A thin bar at the top or bottom of the screen while you play. Every value is measured on this PC; what cannot be measured shows N/A. It needs borderless fullscreen or a window (exclusive fullscreen covers it).'));
-  const preview = h('div', { class: 'perf-preview ' + (pm.position === 'bottom' ? 'bottom' : 'top'), style: { opacity: (pm.opacity || 80) / 100, fontSize: `${(pm.scale || 100) / 100}em` } }, 'Measuring…');
+  p.append(h('h2', {}, 'Performance Monitor'), h('p', { class: 'note' }, 'A thin strip over the game\u2019s picture while you play, in the style of a handheld\u2019s performance overlay. It stays on the picture when you move or resize the window or press F11, and hides when the game is minimised or closed. Every value is measured on this PC; what cannot be measured shows N/A. It needs borderless fullscreen or a window (exclusive fullscreen covers it).'));
+  const preview = h('div', { class: 'perf-preview hud ' + (pm.position === 'bottom' ? 'bottom' : 'top') + (pm.layout === 'fps' ? ' fps' : ''), style: { '--hud-bg': `rgba(14,15,18,${(pm.opacity || 80) / 100})`, fontSize: `${(pm.scale || 100) / 100}em` } }, 'Measuring\u2026');
   p.append(h('div', { class: 'perf-stage' }, preview));
   const save = async patch => { await saveSettings({ perfMonitor: patch }); rebuildPanel(); };
   p.append(rowChoice('Show it', [{ v: 'off', l: 'Off' }, { v: 'all', l: 'In every game' }, { v: 'selected', l: 'Only in games I choose' }], pm.mode || 'off', v => save({ mode: v }), pm.mode === 'selected' ? `${(pm.games || []).length} game(s) chosen — switch it on for a game in its Configure Game Settings, or while playing.` : ''));
   p.append(rowChoice('Position', [{ v: 'top', l: 'Top' }, { v: 'bottom', l: 'Bottom' }], pm.position || 'top', v => save({ position: v })));
-  p.append(rowRange('Opacity', { min: 30, max: 100, step: 5, value: pm.opacity || 80, fmt: v => v + '%', onChange: v => saveSettings({ perfMonitor: { opacity: v } }).then(() => preview.style.opacity = v / 100) }));
+  p.append(rowChoice('Layout', [{ v: 'bar', l: 'Strip across the picture' }, { v: 'fps', l: 'Frame rate only, in the corner' }], pm.layout || 'bar', v => save({ layout: v })));
+  p.append(rowRange('Background opacity', { min: 30, max: 100, step: 5, value: pm.opacity || 80, fmt: v => v + '%', onChange: v => saveSettings({ perfMonitor: { opacity: v } }).then(() => preview.style.setProperty('--hud-bg', `rgba(14,15,18,${v / 100})`)) }));
   p.append(rowRange('Size', { min: 75, max: 200, step: 5, value: pm.scale || 100, fmt: v => v + '%', onChange: v => saveSettings({ perfMonitor: { scale: v } }).then(() => preview.style.fontSize = `${v / 100}em`) }));
   p.append(h('h3', {}, 'What it shows'));
   let info; try { info = await api('/api/perf'); } catch { info = { metrics: [] }; }
@@ -3152,7 +3153,12 @@ async function renderPerfSettings(p) {
   // live preview while this page is open (stops by itself when the page closes)
   const tick = async () => {
     if (!preview.isConnected) return;
-    try { const r = await api('/api/perf'); preview.textContent = r.text || 'Nothing selected'; } catch { }
+    try {
+      const r = await api('/api/perf');
+      let segs = r.segments || [];
+      if (preview.classList.contains('fps')) segs = segs.filter(x => x.kind === 'fps' || x.kind === 'frame');
+      preview.replaceChildren(...(segs.length ? segs.map(x => h('span', { class: 'hud-seg ' + x.kind + (x.label ? '' : ' joined') }, x.label && h('i', {}, x.label), h('b', {}, x.value), x.unit && h('small', {}, x.unit))) : ['Nothing selected']));
+    } catch { }
     setTimeout(tick, 1000);
   };
   tick();

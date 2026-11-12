@@ -799,3 +799,15 @@ option{background:var(--surface);color:var(--text)}
 input.am-filter{width:100%;background:var(--bg2);border:2px solid var(--line);border-radius:10px;padding:.6em .9em;color:inherit;font:inherit;margin:.2em 0 .5em;outline:none}
 input.am-filter:focus,input.am-filter.focus{border-color:var(--accent)}
 @media (max-width:900px){.am-grid{grid-template-columns:1fr}.am-card{position:static}}
+
+/* in-game HUD preview (same design as overlay_windows.go) */
+.perf-preview.hud{background:var(--hud-bg,rgba(14,15,18,.8));color:#f4f5f7;text-align:left;font-family:"Segoe UI",system-ui,sans-serif;padding:.35em .9em;display:flex;gap:1.3em;align-items:baseline}
+.theme-light .perf-preview.hud{background:var(--hud-bg,rgba(14,15,18,.8));color:#f4f5f7}
+.perf-preview.hud.fps{right:auto;left:.6em;top:.6em;border-radius:99px}
+.perf-preview.hud.fps.bottom{top:auto;bottom:.6em}
+.hud-seg{display:inline-flex;align-items:baseline;gap:.3em}
+.hud-seg.joined{margin-left:-.75em}
+.hud-seg i{font-style:normal;font-weight:700;font-size:.72em;letter-spacing:.03em}
+.hud-seg b{font-size:1.05em}
+.hud-seg small{color:#989ca4;font-size:.72em;font-weight:600}
+.hud-seg.fps i,.hud-seg.frame i{color:#64d2ff}.hud-seg.cpu i{color:#0a84ff}.hud-seg.gpu i{color:#30d158}.hud-seg.mem i{color:#bf5af2}.hud-seg.temp i{color:#ff9f0a}

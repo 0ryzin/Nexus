@@ -265,12 +265,13 @@ func deepMerge(dst, src map[string]any) {
 }
 
 type PerfMonitorSettings struct {
-	Mode     string   `json:"mode"`     // off | all (every game) | selected (the games in Games)
-	Games    []string `json:"games"`    // game keys for "selected"
-	Position string   `json:"position"` // top | bottom
-	Metrics  []string `json:"metrics"`  // ids from PerfMetrics, in display order
-	Opacity  int      `json:"opacity"`  // 30-100 %
-	Scale    int      `json:"scale"`    // 75-200 %
+	Mode     string   `json:"mode"`             // off | all (every game) | selected (the games in Games)
+	Games    []string `json:"games"`            // game keys for "selected"
+	Position string   `json:"position"`         // top | bottom
+	Metrics  []string `json:"metrics"`          // ids from PerfMetrics, in display order
+	Opacity  int      `json:"opacity"`          // 30-100 %
+	Scale    int      `json:"scale"`            // 75-200 %
+	Layout   string   `json:"layout,omitempty"` // bar (default: a strip across the picture) | fps (frame rate only, in a corner)
 }
 
 // PerfMonitorFor: whether the overlay shows for this game.

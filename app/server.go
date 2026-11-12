@@ -1054,7 +1054,8 @@ func (s *Server) routes() {
 	})
 	m.HandleFunc("GET /api/perf", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"sample": perf.Sample(a.Emu), "metrics": PerfMetrics,
-			"text": formatPerf(perf.Sample(a.Emu), a.Settings.Get().PerfMonitor.Metrics, "    ")})
+			"text":     formatPerf(perf.Sample(a.Emu), a.Settings.Get().PerfMonitor.Metrics, "    "),
+			"segments": perfSegments(perf.Sample(a.Emu), a.Settings.Get().PerfMonitor.Metrics)})
 	})
 	// ----- NEXUS engine data: setup and import of other emulators' data (enginedata.go)
 	m.HandleFunc("GET /api/engine-data", func(w http.ResponseWriter, r *http.Request) {

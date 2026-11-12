@@ -153,3 +153,127 @@ func clampF(v, lo, hi float64) float64 {
 	}
 	return v
 }
+
+// ---------- the in-game HUD's content and geometry (drawn by overlay_windows.go; shared so it is
+// tested on every platform and shown the same way in the Settings preview)
+
+// PerfSeg is one reading in the HUD: a short coloured label, the value, its unit.
+type PerfSeg struct {
+	Kind  string `json:"kind"` // fps | frame | cpu | gpu | mem | temp
+	Label string `json:"label"`
+	Value string `json:"value"`
+	Unit  string `json:"unit,omitempty"`
+}
+
+// perfSegments: the chosen metrics, in order; temperatures are attached to their CPU/GPU reading
+// when both are chosen (as one "CPU 42% 61°C" group). Unmeasurable values read "N/A".
+func perfSegments(s PerfSample, metrics []string) []PerfSeg {
+	num := func(v *float64, format string) string {
+		if v == nil {
+			return "N/A"
+		}
+		return fmt.Sprintf(format, *v)
+	}
+	unit := func(v *float64, u string) string {
+		if v == nil {
+			return ""
+		}
+		return u
+	}
+	has := map[string]bool{}
+	for _, m := range metrics {
+		has[m] = true
+	}
+	var out []PerfSeg
+	for _, m := range metrics {
+		switch m {
+		case "fps":
+			out = append(out, PerfSeg{"fps", "FPS", num(s.FPS, "%.0f"), ""})
+		case "frametime":
+			out = append(out, PerfSeg{"frame", "FRAME", num(s.FrameMs, "%.1f"), unit(s.FrameMs, "ms")})
+		case "cpu":
+			out = append(out, PerfSeg{"cpu", "CPU", num(s.CPU, "%.0f"), unit(s.CPU, "%")})
+			if has["cputemp"] && s.CPUTemp != nil {
+				out = append(out, PerfSeg{"temp", "", num(s.CPUTemp, "%.0f"), "°C"})
+			}
+		case "cputemp":
+			if !has["cpu"] || s.CPUTemp == nil {
+				out = append(out, PerfSeg{"temp", "CPU", num(s.CPUTemp, "%.0f"), unit(s.CPUTemp, "°C")})
+			}
+		case "gpu":
+			out = append(out, PerfSeg{"gpu", "GPU", num(s.GPU, "%.0f"), unit(s.GPU, "%")})
+			if has["gputemp"] && s.GPUTemp != nil {
+				out = append(out, PerfSeg{"temp", "", num(s.GPUTemp, "%.0f"), "°C"})
+			}
+		case "gputemp":
+			if !has["gpu"] || s.GPUTemp == nil {
+				out = append(out, PerfSeg{"temp", "GPU", num(s.GPUTemp, "%.0f"), unit(s.GPUTemp, "°C")})
+			}
+		case "vram":
+			v, u := "N/A", ""
+			if s.VRAMUsedMB != nil {
+				v, u = fmt.Sprintf("%.1f", *s.VRAMUsedMB/1024), "GB"
+				if s.VRAMMB != nil {
+					u = fmt.Sprintf("/ %.0f GB", *s.VRAMMB/1024)
+				}
+			}
+			out = append(out, PerfSeg{"mem", "VRAM", v, u})
+		case "ram":
+			v, u := "N/A", ""
+			if s.RAMUsedMB != nil && s.RAMMB != nil {
+				v, u = fmt.Sprintf("%.1f", *s.RAMUsedMB/1024), fmt.Sprintf("/ %.0f GB", *s.RAMMB/1024)
+			}
+			out = append(out, PerfSeg{"mem", "RAM", v, u})
+		case "ramspeed":
+			out = append(out, PerfSeg{"mem", "RAM", num(s.RAMSpeed, "%.0f"), unit(s.RAMSpeed, "MT/s")})
+		}
+	}
+	return out
+}
+
+// pxRect is a rectangle in screen pixels.
+type pxRect struct{ L, T, R, B int32 }
+
+func (r pxRect) W() int32 { return r.R - r.L }
+func (r pxRect) H() int32 { return r.B - r.T }
+
+// gameImageRect is where the game's picture is inside the area the game is drawn in: the engine
+// keeps the aspect ratio (16:9 by default) and fills the rest with black bars, so the HUD sits
+// on the picture, not on a bar. "stretch" fills the whole area.
+func gameImageRect(area pxRect, aspect string) pxRect {
+	ratios := map[string][2]int32{"16:9": {16, 9}, "4:3": {4, 3}, "21:9": {21, 9}, "16:10": {16, 10}}
+	if aspect == "stretch" || area.W() <= 0 || area.H() <= 0 {
+		return area
+	}
+	r, ok := ratios[aspect]
+	if !ok {
+		r = ratios["16:9"]
+	}
+	w, h := area.W(), area.H()
+	if int64(w)*int64(r[1]) > int64(h)*int64(r[0]) { // wider than the picture: bars left and right
+		iw := int32(int64(h) * int64(r[0]) / int64(r[1]))
+		x := area.L + (w-iw)/2
+		return pxRect{x, area.T, x + iw, area.B}
+	}
+	ih := int32(int64(w) * int64(r[1]) / int64(r[0])) // taller: bars top and bottom
+	y := area.T + (h-ih)/2
+	return pxRect{area.L, y, area.R, y + ih}
+}
+
+// hudBarHeight: the strip's height follows the picture's height (about 3.2 %, 22-48 px, like a
+// handheld's overlay at 800p and a TV at 4K), times the user's size setting.
+func hudBarHeight(img pxRect, scalePct int) int32 {
+	base := clampF(float64(img.H())*0.032, 22, 48)
+	return int32(base * clampF(float64(scalePct), 75, 200) / 100)
+}
+
+// hudAspect is the running game's aspect ratio setting (per game, else global, else 16:9).
+func hudAspect(a *App, gameKey string) string {
+	if v := a.Library.GP.Get(gameKey).Settings["graphics.aspect"]; v != "" {
+		return v
+	}
+	if v := a.Settings.Get().Engine["graphics.aspect"]; v != "" {
+		return v
+	}
+	return "16:9"
+}

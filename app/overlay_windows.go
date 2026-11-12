@@ -2,16 +2,28 @@
 
 package main
 
-// The in-game performance overlay: a thin, semi-transparent bar at the top or bottom of the
-// screen the game is on. It is a separate layered, topmost, click-through window that never takes
-// focus, so it does not touch the game's rendering or input. It is shown only while a game is in
-// front and the overlay is switched on for that game, and updates twice a second.
-// Limitation: a game in *exclusive* fullscreen (Settings › Emulation › Fullscreen behaviour)
-// covers every other window, so the overlay shows with borderless fullscreen (the default) and
-// windowed games.
+// The in-game HUD: the performance strip (and the REC indicator) drawn over the game's picture.
+//
+// It behaves like part of the game, not like a desktop overlay:
+//   - Its windows are *owned* by the window the game is drawn in (the NEXUS window when the game
+//     is inside it, the game's own window otherwise) and are not topmost. Windows keeps owned
+//     windows directly above their owner, moves them in the z-order with it, hides them when it
+//     is minimised, and lets other programs cover them like the game itself.
+//   - Position follows the game's picture: the client area of that window, minus the black bars
+//     of the game's aspect ratio (gameImageRect). A WinEvent hook on this process reports every
+//     move, resize, full-screen switch (F11) and minimise of that window, and the HUD is placed
+//     again immediately - not only on the next twice-a-second refresh - so it never stays where
+//     the window used to be (for example at the top of the monitor after leaving full screen).
+//   - It is click-through and never takes focus, and does not touch the game's rendering or input.
+//   - Drawing: a per-pixel-alpha bitmap (UpdateLayeredWindow): a translucent dark background with
+//     opaque text, in the style of a handheld's performance strip (small coloured labels, large
+//     values, small units), scaled with the picture's height.
+// A game in exclusive full screen covers every other window; the HUD needs borderless full screen
+// (the default) or a window.
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"sync"
 	"unsafe"
@@ -20,103 +32,95 @@ import (
 )
 
 var (
-	ovUser                     = windows.NewLazySystemDLL("user32.dll")
-	ovGdi                      = windows.NewLazySystemDLL("gdi32.dll")
-	procOvRegisterClassEx      = ovUser.NewProc("RegisterClassExW")
-	procOvCreateWindowEx       = ovUser.NewProc("CreateWindowExW")
-	procOvDefWindowProc        = ovUser.NewProc("DefWindowProcW")
-	procOvGetMessage           = ovUser.NewProc("GetMessageW")
-	procOvTranslateMessage     = ovUser.NewProc("TranslateMessage")
-	procOvDispatchMessage      = ovUser.NewProc("DispatchMessageW")
-	procOvSetTimer             = ovUser.NewProc("SetTimer")
-	procOvShowWindow           = ovUser.NewProc("ShowWindow")
-	procOvSetWindowPos         = ovUser.NewProc("SetWindowPos")
-	procOvSetLayeredAttributes = ovUser.NewProc("SetLayeredWindowAttributes")
-	procOvInvalidateRect       = ovUser.NewProc("InvalidateRect")
-	procOvBeginPaint           = ovUser.NewProc("BeginPaint")
-	procOvEndPaint             = ovUser.NewProc("EndPaint")
-	procOvFillRect             = ovUser.NewProc("FillRect")
-	procOvDrawText             = ovUser.NewProc("DrawTextW")
-	procOvMonitorFromWindow    = ovUser.NewProc("MonitorFromWindow")
-	procOvGetMonitorInfo       = ovUser.NewProc("GetMonitorInfoW")
-	procOvGetForegroundWindow  = ovUser.NewProc("GetForegroundWindow")
-	procOvGetAncestor          = ovUser.NewProc("GetAncestor")
-	procOvIsIconic             = ovUser.NewProc("IsIconic")
-	procOvIsWindowVisible      = ovUser.NewProc("IsWindowVisible")
-	procOvGetClientRect        = ovUser.NewProc("GetClientRect")
-	procOvClientToScreen       = ovUser.NewProc("ClientToScreen")
-	procOvCreateSolidBrush     = ovGdi.NewProc("CreateSolidBrush")
-	procOvDeleteObject         = ovGdi.NewProc("DeleteObject")
-	procOvSetBkMode            = ovGdi.NewProc("SetBkMode")
-	procOvSetTextColor         = ovGdi.NewProc("SetTextColor")
-	procOvCreateFont           = ovGdi.NewProc("CreateFontW")
-	procOvSelectObject         = ovGdi.NewProc("SelectObject")
+	ovUser                   = windows.NewLazySystemDLL("user32.dll")
+	ovGdi                    = windows.NewLazySystemDLL("gdi32.dll")
+	procOvRegisterClassEx    = ovUser.NewProc("RegisterClassExW")
+	procOvCreateWindowEx     = ovUser.NewProc("CreateWindowExW")
+	procOvDefWindowProc      = ovUser.NewProc("DefWindowProcW")
+	procOvGetMessage         = ovUser.NewProc("GetMessageW")
+	procOvTranslateMessage   = ovUser.NewProc("TranslateMessage")
+	procOvDispatchMessage    = ovUser.NewProc("DispatchMessageW")
+	procOvSetTimer           = ovUser.NewProc("SetTimer")
+	procOvShowWindow         = ovUser.NewProc("ShowWindow")
+	procOvIsIconic           = ovUser.NewProc("IsIconic")
+	procOvIsWindowVisible    = ovUser.NewProc("IsWindowVisible")
+	procOvGetClientRect      = ovUser.NewProc("GetClientRect")
+	procOvClientToScreen     = ovUser.NewProc("ClientToScreen")
+	procOvGetAncestor        = ovUser.NewProc("GetAncestor")
+	procOvSetWindowLongPtr   = ovUser.NewProc("SetWindowLongPtrW")
+	procOvUpdateLayered      = ovUser.NewProc("UpdateLayeredWindow")
+	procOvSetWinEventHook    = ovUser.NewProc("SetWinEventHook")
+	procOvGetDC              = ovUser.NewProc("GetDC")
+	procOvReleaseDC          = ovUser.NewProc("ReleaseDC")
+	procOvCreateCompatibleDC = ovGdi.NewProc("CreateCompatibleDC")
+	procOvDeleteDC           = ovGdi.NewProc("DeleteDC")
+	procOvCreateDIBSection   = ovGdi.NewProc("CreateDIBSection")
+	procOvDeleteObject       = ovGdi.NewProc("DeleteObject")
+	procOvSelectObject       = ovGdi.NewProc("SelectObject")
+	procOvSetBkMode          = ovGdi.NewProc("SetBkMode")
+	procOvSetTextColor       = ovGdi.NewProc("SetTextColor")
+	procOvSetTextAlign       = ovGdi.NewProc("SetTextAlign")
+	procOvCreateFont         = ovGdi.NewProc("CreateFontW")
+	procOvTextOut            = ovGdi.NewProc("TextOutW")
+	procOvGetTextExtentPoint = ovGdi.NewProc("GetTextExtentPoint32W")
+	procOvGetCurrentThreadID = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetCurrentThreadId")
 )
 
 const (
 	wsExLayered      = 0x00080000
 	wsExTransparent  = 0x00000020
-	wsExTopmost      = 0x00000008
 	wsExToolWindow   = 0x00000080
 	wsExNoActivate   = 0x08000000
 	wmTimer          = 0x0113
-	wmPaint          = 0x000F
 	swHide           = 0
 	swShowNoActivate = 4
-	lwaAlpha         = 0x2
-	swpNoActivate    = 0x0010
-	hwndTopmost      = ^uintptr(0) // (HWND)-1
+	gwlpHwndParent   = ^uintptr(7) // -8
+	ulwAlpha         = 2
+	evLocationChange = 0x800B
+	evMinimizeStart  = 0x0016
+	evMinimizeEnd    = 0x0017
+	evForeground     = 0x0003
+	winEventOutOfCtx = 0
 )
 
-type ovRect struct{ L, T, R, B int32 }
+type ovRect = pxRect
 
-// gameArea is where the game is on screen: the NEXUS window's client area when the game is drawn
-// inside it, or the game's own window; ok=false when it is not visible to the user (NEXUS is not
-// the active application or is minimised), so overlays never float over other programs or stay
-// behind at an old position.
-func gameArea(a *App) (ovRect, bool) {
-	main := a.UI.WindowHandle()
-	win := main
+// hudHost is the window the game is drawn in, and the area of it the game fills (screen
+// coordinates); ok=false when it is not visible (minimised, hidden, no game window yet).
+func hudHost(a *App) (host uintptr, area ovRect, ok bool) {
+	host = a.UI.WindowHandle()
 	if st := a.Emu.State(); !st.Embedded {
 		if g := a.Emu.GameWindow(); g != 0 {
-			win = g
+			host = g
 		}
 	}
-	if win == 0 {
-		return ovRect{}, false
+	if host == 0 {
+		return 0, ovRect{}, false
 	}
-	fg, _, _ := procOvGetForegroundWindow.Call()
-	root, _, _ := procOvGetAncestor.Call(fg, 3 /*GA_ROOTOWNER*/)
-	if fg == 0 || (root != main && fg != win) {
-		return ovRect{}, false
+	top, _, _ := procOvGetAncestor.Call(host, 2 /*GA_ROOT*/)
+	if top == 0 {
+		top = host
 	}
-	if ic, _, _ := procOvIsIconic.Call(main); ic != 0 {
-		return ovRect{}, false
+	if ic, _, _ := procOvIsIconic.Call(top); ic != 0 {
+		return top, ovRect{}, false
 	}
-	if vis, _, _ := procOvIsWindowVisible.Call(win); vis == 0 {
-		return ovRect{}, false
+	if vis, _, _ := procOvIsWindowVisible.Call(host); vis == 0 {
+		return top, ovRect{}, false
 	}
 	var r ovRect
-	procOvGetClientRect.Call(win, uintptr(unsafe.Pointer(&r)))
+	procOvGetClientRect.Call(host, uintptr(unsafe.Pointer(&r)))
 	pt := [2]int32{0, 0}
-	procOvClientToScreen.Call(win, uintptr(unsafe.Pointer(&pt[0])))
+	procOvClientToScreen.Call(host, uintptr(unsafe.Pointer(&pt[0])))
 	r.L, r.T, r.R, r.B = pt[0], pt[1], pt[0]+r.R, pt[1]+r.B
-	return r, r.R > r.L && r.B > r.T
+	return top, r, r.R > r.L && r.B > r.T
 }
 
-type ovMonitorInfo struct {
-	Size          uint32
-	Monitor, Work ovRect
-	Flags         uint32
+// gameArea is kept for the recorder and other callers: the game's area on screen.
+func gameArea(a *App) (ovRect, bool) {
+	_, r, ok := hudHost(a)
+	return r, ok
 }
-type ovPaint struct {
-	HDC      uintptr
-	Erase    int32
-	Rc       ovRect
-	Restore  int32
-	IncUpd   int32
-	Reserved [32]byte
-}
+
 type ovMsg struct {
 	Hwnd    uintptr
 	Message uint32
@@ -134,24 +138,35 @@ type ovClass struct {
 	ClassName                                *uint16
 	IconSm                                   uintptr
 }
+type ovBitmapInfo struct {
+	Size                       uint32
+	Width, Height              int32
+	Planes, BitCount           uint16
+	Compression, SizeImage     uint32
+	XPels, YPels, Used, Import int32
+}
+
+type hudWin struct {
+	hwnd  uintptr
+	owner uintptr
+	shown bool
+}
 
 type perfOverlay struct {
 	app     *App
 	mu      sync.Mutex
-	hwnd    uintptr
-	rec     uintptr // recording indicator ("● REC 01:23", top-right corner)
-	recText string
-	recOn   bool
-	text    string
-	dark    bool
-	shown   bool
-	height  int32
+	bar     hudWin
+	rec     hudWin
+	thread  uintptr
+	segs    []PerfSeg
+	host    uintptr // the window the game is drawn in, and its top-level window
+	top     uintptr
 	started bool
 }
 
 var overlay = &perfOverlay{}
 
-// StartPerfOverlay starts the overlay's own UI thread (once). Cheap while no game is in front.
+// StartPerfOverlay starts the HUD's own UI thread (once). Cheap while no game is in front.
 func (a *App) StartPerfOverlay() {
 	overlay.mu.Lock()
 	defer overlay.mu.Unlock()
@@ -164,21 +179,28 @@ func (a *App) StartPerfOverlay() {
 
 func (o *perfOverlay) loop() {
 	runtime.LockOSThread()
-	name, _ := windows.UTF16PtrFromString("NEXUSPerfOverlay")
+	name, _ := windows.UTF16PtrFromString("NEXUSGameHUD")
 	wc := ovClass{WndProc: windows.NewCallback(o.wndProc), ClassName: name}
 	wc.Size = uint32(unsafe.Sizeof(wc))
 	procOvRegisterClassEx.Call(uintptr(unsafe.Pointer(&wc)))
-	title, _ := windows.UTF16PtrFromString("NEXUS performance")
-	hwnd, _, _ := procOvCreateWindowEx.Call(wsExLayered|wsExTransparent|wsExTopmost|wsExToolWindow|wsExNoActivate,
-		uintptr(unsafe.Pointer(name)), uintptr(unsafe.Pointer(title)), wsPopup, 0, 0, 10, 10, 0, 0, 0, 0)
-	if hwnd == 0 {
+	mk := func(title string) uintptr {
+		t, _ := windows.UTF16PtrFromString(title)
+		h, _, _ := procOvCreateWindowEx.Call(wsExLayered|wsExTransparent|wsExToolWindow|wsExNoActivate,
+			uintptr(unsafe.Pointer(name)), uintptr(unsafe.Pointer(t)), wsPopup, 0, 0, 10, 10, 0, 0, 0, 0)
+		return h
+	}
+	o.bar.hwnd, o.rec.hwnd = mk("NEXUS performance"), mk("NEXUS recording")
+	if o.bar.hwnd == 0 {
 		return
 	}
-	o.hwnd = hwnd
-	recTitle, _ := windows.UTF16PtrFromString("NEXUS recording")
-	o.rec, _, _ = procOvCreateWindowEx.Call(wsExLayered|wsExTransparent|wsExTopmost|wsExToolWindow|wsExNoActivate,
-		uintptr(unsafe.Pointer(name)), uintptr(unsafe.Pointer(recTitle)), wsPopup, 0, 0, 10, 10, 0, 0, 0, 0)
-	procOvSetTimer.Call(hwnd, 1, 500, 0)
+	o.thread, _, _ = procOvGetCurrentThreadID.Call()
+	// moves, resizes (F11), minimise/restore and activation of this process's windows
+	cb := windows.NewCallback(o.winEvent)
+	pid := uintptr(os.Getpid())
+	procOvSetWinEventHook.Call(evLocationChange, evLocationChange, 0, cb, pid, 0, winEventOutOfCtx)
+	procOvSetWinEventHook.Call(evMinimizeStart, evMinimizeEnd, 0, cb, pid, 0, winEventOutOfCtx)
+	procOvSetWinEventHook.Call(evForeground, evForeground, 0, cb, 0, 0, winEventOutOfCtx)
+	procOvSetTimer.Call(o.bar.hwnd, 1, 500, 0) // readings twice a second
 	var m ovMsg
 	for {
 		r, _, _ := procOvGetMessage.Call(uintptr(unsafe.Pointer(&m)), 0, 0, 0)
@@ -190,144 +212,273 @@ func (o *perfOverlay) loop() {
 	}
 }
 
-func (o *perfOverlay) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
-	switch msg {
-	case wmTimer:
-		o.tick()
+// winEvent: the game's window moved, changed size or was minimised: place the HUD again now.
+func (o *perfOverlay) winEvent(hook, event, hwnd, idObject, idChild, thread, t uintptr) uintptr {
+	if int32(idObject) != 0 /*OBJID_WINDOW*/ || hwnd == o.bar.hwnd || hwnd == o.rec.hwnd {
 		return 0
-	case wmPaint:
-		if hwnd == o.rec {
-			o.paintRec(hwnd)
-		} else {
-			o.paint(hwnd)
+	}
+	switch event {
+	case evLocationChange: // only the game's window matters (not every control inside NEXUS)
+		if (hwnd == o.host || hwnd == o.top) && (o.bar.shown || o.rec.shown) {
+			o.update(false)
 		}
+	default:
+		o.update(false)
+	}
+	return 0
+}
+
+func (o *perfOverlay) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
+	if msg == wmTimer {
+		o.update(true)
 		return 0
 	}
 	r, _, _ := procOvDefWindowProc.Call(hwnd, uintptr(msg), wp, lp)
 	return r
 }
 
-func (o *perfOverlay) tick() {
-	o.tickRec()
-	a := o.app
-	cfg := a.Settings.Get().PerfMonitor
-	st := a.Emu.State()
-	area, visible := gameArea(a)
-	want := st.Running && st.Phase == "playing" && !st.Suspended && cfg.For(st.GameKey) && visible
-	if !want {
-		if o.shown {
-			procOvShowWindow.Call(o.hwnd, swHide)
-			o.shown = false
-		}
-		return
+func (o *perfOverlay) hide(w *hudWin) {
+	if w.shown {
+		procOvShowWindow.Call(w.hwnd, swHide)
+		w.shown = false
 	}
-	s := perf.Sample(a.Emu)
-	o.text = formatPerf(s, cfg.Metrics, "    ")
-	if p, ok := a.Profiles.Get(st.ProfileID); ok {
-		o.dark = p.Theme.Mode != "light"
-	}
-	// strip at the top or bottom of the game's area (the NEXUS window or the game's window)
-	scale := clampF(float64(cfg.Scale), 75, 200) / 100
-	o.height = int32(30 * scale)
-	w := area.R - area.L
-	y := area.T
-	if cfg.Position == "bottom" {
-		y = area.B - o.height
-	}
-	alpha := uintptr(clampF(float64(cfg.Opacity), 30, 100) * 255 / 100)
-	procOvSetLayeredAttributes.Call(o.hwnd, 0, alpha, lwaAlpha)
-	procOvSetWindowPos.Call(o.hwnd, hwndTopmost, uintptr(area.L), uintptr(y), uintptr(w), uintptr(o.height), swpNoActivate)
-	if !o.shown {
-		procOvShowWindow.Call(o.hwnd, swShowNoActivate)
-		o.shown = true
-	}
-	procOvInvalidateRect.Call(o.hwnd, 0, 1)
 }
+
+// own makes the HUD window belong to the window the game is drawn in.
+func (o *perfOverlay) own(w *hudWin, owner uintptr) {
+	if w.owner != owner {
+		procOvSetWindowLongPtr.Call(w.hwnd, gwlpHwndParent, owner)
+		w.owner = owner
+	}
+}
+
+// update places (and with sample=true, refreshes) the strip and the REC indicator.
+func (o *perfOverlay) update(sample bool) {
+	a := o.app
+	st := a.Emu.State()
+	cfg := a.Settings.Get().PerfMonitor
+	owner, area, visible := hudHost(a)
+	o.top = owner
+	o.host = a.UI.WindowHandle()
+	if !st.Embedded {
+		if g := a.Emu.GameWindow(); g != 0 {
+			o.host = g
+		}
+	}
+	playing := st.Running && st.Phase == "playing" && !st.Suspended && visible
+	img := gameImageRect(area, hudAspect(a, st.GameKey))
+	barH := int32(0)
+
+	if playing && cfg.For(st.GameKey) {
+		if sample || o.segs == nil {
+			o.segs = perfSegments(perf.Sample(a.Emu), cfg.Metrics)
+		}
+		segs := o.segs
+		if cfg.Layout == "fps" {
+			segs = nil
+			for _, s := range o.segs {
+				if s.Kind == "fps" || s.Kind == "frame" {
+					segs = append(segs, s)
+				}
+			}
+			if len(segs) == 0 {
+				segs = perfSegments(perf.Sample(a.Emu), []string{"fps"})
+			}
+		}
+		barH = hudBarHeight(img, cfg.Scale)
+		x, y, w := img.L, img.T, img.W()
+		if cfg.Position == "bottom" {
+			y = img.B - barH
+		}
+		bgAlpha := byte(clampF(float64(cfg.Opacity), 30, 100) * 255 / 100)
+		o.own(&o.bar, owner)
+		if cfg.Layout == "fps" { // compact: a small box in the picture's corner
+			margin := barH / 3
+			x, y = img.L+margin, y+margin
+			w = 0 // fit the text
+		}
+		o.draw(&o.bar, x, y, w, barH, bgAlpha, segs, false)
+		if cfg.Layout == "fps" {
+			barH += barH / 3
+		}
+	} else {
+		o.hide(&o.bar)
+		o.segs = nil
+	}
+
+	if a.Recorder != nil && a.Recorder.Active() && playing {
+		d := int(a.Recorder.Elapsed().Seconds())
+		t := fmt.Sprintf("%02d:%02d", d/60, d%60)
+		if d >= 3600 {
+			t = fmt.Sprintf("%d:%02d:%02d", d/3600, d/60%60, d%60)
+		}
+		h := hudBarHeight(img, 100)
+		margin := h / 2
+		y := img.T + margin
+		if cfg.Position != "bottom" {
+			y += barH
+		}
+		o.own(&o.rec, owner)
+		o.draw(&o.rec, img.R-margin, y, -1, h, 215, []PerfSeg{{Kind: "rec", Label: "●", Value: "REC", Unit: t}}, true)
+	} else {
+		o.hide(&o.rec)
+	}
+}
+
+// HUD colours (NEXUS's own palette): labels by kind, values white, units grey.
+var hudLabelColour = map[string]uintptr{"fps": rgb(100, 210, 255), "frame": rgb(100, 210, 255), "cpu": rgb(10, 132, 255),
+	"gpu": rgb(48, 209, 88), "mem": rgb(191, 90, 242), "temp": rgb(255, 159, 10), "rec": rgb(255, 59, 48)}
 
 func rgb(r, g, b uint32) uintptr { return uintptr(r | g<<8 | b<<16) }
 
-func (o *perfOverlay) paint(hwnd uintptr) {
-	var ps ovPaint
-	hdc, _, _ := procOvBeginPaint.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
-	defer procOvEndPaint.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
-	bg, fg := rgb(22, 23, 26), rgb(244, 245, 247)
-	if !o.dark {
-		bg, fg = rgb(244, 245, 247), rgb(28, 29, 32)
-	}
-	brush, _, _ := procOvCreateSolidBrush.Call(bg)
-	procOvFillRect.Call(hdc, uintptr(unsafe.Pointer(&ps.Rc)), brush)
-	procOvDeleteObject.Call(brush)
-	face, _ := windows.UTF16PtrFromString("Segoe UI Semibold")
-	font, _, _ := procOvCreateFont.Call(uintptr(-int32(float64(o.height)*0.55)), 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 5 /*CLEARTYPE*/, 0, uintptr(unsafe.Pointer(face)))
-	old, _, _ := procOvSelectObject.Call(hdc, font)
-	procOvSetBkMode.Call(hdc, 1 /*TRANSPARENT*/)
-	procOvSetTextColor.Call(hdc, fg)
-	text, _ := windows.UTF16FromString(o.text)
-	procOvDrawText.Call(hdc, uintptr(unsafe.Pointer(&text[0])), uintptr(len(text)-1), uintptr(unsafe.Pointer(&ps.Rc)), 0x1|0x4|0x20 /*CENTER|VCENTER|SINGLELINE*/)
-	procOvSelectObject.Call(hdc, old)
-	procOvDeleteObject.Call(font)
+func newHUDFont(px int32, weight int) uintptr {
+	face, _ := windows.UTF16PtrFromString("Segoe UI")
+	f, _, _ := procOvCreateFont.Call(uintptr(-px), 0, 0, 0, uintptr(weight), 0, 0, 0, 1, 0, 0, 4 /*ANTIALIASED*/, 0, uintptr(unsafe.Pointer(face)))
+	return f
 }
 
-// tickRec shows the recording indicator while a recording runs and the game is in front.
-func (o *perfOverlay) tickRec() {
-	a := o.app
-	if o.rec == 0 {
+func textWidth(dc uintptr, s string) int32 {
+	if s == "" {
+		return 0
+	}
+	u, _ := windows.UTF16FromString(s)
+	var sz [2]int32
+	procOvGetTextExtentPoint.Call(dc, uintptr(unsafe.Pointer(&u[0])), uintptr(len(u)-1), uintptr(unsafe.Pointer(&sz[0])))
+	return sz[0]
+}
+
+func textOut(dc uintptr, x, y int32, s string, col uintptr) {
+	if s == "" {
 		return
 	}
-	st := a.Emu.State()
-	area, visible := gameArea(a)
-	want := a.Recorder != nil && a.Recorder.Active() && st.Running && st.Phase == "playing" && !st.Suspended && visible
-	if !want {
-		if o.recOn {
-			procOvShowWindow.Call(o.rec, swHide)
-			o.recOn = false
+	u, _ := windows.UTF16FromString(s)
+	procOvSetTextColor.Call(dc, col)
+	procOvTextOut.Call(dc, uintptr(x), uintptr(y), uintptr(unsafe.Pointer(&u[0])), uintptr(len(u)-1))
+}
+
+// draw renders segments into a per-pixel-alpha bitmap and shows it at (x, y). w>0: that width
+// (text left-aligned); w==0: fitted to the text; w<0: fitted, with x as the right edge.
+func (o *perfOverlay) draw(win *hudWin, x, y, w, h int32, bgAlpha byte, segs []PerfSeg, pill bool) {
+	screen, _, _ := procOvGetDC.Call(0)
+	dc, _, _ := procOvCreateCompatibleDC.Call(screen)
+	procOvReleaseDC.Call(0, screen)
+	defer procOvDeleteDC.Call(dc)
+	labelF, valueF, unitF := newHUDFont(h*40/100, 700), newHUDFont(h*58/100, 700), newHUDFont(h*40/100, 600)
+	defer procOvDeleteObject.Call(labelF)
+	defer procOvDeleteObject.Call(valueF)
+	defer procOvDeleteObject.Call(unitF)
+	pad, gapLV, gapSeg := h*45/100, h*18/100, h*80/100
+
+	// measure
+	width := pad
+	type pos struct{ l, v, u int32 }
+	at := make([]pos, len(segs))
+	for i, s := range segs {
+		if i > 0 {
+			width += gapSeg
+			if s.Label == "" { // a temperature joined to the reading before it
+				width -= gapSeg / 2
+			}
 		}
+		procOvSelectObject.Call(dc, labelF)
+		at[i].l = width
+		if lw := textWidth(dc, s.Label); lw > 0 {
+			width += lw + gapLV
+		}
+		procOvSelectObject.Call(dc, valueF)
+		at[i].v = width
+		width += textWidth(dc, s.Value)
+		procOvSelectObject.Call(dc, unitF)
+		at[i].u = width + h*8/100
+		if uw := textWidth(dc, s.Unit); uw > 0 {
+			width += h*8/100 + uw
+		}
+	}
+	width += pad
+	switch {
+	case w < 0:
+		x -= width
+		w = width
+	case w == 0:
+		w = width
+	}
+	if w < 8 || h < 8 {
+		o.hide(win)
 		return
 	}
-	d := int(a.Recorder.Elapsed().Seconds())
-	if d >= 3600 {
-		o.recText = fmt.Sprintf("REC %d:%02d:%02d", d/3600, d/60%60, d%60)
-	} else {
-		o.recText = fmt.Sprintf("REC %02d:%02d", d/60, d%60)
+	// bitmap (top-down BGRA)
+	bi := ovBitmapInfo{Width: w, Height: -h, Planes: 1, BitCount: 32}
+	bi.Size = uint32(unsafe.Sizeof(bi))
+	var bits unsafe.Pointer
+	bmp, _, _ := procOvCreateDIBSection.Call(dc, uintptr(unsafe.Pointer(&bi)), 0, uintptr(unsafe.Pointer(&bits)), 0, 0)
+	if bmp == 0 || bits == nil {
+		return
 	}
-	const w, h, margin = 150, 34, 18
-	x := area.R - w - margin
-	y := area.T + margin
-	if cfg := a.Settings.Get().PerfMonitor; cfg.Position != "bottom" && cfg.For(st.GameKey) {
-		y += o.height // below the performance strip
+	defer procOvDeleteObject.Call(bmp)
+	oldBmp, _, _ := procOvSelectObject.Call(dc, bmp)
+	defer procOvSelectObject.Call(dc, oldBmp)
+	px := unsafe.Slice((*uint32)(bits), int(w)*int(h))
+	const bg = 0x000E0F12 // BGR of the background (14,15,18)
+	for i := range px {
+		px[i] = bg
 	}
-	procOvSetLayeredAttributes.Call(o.rec, 0, 225, lwaAlpha)
-	procOvSetWindowPos.Call(o.rec, hwndTopmost, uintptr(x), uintptr(y), w, h, swpNoActivate)
-	if !o.recOn {
-		procOvShowWindow.Call(o.rec, swShowNoActivate)
-		o.recOn = true
+	procOvSetBkMode.Call(dc, 1 /*TRANSPARENT*/)
+	procOvSetTextAlign.Call(dc, 24 /*TA_BASELINE*/)
+	base := h * 69 / 100
+	for i, s := range segs {
+		procOvSelectObject.Call(dc, labelF)
+		textOut(dc, at[i].l, base, s.Label, hudLabelColour[s.Kind])
+		procOvSelectObject.Call(dc, valueF)
+		textOut(dc, at[i].v, base, s.Value, rgb(244, 245, 247))
+		procOvSelectObject.Call(dc, unitF)
+		textOut(dc, at[i].u, base, s.Unit, rgb(152, 156, 164))
 	}
-	procOvInvalidateRect.Call(o.rec, 0, 1)
+	// alpha: background translucent, text opaque; rounded ends for the pill and the compact box
+	radius := int32(0)
+	if pill || w < 2*h*6 {
+		radius = h / 2
+	}
+	for yy := int32(0); yy < h; yy++ {
+		for xx := int32(0); xx < w; xx++ {
+			i := yy*w + xx
+			c := px[i] & 0xFFFFFF
+			a := uint32(255)
+			if c == bg {
+				a = uint32(bgAlpha)
+			}
+			if radius > 0 && outsideRound(xx, yy, w, h, radius) {
+				a = 0
+			}
+			r, g, b := (c>>16)&0xFF*a/255, (c>>8)&0xFF*a/255, c&0xFF*a/255
+			px[i] = a<<24 | r<<16 | g<<8 | b
+		}
+	}
+	pt := [2]int32{x, y}
+	size := [2]int32{w, h}
+	src := [2]int32{0, 0}
+	blend := uint32(0x01FF0000) // AC_SRC_OVER, 0, 255, AC_SRC_ALPHA
+	procOvUpdateLayered.Call(win.hwnd, 0, uintptr(unsafe.Pointer(&pt[0])), uintptr(unsafe.Pointer(&size[0])), dc,
+		uintptr(unsafe.Pointer(&src[0])), 0, uintptr(unsafe.Pointer(&blend)), ulwAlpha)
+	if !win.shown {
+		procOvShowWindow.Call(win.hwnd, swShowNoActivate)
+		win.shown = true
+	}
 }
 
-func (o *perfOverlay) paintRec(hwnd uintptr) {
-	var ps ovPaint
-	hdc, _, _ := procOvBeginPaint.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
-	defer procOvEndPaint.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
-	brush, _, _ := procOvCreateSolidBrush.Call(rgb(20, 20, 22))
-	procOvFillRect.Call(hdc, uintptr(unsafe.Pointer(&ps.Rc)), brush)
-	procOvDeleteObject.Call(brush)
-	face, _ := windows.UTF16PtrFromString("Segoe UI Semibold")
-	px := int32(-17) // font height in pixels (negative: character height)
-	font, _, _ := procOvCreateFont.Call(uintptr(px), 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 5, 0, uintptr(unsafe.Pointer(face)))
-	old, _, _ := procOvSelectObject.Call(hdc, font)
-	procOvSetBkMode.Call(hdc, 1)
-	// red dot, then the time
-	dot := ps.Rc
-	dot.R = dot.L + 34
-	procOvSetTextColor.Call(hdc, rgb(235, 40, 40))
-	d, _ := windows.UTF16FromString("\u25CF")
-	procOvDrawText.Call(hdc, uintptr(unsafe.Pointer(&d[0])), uintptr(len(d)-1), uintptr(unsafe.Pointer(&dot)), 0x1|0x4|0x20)
-	txt := ps.Rc
-	txt.L += 30
-	procOvSetTextColor.Call(hdc, rgb(245, 245, 247))
-	t, _ := windows.UTF16FromString(o.recText)
-	procOvDrawText.Call(hdc, uintptr(unsafe.Pointer(&t[0])), uintptr(len(t)-1), uintptr(unsafe.Pointer(&txt)), 0x1|0x4|0x20)
-	procOvSelectObject.Call(hdc, old)
-	procOvDeleteObject.Call(font)
+func outsideRound(x, y, w, h, r int32) bool {
+	cx, cy := int32(-1), int32(-1)
+	switch {
+	case x < r && y < r:
+		cx, cy = r, r
+	case x >= w-r && y < r:
+		cx, cy = w-r-1, r
+	case x < r && y >= h-r:
+		cx, cy = r, h-r-1
+	case x >= w-r && y >= h-r:
+		cx, cy = w-r-1, h-r-1
+	default:
+		return false
+	}
+	dx, dy := x-cx, y-cy
+	return dx*dx+dy*dy > r*r
 }
