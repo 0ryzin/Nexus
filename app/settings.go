@@ -114,7 +114,7 @@ func DefaultSettings() GlobalSettings {
 	s.Library.OnlineArtwork = true
 	s.Library.NlibURL = "https://api.nlib.cc"
 	s.Library.ArtProviders = []string{}
-	s.Engine = map[string]string{}
+	s.Engine = map[string]string{"graphics.gpu": gpuAuto}
 	s.Updates = UpdateSettings{AutoCheck: true, Repo: defaultReleaseRepo}
 	s.Emulator = EmulatorSettings{Fullscreen: true, QuitCombo: true, ManageSaves: true, WhoPlays: "several", HomeKey: "H", HomeButton: true,
 		FullscreenKey: "F11", ScreenshotKey: "Alt+F12", CaptureButton: true, FadeIn: true, HomeAction: "background", Overrides: map[string]string{}}
@@ -171,6 +171,9 @@ func LoadSettings(p *Paths) (*SettingsStore, error) {
 			st.s.Emulator.HomeAction = "background"
 		}
 		st.s.KeysVersion, changed = 2, true
+	}
+	if _, ok := st.s.Engine["graphics.gpu"]; !ok { // 0.5.0: the fastest graphics card by default
+		st.s.Engine["graphics.gpu"], changed = gpuAuto, true
 	}
 	if changed {
 		_ = st.saveLocked()
