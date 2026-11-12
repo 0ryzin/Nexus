@@ -24,12 +24,13 @@ package. 0.5.0 is in development and not released.
 4. **Documentation** matches the release: README, platform page, release notes, licences.
 5. **Licences and source.** The complete corresponding engine source and third-party notices
    published alongside the binary.
-6. Two consecutive 0.x releases with no regression reported in the areas above.
+6. **NEXUS Account** either deployed (service online, privacy notice, backups, tested from two real PCs) or hidden from the interface for 1.0.0, so no release shows an account feature that cannot be used.
+7. Two consecutive 0.x releases with no regression reported in the areas above.
 
 ## Platforms
 
 - **Windows x64:** the only platform 1.0.0 is planned for.
-- **Linux and macOS:** listed as available only once a real build exists, has been tested with
+- **Linux and macOS:** the account code already uses Linux conventions (XDG data folder, a 0600 token file), but listed as available only once a real build exists, has been tested with
   games and is attached to a release. Until then the platform page says "planned".
 - **Android:** internal. No APK, release or download link until the owner decides otherwise.
 

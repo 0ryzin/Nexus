@@ -79,6 +79,7 @@ function accentTextFor(hex, light) {
 
 // ------------------------------------------------------------------ icons
 const I = {
+  cloud: 'M6.5 19a4.5 4.5 0 0 1-.6-8.96A6.5 6.5 0 0 1 18.3 8.6 5.2 5.2 0 0 1 17.5 19Zm0-2h11a3.2 3.2 0 0 0 .3-6.39l-1.06-.1-.3-1.02A4.5 4.5 0 0 0 7.9 11.2l-.2.95-.97.1A2.5 2.5 0 0 0 6.5 17Z',
   media: 'M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm0 2v10h16V7Zm3 8 3-4 2.2 2.7L15 10l4 5Zm1-6.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Z',
   grid: 'M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z',
   person: 'M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0 2c-5 0-9 2.5-9 5.5V22h18v-2.5C21 16.5 17 14 12 14Z',
@@ -769,6 +770,7 @@ async function loadState() {
   Object.assign(S, { app: st.app, settings: st.settings, profiles: st.profiles || [], emulator: st.emulator, engine: st.engine || {}, formats: st.formats, scanDirs: st.scanDirs, gamesDir: st.gamesDir, avatarColors: st.avatarColors, avatarGlyphs: st.avatarGlyphs, maxProfiles: st.maxProfiles || 8, library: st.library, features: st.features || {} });
   if (S.profile) S.profile = profileById(S.profile.id) || null;
   api('/api/platform').then(pl => { S.platform = pl; }).catch(() => { });
+  AccountUI.load().then(() => { if (S.screen === 'home') renderBanner(); });
 }
 async function loadGames() {
   const r = await api('/api/games?profile=' + encodeURIComponent(S.profile?.id || ''));
@@ -1023,6 +1025,8 @@ function editProfile(id) {
       const f = await pickImage(); if (!f) return;
       try { await api(`/api/profiles/${id}/avatar`, { body: f }); await loadState(); rebuild(); refreshTop(); } catch (e) { alertDlg('Could not use that picture', e.message); }
     } }));
+    body.append(h('h3', {}, 'NEXUS Account'));
+    body.append(AccountUI.row());
     body.append(h('h3', {}, 'Save data'));
     body.append(rowButton('Save Data…', { sub: 'This user’s saves: view slots, import from a folder or ZIP, export, back up, restore or delete.', onClick: () => saveDataPage(id) }));
     body.append(h('h3', {}, ''));
@@ -1354,6 +1358,7 @@ async function patchProfile(id, patch) {
 // ---------- top bar
 function refreshTop() { renderTopbar(); }
 function renderTopbar() {
+  AccountUI.top();
   const left = $('#tb-profiles'); if (!left) return;
   left.innerHTML = '';
   const ordered = S.profile ? [S.profile, ...S.profiles.filter(p => p.id !== S.profile.id)] : S.profiles;
@@ -1467,6 +1472,7 @@ function renderHome() {
   const items = [
     ['Library', I.grid, '#ff4f4f', () => showLibrary()],
     ['Users', I.person, '#ff9f0a', () => showWho()],
+    ['NEXUS Account', I.cloud, '#0a84ff', () => showSettings('account')],
     ['Media', I.media, '#ffd60a', () => Media.show()],
     ['Controllers', I.pad, '#30d158', () => Controllers.show()],
     ['Themes', I.palette, '#bf5af2', () => showSettings('appearance')],
@@ -1506,6 +1512,7 @@ function renderBanner() {
   else if (en.checking) { /* the engine is being verified and loaded in the background */ }
   else if (!en.installed) { msg = h('span', { class: 'grow' }, h('b', {}, 'The NEXUS engine cannot be used. '), en.problem || 'Extract the complete NEXUS ZIP again.'); label = 'Details'; action = () => showSettings('engine'); }
   else if (S.games.some(g => g.kind !== 'homebrew') && !en.keys) { msg = h('span', { class: 'grow' }, h('b', {}, 'System files needed. '), 'Install the prod.keys and firmware from your own console to play commercial games.'); label = 'Install'; action = () => showSettings('sysfiles'); }
+  if (!msg && AccountUI.onboard(b)) return;
   if (!msg) { b.hidden = true; return; }
   b.hidden = false;
   b.append(svg(I.info), msg);
@@ -2242,12 +2249,12 @@ $('#play-close').addEventListener('click', async () => {
 
 // ---------- settings
 const CATS = [
-  ['appearance', 'Appearance'], ['startup', 'Startup'], ['library', 'Game library'], ['controllers', 'Controllers'], ['users', 'Users'], ['savedata', 'Save Data'], ['system', 'System'], ['updates', 'Updates'],
+  ['account', 'NEXUS Account'], ['appearance', 'Appearance'], ['startup', 'Startup'], ['library', 'Game library'], ['controllers', 'Controllers'], ['users', 'Users'], ['savedata', 'Save Data'], ['system', 'System'], ['updates', 'Updates'],
   ['-', 'System & Emulation'], ['engine', 'NEXUS Engine'], ['sysfiles', 'System files'], ['emusettings', 'Emulation settings'], ['emulator', 'Game sessions & saves'], ['amiibo', 'Amiibo'], ['recording', 'Screen recording'], ['perf', 'Performance Monitor'],
 ];
 const NAVCATS = () => catList().filter(c => c[0] !== '-' && c[0] !== 'controllers');
 // NEXUS Sync appears only when the experimental Device Linking feature is switched on
-const catList = () => S.features?.deviceLink ? [...CATS, ['sync', 'NEXUS Sync (experimental)']] : CATS;
+const catList = () => S.features?.deviceLink ? [...CATS, ['sync', 'Local Sync (experimental)']] : CATS;
 function showSettings(cat = 'appearance') {
   const cats = $('#set-cats'); cats.innerHTML = '';
   for (const [id, label] of catList()) {
@@ -2388,56 +2395,157 @@ const AmiiboUI = {
     catch (e) { alertDlg('The amiibo was not added', e.message); }
     return null;
   },
-  async createVirtual(owner) {
-    const q = await dialog({ title: 'Create a virtual amiibo', text: 'Type the amiibo’s name to look it up in the open amiibo database (AmiiboAPI; names only, no images or data are downloaded), or type its 16-digit amiibo ID. A virtual amiibo works only in NEXUS: it is not an authenticated Nintendo amiibo and cannot be written to a figure or card.', input: { placeholder: 'Name or amiibo ID', max: 60 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Next', value: true, primary: true }] });
-    if (!q || !q.trim()) return null;
-    let pick = null;
-    const id = q.trim().toLowerCase().replace(/^0x/, '');
-    if (/^[0-9a-f]{14}02$/.test(id)) pick = { id, name: '', series: '' };
-    else {
-      let res;
-      try { res = (await api('/api/amiibo/lookup?q=' + encodeURIComponent(q.trim()))).results || []; }
-      catch (e) { alertDlg('The amiibo database could not be reached', e.message); return null; }
-      if (!res.length) { alertDlg('No amiibo found', `Nothing in the amiibo database is called “${q.trim()}”. Check the spelling, or type the amiibo ID.`); return null; }
-      const items = res.map((r, i) => ({ v: i, l: `${r.name} · ${r.amiiboSeries}${r.type && r.type !== 'Figure' ? ' (' + r.type + ')' : ''}` }));
-      const i = await listPick('Which amiibo?', items);
-      if (i === undefined) return null;
-      pick = { id: (res[i].head + res[i].tail).toLowerCase(), name: res[i].name, series: res[i].amiiboSeries };
-    }
-    try { const a = await api('/api/amiibo/virtual', { body: { amiiboId: pick.id, name: pick.name, series: pick.series, owner: owner || '' } }); toast(`Created ${a.name} (virtual)`, I.check); return a; }
-    catch (e) { alertDlg('The virtual amiibo was not created', e.message); return null; }
+  // ----- Amiibo Creator: create or edit a NEXUS virtual amiibo (or edit an imported dump's details)
+  TYPES: ['Figure', 'Card', 'Yarn', 'Band', 'Other'],
+  createVirtual(owner) { return this.creator(null, owner); },
+  creator(existing, owner) {
+    return new Promise(resolve => {
+      const ed = existing || {};
+      const isNew = !existing;
+      const v = { amiiboId: ed.amiiboId || '', name: ed.name || '', character: ed.character || '', series: ed.series || '', gameSeries: ed.gameSeries || '', type: ed.type || '', notes: ed.notes || '', owner: existing ? (ed.owner || '') : (owner || '') };
+      let artFile = null, artClear = false;
+      const inp = (key, attrs = {}) => { const el = h(attrs.tag || 'input', { type: 'text', 'data-nav': true, spellcheck: 'false', maxlength: attrs.max || 60, placeholder: attrs.placeholder || '', ...(attrs.ro ? { readonly: true } : {}) }); el.value = v[key]; el.addEventListener('input', () => { v[key] = el.value; preview(); }); return el; };
+      const field = (label, el, sub) => h('label', { class: 'field' }, h('span', {}, label), el, sub && h('small', {}, sub));
+      const sel = (key, opts) => { const el = h('select', { 'data-nav': true }, ...opts.map(o => h('option', { value: o.v, selected: o.v === v[key] || undefined }, o.l))); el.addEventListener('change', () => { v[key] = el.value; preview(); }); return el; };
+      // search the open amiibo database (AmiiboAPI; names and IDs only)
+      const q = h('input', { type: 'text', 'data-nav': true, placeholder: 'Search: Link, Pikachu, Super Smash Bros.…', spellcheck: 'false' });
+      const by = h('select', { 'data-nav': true }, h('option', { value: 'name' }, 'Name'), h('option', { value: 'character' }, 'Character'), h('option', { value: 'series' }, 'Amiibo series'), h('option', { value: 'gameseries' }, 'Game series'));
+      const go = h('button', { 'data-nav': true, class: 'btn' }, 'Search');
+      const results = h('div', { class: 'am-results' });
+      const search = async () => {
+        if (!q.value.trim()) return;
+        results.replaceChildren(h('p', { class: 'note' }, 'Searching…'));
+        try {
+          const r = (await api(`/api/amiibo/lookup?q=${encodeURIComponent(q.value.trim())}&by=${by.value}`)).results || [];
+          results.replaceChildren(...(r.length ? r.map(x => {
+            const b = h('button', { class: 'am-result', 'data-nav': true }, h('b', {}, x.name), h('span', {}, `${x.amiiboSeries} · ${x.type}`));
+            b.addEventListener('click', () => {
+              Object.assign(v, { amiiboId: (x.head + x.tail).toLowerCase(), character: x.character || x.name, series: x.amiiboSeries, gameSeries: x.gameSeries, type: this.TYPES.includes(x.type) ? x.type : 'Other' });
+              if (!v.name) v.name = x.name;
+              fill(); preview(); $$('.am-result', results).forEach(e => e.classList.toggle('sel', e === b));
+            });
+            return b;
+          }) : [h('p', { class: 'note' }, 'Nothing found. Check the spelling, try another kind of search, or type the amiibo ID below.')]));
+        } catch (e) { results.replaceChildren(h('p', { class: 'note' }, e.message)); }
+      };
+      go.addEventListener('click', search);
+      q.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); search(); } });
+      const els = {
+        amiiboId: inp('amiiboId', { max: 18, placeholder: '16 hexadecimal digits ending in 02', ro: !isNew }), name: inp('name', { max: 40, placeholder: 'Shown in NEXUS' }), character: inp('character'), series: inp('series'), gameSeries: inp('gameSeries'),
+        type: sel('type', [{ v: '', l: '—' }, ...this.TYPES.map(t => ({ v: t, l: t }))]), owner: sel('owner', [{ v: '', l: 'Everyone' }, ...S.profiles.map(p => ({ v: p.id, l: p.name }))]), notes: inp('notes', { tag: 'textarea', max: 500, placeholder: 'Anything you want to remember' }),
+      };
+      const fill = () => { for (const k of ['amiiboId', 'name', 'character', 'series', 'gameSeries', 'type', 'owner', 'notes']) els[k].value = v[k]; };
+      const artBtn = h('button', { 'data-nav': true, class: 'btn' }, 'Choose picture…');
+      const artRm = h('button', { 'data-nav': true, class: 'btn' }, 'Remove picture');
+      const artUrl = () => artFile ? URL.createObjectURL(artFile) : (!artClear && ed.art ? `/api/amiibo/art/${ed.id}?r=${ed.updated || 0}` : '');
+      artBtn.addEventListener('click', async () => { const f = await pickImage(); if (f) { artFile = f; artClear = false; preview(); } });
+      artRm.addEventListener('click', () => { artFile = null; artClear = true; preview(); });
+      // live preview
+      const card = h('div', { class: 'am-card' });
+      const preview = () => {
+        const url = artUrl();
+        const pic = url ? h('div', { class: 'am-pic', style: { backgroundImage: `url("${url}")` } }) : h('div', { class: 'am-pic none' }, (v.character || v.name || '?').trim().slice(0, 1).toUpperCase());
+        const okId = /^[0-9a-f]{14}02$/i.test(v.amiiboId.replace(/^0x/i, ''));
+        card.replaceChildren(pic, h('b', {}, v.name || v.character || 'Unnamed amiibo'),
+          h('span', {}, [v.character, v.type].filter(Boolean).join(' · ') || 'No details yet'), h('span', {}, v.series || ''),
+          h('code', { class: okId ? '' : 'bad' }, okId ? v.amiiboId.replace(/^0x/i, '').toLowerCase() : (v.amiiboId ? 'Not a valid amiibo ID' : 'No amiibo ID yet')),
+          h('span', {}, 'User: ' + this.ownerName(v.owner)),
+          h('span', { class: 'am-badge' }, isNew || ed.kind === 'virtual' ? 'NEXUS virtual amiibo · works only in NEXUS' : (this.KIND[ed.kind] || 'Imported dump') + ' · data unchanged'));
+        artRm.hidden = !url;
+      };
+      fill(); preview();
+      const err = h('p', { class: 'form-err', role: 'alert' });
+      const form = h('div', { class: 'am-form' },
+        isNew && h('div', { class: 'am-search' }, h('div', { class: 'am-q' }, q, by, go), results),
+        field('Amiibo ID', els.amiiboId, isNew ? 'Filled in when you pick a search result, or type it (from a database or your figure’s details).' : 'The amiibo ID of an existing entry cannot change. Duplicate it, or create a new one.'),
+        field('Display name', els.name), h('div', { class: 'am-2' }, field('Character', els.character), field('Type', els.type)),
+        h('div', { class: 'am-2' }, field('Amiibo series', els.series), field('Game series', els.gameSeries)),
+        field('User', els.owner, 'Whose amiibo this is. Shown first when that user plays.'), field('Notes', els.notes),
+        h('div', { class: 'am-art' }, artBtn, artRm, h('small', {}, 'Your own picture (PNG, JPEG or WEBP). Kept on this device.')), err);
+      const cancel = h('button', { 'data-nav': true }, 'Cancel');
+      const save = h('button', { 'data-nav': true, class: 'primary' }, isNew ? 'Create' : 'Save');
+      const box = h('div', { class: 'dialog am-creator', role: 'dialog' },
+        h('div', { class: 'd-body' }, h('h2', {}, isNew ? 'Amiibo Creator' : `Edit ${ed.name}`),
+          h('p', { class: 'note' }, isNew ? 'A NEXUS virtual amiibo is a new, blank figure that NEXUS can give a game when it scans. It works only in NEXUS: it is not an authenticated Nintendo amiibo and cannot be written to a figure or card.' : 'Only the details NEXUS shows change; the amiibo data itself stays the same.'),
+          h('div', { class: 'am-grid' }, form, card)),
+        h('div', { class: 'd-actions', 'data-row': 'strict' }, cancel, save));
+      let done = false;
+      const finish = r => { if (done) return; done = true; layer.close(); resolve(r); };
+      cancel.addEventListener('click', () => finish(null));
+      save.addEventListener('click', async () => {
+        err.textContent = '';
+        const body = { name: v.name.trim(), character: v.character, series: v.series, gameSeries: v.gameSeries, type: v.type, notes: v.notes, owner: v.owner };
+        save.disabled = true;
+        try {
+          let a = isNew ? await api('/api/amiibo/virtual', { body: { amiiboId: v.amiiboId, ...body } }) : await api('/api/amiibo/edit', { body: { id: ed.id, ...body } });
+          if (artFile) a = await api(`/api/amiibo/art/${a.id}`, { body: artFile }).catch(e => { toast(e.message, I.warn); return a; });
+          else if (artClear && ed.art) a = await api(`/api/amiibo/art/${a.id}`, { body: new Blob([]) });
+          toast(isNew ? `Created ${a.name} (virtual)` : 'Saved', I.check);
+          finish(a);
+        } catch (e) { err.textContent = e.message; } finally { save.disabled = false; }
+      });
+      const layer = openLayer(box, { onBack: () => finish(null), initial: isNew ? q : els.name });
+      if (S.lastInput !== 'gamepad') setTimeout(() => (isNew ? q : els.name).focus(), 50);
+    });
   },
   async manage(a) {
-    const v = await listPick(a.name, [{ v: 'rename', l: 'Rename' }, { v: 'owner', l: `User: ${this.ownerName(a.owner)}` }, { v: 'info', l: 'Details' }, { v: 'remove', l: 'Remove from library' }]);
-    if (v === 'rename') {
-      const n = await dialog({ title: 'Rename', input: { value: a.name, max: 40 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Save', value: true, primary: true }] });
-      if (n && n.trim()) await api('/api/amiibo/update', { body: { id: a.id, name: n.trim() } }).catch(e => toast(e.message, I.warn));
+    const opts = [{ v: 'edit', l: 'Edit details…' }, { v: 'duplicate', l: 'Duplicate' }, { v: 'owner', l: `User: ${this.ownerName(a.owner)}` }, { v: 'info', l: 'Details' }, { v: 'remove', l: 'Remove from library' }];
+    const v = await listPick(a.name, a.file ? opts : opts.filter(o => o.v !== 'duplicate'));
+    if (v === 'edit') await this.creator(a);
+    else if (v === 'duplicate') {
+      try { const d = await api('/api/amiibo/duplicate', { body: { id: a.id } }); toast(`${d.name} created${a.kind === 'virtual' ? ' (a new virtual amiibo with its own serial number)' : ''}`, I.check, 3500); } catch (e) { alertDlg('Not duplicated', e.message); }
     } else if (v === 'owner') {
       const o = await listPick('Whose amiibo is this?', [{ v: '', l: 'Everyone' }, ...S.profiles.map(p => ({ v: p.id, l: p.name }))], a.owner || '');
       if (o !== undefined) await api('/api/amiibo/update', { body: { id: a.id, owner: o } }).catch(e => toast(e.message, I.warn));
     } else if (v === 'info') {
-      await alertDlg(a.name, null, [`Kind: ${this.KIND[a.kind] || a.kind}`, a.series && `Series: ${a.series}`, a.amiiboId && `Amiibo ID: ${a.amiiboId}`, a.uid && `Serial number: ${a.uid}`, `User: ${this.ownerName(a.owner)}`, `Added: ${new Date(a.added * 1000).toLocaleString()}`,
-        a.kind === 'virtual' ? '\nCreated by NEXUS. It is not an authenticated Nintendo amiibo and works only in NEXUS.' : '\nNEXUS keeps a copy; the file you imported is unchanged.'].filter(Boolean).join('\n'));
+      await alertDlg(a.name, null, [`Kind: ${this.KIND[a.kind] || a.kind}`, a.character && `Character: ${a.character}`, a.type && `Type: ${a.type}`, a.series && `Amiibo series: ${a.series}`, a.gameSeries && `Game series: ${a.gameSeries}`, a.amiiboId && `Amiibo ID: ${a.amiiboId}`, a.uid && `Serial number: ${a.uid}`, `User: ${this.ownerName(a.owner)}`, `Added: ${new Date(a.added * 1000).toLocaleString()}`, a.notes && `Notes: ${a.notes}`,
+        !a.file ? `\nImported on ${a.origin || 'another device'}. Imported dumps are not synchronised; import it on this device to use it here.` : a.kind === 'virtual' ? '\nCreated by NEXUS. It is not an authenticated Nintendo amiibo and works only in NEXUS. Needs no amiibo keys.' : '\nNEXUS keeps a copy; the file you imported is unchanged.' + (a.kind === 'dump' ? ' Games can read it without amiibo keys; saving game data on it needs your key_retail.bin.' : '')].filter(Boolean).join('\n'));
     } else if (v === 'remove') {
       if (await confirmDlg(`Remove ${a.name}?`, a.kind === 'virtual' ? 'Data games saved on this virtual amiibo is lost.' : 'NEXUS’s copy is deleted, including anything games saved on it since you imported it. The file you imported is not touched.', 'Remove', true))
         await api('/api/amiibo/remove', { body: { id: a.id } }).catch(e => toast(e.message, I.warn));
     }
   },
+  filter: { q: '', kind: 'all' },
   async panel(p) {
     const st = await this.load().catch(() => ({ list: [] }));
     const es = S.settings.emulator || {};
     p.append(h('h2', {}, 'Amiibo'), h('p', { class: 'note' }, 'When a game asks you to scan an amiibo, NEXUS shows this library and gives the game the one you choose. Import dumps of your own amiibo, or create a NEXUS virtual amiibo for use in NEXUS only. NEXUS includes no amiibo data.'));
     p.append(rowChoice('When a game scans for an amiibo', [{ v: '', l: 'Show the amiibo library' }, { v: 'off', l: 'Do nothing' }], es.amiiboPrompt || '', v => saveSettings({ emulator: { amiiboPrompt: v } })));
     p.append(rowButton('Import amiibo dump…', { sub: 'A .bin or .nfc dump of your own figure or card (NTAG215, 532/540/572 bytes). NEXUS copies it; the original is not changed.', onClick: async () => { if (await this.import(S.profile?.id)) rebuildPanel(); } }));
-    p.append(rowButton('Create virtual amiibo…', { sub: 'From the amiibo’s name or ID. Works only in NEXUS; it is not an authenticated amiibo.', onClick: async () => { if (await this.createVirtual(S.profile?.id)) rebuildPanel(); } }));
+    p.append(rowButton('Amiibo Creator\u2026', { icon: I.plus, sub: 'Create a NEXUS virtual amiibo: search by name, character or series, or type its ID; add your own name, notes and picture. Works only in NEXUS; it is not an authenticated amiibo.', onClick: async () => { if (await this.creator(null, S.profile?.id)) rebuildPanel(); } }));
     p.append(h('h3', {}, `Library (${st.list.length})`));
-    if (!st.list.length) p.append(h('p', { class: 'note' }, 'No amiibo yet.'));
-    const groups = [[S.profile?.id, `${S.profile?.name || 'You'}`], ['', 'Everyone'], ...S.profiles.filter(x => x.id !== S.profile?.id).map(x => [x.id, x.name])];
-    for (const [id, label] of groups) {
-      const items = st.list.filter(a => (a.owner || '') === (id || '') || (id === '' && a.owner && !S.profiles.some(x => x.id === a.owner)));
-      if (!items.length) continue;
-      p.append(h('h4', { class: 'sub' }, label));
-      for (const a of items) p.append(rowButton(a.name, { sub: [this.KIND[a.kind], a.series].filter(Boolean).join(' · '), value: a.amiiboId || '', onClick: async () => { await this.manage(a); rebuildPanel(); } }));
+    if (!st.list.length) p.append(h('p', { class: 'note' }, 'No amiibo yet. Create one with the Amiibo Creator, or import a dump of your own.'));
+    else {
+      const f = this.filter;
+      const q = h('input', { type: 'text', class: 'am-filter', 'data-nav': true, placeholder: 'Search the library: name, character, series, ID or notes', spellcheck: 'false' });
+      q.value = f.q;
+      const list = h('div');
+      const draw = () => {
+        const t = f.q.trim().toLowerCase();
+        const match = a => (f.kind === 'all' || (f.kind === 'virtual') === (a.kind === 'virtual')) && (!t || [a.name, a.character, a.series, a.gameSeries, a.amiiboId, a.notes].some(x => (x || '').toLowerCase().includes(t)));
+        list.replaceChildren();
+        const groups = [[S.profile?.id, `${S.profile?.name || 'You'}`], ['', 'Everyone'], ...S.profiles.filter(x => x.id !== S.profile?.id).map(x => [x.id, x.name])];
+        let n = 0;
+        for (const [id, label] of groups) {
+          const items = st.list.filter(a => ((a.owner || '') === (id || '') || (id === '' && a.owner && !S.profiles.some(x => x.id === a.owner))) && match(a));
+          if (!items.length) continue;
+          list.append(h('h4', { class: 'sub' }, label));
+          for (const a of items) {
+            n++;
+            const r = rowButton(a.name, { sub: [a.kind === 'virtual' ? 'Virtual (NEXUS only)' : a.file ? 'Imported dump' : `Imported on ${a.origin || 'another device'}`, a.character, a.series].filter(Boolean).join(' · '), value: a.amiiboId || '', onClick: async () => { await this.manage(a); rebuildPanel(); } });
+            const pic = a.art ? h('span', { class: 'am-thumb', style: { backgroundImage: `url("/api/amiibo/art/${a.id}?r=${a.updated || 0}")` } }) : h('span', { class: 'am-thumb none' }, (a.character || a.name || '?').slice(0, 1).toUpperCase());
+            if (a.kind === 'virtual') pic.classList.add('virtual');
+            const rl = r.querySelector('.rl');
+            const text = h('span', { class: 'rl-text' }, ...rl.childNodes);
+            rl.replaceChildren(pic, text); rl.classList.add('with-thumb');
+            list.append(r);
+          }
+        }
+        if (!n) list.append(h('p', { class: 'note' }, 'No amiibo match.'));
+      };
+      q.addEventListener('input', () => { f.q = q.value; draw(); });
+      p.append(q, rowChoice('Show', [{ v: 'all', l: 'All' }, { v: 'virtual', l: 'Virtual amiibo' }, { v: 'dump', l: 'Imported dumps' }], f.kind, v => { f.kind = v; draw(); }), list);
+      draw();
     }
     p.append(h('h3', {}, 'Amiibo keys'));
     p.append(infoRow('Your amiibo keys (key_retail.bin)', st.keys ? 'Added' : 'Not added', 'Needed only when a game saves data on an imported encrypted dump; reading works without them, and virtual amiibo never need them. NEXUS does not include them.'));
@@ -2469,7 +2577,286 @@ const AmiiboUI = {
   },
 };
 
+// ---------- multi-field form dialog (account sign-in and the amiibo creator)
+function formDlg({ title, text, fields, ok = 'OK', extra, validate }) {
+  return new Promise(resolve => {
+    const inputs = {};
+    const err = h('p', { class: 'form-err', role: 'alert' });
+    const body = h('div', { class: 'd-body' }, h('h2', {}, title), text && h('p', {}, text));
+    for (const f of fields) {
+      if (f.type === 'note') { body.append(h('p', { class: 'note' }, f.label)); continue; }
+      let el;
+      if (f.type === 'select') {
+        el = h('select', { 'data-nav': true }, ...f.options.map(o => h('option', { value: o.v, selected: String(o.v) === String(f.value ?? '') || undefined }, o.l)));
+      } else if (f.type === 'textarea') {
+        el = h('textarea', { 'data-nav': true, rows: 3, maxlength: f.max || 500, placeholder: f.placeholder || '' });
+        el.value = f.value || '';
+      } else {
+        el = h('input', { type: f.type || 'text', value: f.value || '', placeholder: f.placeholder || '', maxlength: f.max || 120, 'data-nav': true, spellcheck: 'false', autocomplete: f.autocomplete || 'off' });
+      }
+      inputs[f.id] = el;
+      body.append(h('label', { class: 'field' }, h('span', {}, f.label), el, f.sub && h('small', {}, f.sub)));
+    }
+    if (extra) body.append(extra(inputs));
+    body.append(err);
+    const cancel = h('button', { 'data-nav': true }, 'Cancel');
+    const okb = h('button', { 'data-nav': true, class: 'primary' }, ok);
+    const box = h('div', { class: 'dialog form', role: 'dialog' }, body, h('div', { class: 'd-actions', 'data-row': 'strict' }, cancel, okb));
+    let done = false;
+    const values = () => Object.fromEntries(Object.entries(inputs).map(([k, el]) => [k, el.value]));
+    const finish = v => { if (done) return; done = true; layer.close(); resolve(v); };
+    const submit = async () => {
+      const v = values();
+      for (const f of fields) if (f.required && !String(v[f.id] || '').trim()) { err.textContent = `${f.label} is needed.`; inputs[f.id].focus(); return; }
+      if (validate) {
+        okb.disabled = true; const label = okb.textContent; okb.textContent = 'Please wait…';
+        try { const e = await validate(v); if (e) { err.textContent = e; return; } }
+        catch (e) { err.textContent = e.message; return; }
+        finally { okb.disabled = false; okb.textContent = label; }
+      }
+      finish(v);
+    };
+    cancel.addEventListener('click', () => finish(null));
+    okb.addEventListener('click', submit);
+    Object.values(inputs).forEach(el => el.addEventListener('keydown', e => { if (e.key === 'Enter' && el.tagName !== 'TEXTAREA') { e.preventDefault(); submit(); } }));
+    const layer = openLayer(box, { onBack: () => finish(null), initial: Object.values(inputs)[0] || okb });
+    if (S.lastInput !== 'gamepad') setTimeout(() => Object.values(inputs)[0]?.focus(), 50);
+  });
+}
+
+// ---------- NEXUS Account (account.go): sign-in, linked devices, synchronisation
+const AccountUI = {
+  st: null,
+  STATE: { synced: 'Synced', syncing: 'Syncing…', offline: 'Waiting for connection', pending: 'Changes pending', failed: 'Sync failed', conflict: 'Conflict needs attention', off: 'Synchronisation off', signedout: 'Not signed in', unavailable: 'Not available yet' },
+  PLAT: { windows: 'Windows PC', linux: 'Linux', macos: 'Mac', android: 'Android', ios: 'iPhone / iPad', other: 'Device' },
+  CATS: [
+    ['profile', 'Users', 'Names, pictures, colours and themes, and controller layouts.'],
+    ['library', 'Game library', 'Names you gave games, hidden games, artwork choices and each game’s controller layout.'],
+    ['prefs', 'NEXUS preferences', 'Sounds, the start-up animation, shortcut keys and what Home does.'],
+    ['amiibo', 'Amiibo library', 'Names, details and owners of your amiibo, and NEXUS virtual amiibo. Imported amiibo dumps stay on the device you imported them on.'],
+    ['emulation', 'Emulation settings', 'Global and per-game emulation settings. Off by default: a Steam Deck and a gaming PC usually need different settings. The graphics card choice never synchronises.'],
+  ],
+  async load() { this.st = await api('/api/account').catch(() => this.st); this.top(); return this.st; },
+  update(st) {
+    this.st = st; this.top();
+    if (S.screen === 'settings' && curCat === 'account' && !this._editing) rebuildPanel();
+  },
+  label(st = this.st) { if (!st) return ''; return st.state === 'synced' && st.lastSync ? `Synced ${this.ago(st.lastSync)}` : this.STATE[st.state] || st.state; },
+  ago(t) { const d = Math.max(0, Date.now() / 1000 - t); return d < 60 ? 'just now' : d < 3600 ? `${Math.round(d / 60)} min ago` : d < 86400 ? `${Math.round(d / 3600)} h ago` : new Date(t * 1000).toLocaleDateString(); },
+  // top bar: always shows whether you are signed in
+  top() {
+    const el = $('#tb-account'); if (!el || !this.st) return;
+    const st = this.st;
+    el.hidden = false;
+    el.className = 'tb-item tb-acct ' + st.state;
+    el.replaceChildren(svg(I.cloud), h('span', {}, st.signedIn ? this.label() : 'Not signed in'));
+    el.title = st.signedIn ? `NEXUS Account: ${st.email} · ${this.label()}` : 'NEXUS Account: not signed in. Click to set up.';
+    el.onclick = () => showSettings('account');
+  },
+  // a row for Users / User settings
+  row() {
+    const st = this.st || {};
+    return rowButton('NEXUS Account', { value: st.signedIn ? st.email : 'Not signed in', sub: st.signedIn ? `${this.label()} · this device: ${st.deviceName}` : 'Create an account or sign in to use your users, settings and amiibo on your other PCs and a Steam Deck.', icon: I.cloud, onClick: () => showSettings('account') });
+  },
+  // once, on Home: what an account is for (never again after "Not now")
+  onboard(b) {
+    const st = this.st;
+    if (!st || st.signedIn || st.onboardSeen || !st.available) return false;
+    b.hidden = false; b.innerHTML = '';
+    const ic = svg(I.cloud); ic.style.cssText = 'width:1.4em;height:1.4em;fill:var(--accent);flex:none';
+    const go = h('button', { class: 'btn primary', 'data-nav': true }, 'Set up');
+    const no = h('button', { class: 'btn', 'data-nav': true }, 'Not now');
+    const seen = () => api('/api/account/onboard-seen', { body: {} }).then(st => { this.st = st; renderBanner(); }).catch(() => { });
+    go.addEventListener('click', () => { seen(); showSettings('account'); });
+    no.addEventListener('click', seen);
+    b.append(ic, h('span', { class: 'grow' }, h('b', {}, 'Play on more than one device? '), 'A free NEXUS account keeps your users, settings and amiibo the same on every PC and on a Steam Deck. NEXUS works fully without one.'), go, no);
+    return true;
+  },
+  async run(fn, okMsg) {
+    try { const r = await fn(); if (okMsg) toast(okMsg, I.check); await this.load(); rebuildPanel(); return r; }
+    catch (e) { await alertDlg('NEXUS Account', e.message); await this.load(); rebuildPanel(); return null; }
+  },
+  async showRecovery(code, first) {
+    await dialog({ title: first ? 'Your account is ready' : 'Your new recovery code', text: 'Write this recovery code down and keep it somewhere safe. It is the only way to set a new password if you forget yours, and NEXUS shows it only now.', pre: code, buttons: [{ label: 'I have saved it', value: true, primary: true }] });
+  },
+  async create() {
+    const st = this.st;
+    let rec = null;
+    const v = await formDlg({ title: 'Create a NEXUS account', text: 'Your e-mail address is your account name; NEXUS does not send you e-mail. Your users, settings and amiibo then follow you to every device you sign in on.', ok: 'Create account',
+      fields: [{ id: 'displayName', label: 'Your name', required: true, max: 40, value: S.profile?.name || '' }, { id: 'email', label: 'E-mail address', type: 'email', required: true, autocomplete: 'username' },
+        { id: 'password', label: 'Password', type: 'password', required: true, sub: 'At least 10 characters.', autocomplete: 'new-password' }, { id: 'password2', label: 'Password again', type: 'password', required: true, autocomplete: 'new-password' },
+        { id: 'deviceName', label: 'Name of this device', value: st.deviceName, max: 60, sub: 'Shown in your device list, for example “Living-room PC”.' }],
+      validate: async v => {
+        if (v.password !== v.password2) return 'The two passwords are different.';
+        const r = await api('/api/account/register', { body: { email: v.email, password: v.password, displayName: v.displayName, deviceName: v.deviceName } });
+        rec = r.recoveryCode;
+      } });
+    if (!v) return;
+    await this.showRecovery(rec, true);
+    toast(`Signed in as ${v.email}`, I.check); await this.load(); rebuildPanel();
+  },
+  async signIn() {
+    const v = await formDlg({ title: 'Sign in to NEXUS', text: 'Use the e-mail address and password of your NEXUS account. This device is added to your account’s devices.', ok: 'Sign in',
+      fields: [{ id: 'email', label: 'E-mail address', type: 'email', required: true, value: this.st.email || '', autocomplete: 'username' }, { id: 'password', label: 'Password', type: 'password', required: true, autocomplete: 'current-password' },
+        { id: 'deviceName', label: 'Name of this device', value: this.st.deviceName, max: 60 }],
+      validate: v => api('/api/account/signin', { body: v }).then(() => null) });
+    if (v) { toast(`Signed in as ${v.email}`, I.check); await this.load(); rebuildPanel(); }
+  },
+  async recover() {
+    let rec = null;
+    const v = await formDlg({ title: 'Forgot your password?', text: 'Enter the recovery code you saved when you created the account, and choose a new password. All your devices are signed out and sign in again with the new password.', ok: 'Set new password',
+      fields: [{ id: 'email', label: 'E-mail address', type: 'email', required: true, value: this.st.email || '' }, { id: 'code', label: 'Recovery code', required: true, placeholder: 'XXXXXX-XXXXXX-XXXXXX-XXXXXX', max: 40 },
+        { id: 'newPassword', label: 'New password', type: 'password', required: true, sub: 'At least 10 characters.' }, { id: 'deviceName', label: 'Name of this device', value: this.st.deviceName, max: 60 }],
+      validate: async v => { const r = await api('/api/account/recover', { body: v }); rec = r.recoveryCode; } });
+    if (!v) return;
+    await this.showRecovery(rec, false);
+    await this.load(); rebuildPanel();
+  },
+  // this device enters a code from a signed-in device, which then approves it
+  async linkThis() {
+    const v = await formDlg({ title: 'Link this device to your account', text: 'On a device that is already signed in (for example your PC), open NEXUS Account › Link another device. Enter the code it shows here.', ok: 'Continue',
+      fields: [{ id: 'code', label: 'Code', required: true, placeholder: 'ABCD-EFGH', max: 12 }, { id: 'deviceName', label: 'Name of this device', value: this.st.deviceName, max: 60 }],
+      validate: v => api('/api/account/link/claim', { body: v }).then(() => null) });
+    if (!v) return;
+    await this.load(); rebuildPanel(); this.waitApproval();
+  },
+  async waitApproval() {
+    if (this._waiting) return; this._waiting = true;
+    try {
+      for (;;) {
+        await sleep(2000);
+        if (!this.st?.linking) break;
+        const r = await api('/api/account/link/status', { body: {} }).catch(e => ({ status: 'pending', error: e.message }));
+        if (r.status === 'approved') { toast('This device is now linked to your NEXUS account', I.check, 4000); break; }
+        if (r.status === 'declined') { alertDlg('Linking was declined', 'The other device declined this request. Make a new code there and try again.'); break; }
+        if (r.status === 'expired' || r.status === 'none') { if (r.status === 'expired') alertDlg('The request expired', 'Make a new code on your other device and enter it again.'); break; }
+      }
+    } finally { this._waiting = false; await this.load(); if (S.screen === 'settings' && curCat === 'account') rebuildPanel(); }
+  },
+  // a signed-in device shows a code for another device and approves it
+  async linkOther() {
+    let code;
+    try { code = await api('/api/account/link/code', { body: {} }); } catch (e) { return alertDlg('NEXUS Account', e.message); }
+    let open = true, timer = null;
+    const status = h('p', { class: 'note' }, 'Waiting for the other device…');
+    const box = h('div', { class: 'dialog' }, h('div', { class: 'd-body' }, h('h2', {}, 'Link another device'),
+      h('ol', { class: 'steps' }, h('li', {}, 'On the other device (another PC, or NEXUS on your Steam Deck), open NEXUS Account.'), h('li', {}, 'Choose “Link this device with a code”.'), h('li', {}, 'Enter this code, then confirm the device here.')),
+      h('div', { class: 'pair-code' }, code.code), h('p', { class: 'note' }, `The code works once and expires at ${new Date(code.expires * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. It does not give access by itself: you approve the device here.`), status),
+      h('div', { class: 'd-actions' }, h('button', { 'data-nav': true, class: 'primary' }, 'Close')));
+    const close = () => { open = false; clearTimeout(timer); layer.close(); };
+    box.querySelector('.d-actions button').addEventListener('click', close);
+    const layer = openLayer(box, { onBack: close, initial: '.d-actions button' });
+    const poll = async () => {
+      if (!open) return;
+      if (Date.now() / 1000 > code.expires) { status.textContent = 'This code has expired. Close this and make a new one.'; return; }
+      const r = await api('/api/account/link/requests').catch(() => ({ requests: [] }));
+      for (const q of r.requests || []) {
+        const ok = await dialog({ title: 'Link this device?', text: `“${q.name}” (${this.PLAT[q.platform] || q.platform}, network address ${q.address}) wants to join your NEXUS account. Approve it only if it is your device and you entered the code on it just now.`, buttons: [{ label: 'Decline', value: false, danger: true }, { label: 'Approve', value: true, primary: true }], cancelValue: false });
+        try { await api('/api/account/link/decide', { body: { id: q.id, approve: ok } }); } catch (e) { toast(e.message, I.warn); }
+        if (ok) { toast(`${q.name} is linked to your account`, I.check, 4000); close(); await this.load(); rebuildPanel(); return; }
+        status.textContent = 'Declined. You can enter the code again only with a new code.';
+      }
+      timer = setTimeout(poll, 2500);
+    };
+    timer = setTimeout(poll, 2000);
+  },
+  async conflict(c) {
+    const d = await api('/api/account/conflict?id=' + encodeURIComponent(c.id)).catch(e => { alertDlg('NEXUS Account', e.message); return null; });
+    if (!d) return;
+    const flat = (v, pre = '', out = {}) => { if (v && typeof v === 'object' && !Array.isArray(v)) { for (const [k, x] of Object.entries(v)) flat(x, pre ? pre + '.' + k : k, out); } else out[pre] = v; return out; };
+    const NAMES = { name: 'Name', 'theme.accent': 'Colour', 'theme.mode': 'Theme', 'avatar.preset': 'Icon', 'avatar.color': 'Icon colour', 'avatar.kind': 'Icon type', title: 'Game name', hidden: 'Hidden', series: 'Series', notes: 'Notes', owner: 'User', character: 'Character', gameSeries: 'Game series', type: 'Type' };
+    const show = v => v === undefined || v === null || v === '' ? '(none)' : Array.isArray(v) ? v.join(', ') : typeof v === 'boolean' ? (v ? 'Yes' : 'No') : String(v);
+    const diff = (a, b) => {
+      const fa = flat(a || {}), fb = flat(b || {}), lines = [];
+      for (const k of new Set([...Object.keys(fa), ...Object.keys(fb)])) if (JSON.stringify(fa[k]) !== JSON.stringify(fb[k])) lines.push(`${NAMES[k] || k}:  ${show(fa[k])}  \u2192  ${show(fb[k])}`);
+      return lines.length ? lines.slice(0, 14).join('\n') + (lines.length > 14 ? `\n\u2026 and ${lines.length - 14} more` : '') : 'Only internal details differ.';
+    };
+    const fmt = v => v == null ? '(deleted)' : Object.entries(flat(v)).filter(([k]) => NAMES[k]).map(([k, x]) => `${NAMES[k]}: ${show(x)}`).join('\n') || 'Details';
+    const buttons = d.kind === 'user'
+      ? [{ label: 'Cancel', value: null }, { label: 'Keep both users', value: 'separate' }, { label: `Use ${d.otherDevice}’s`, value: 'other', primary: true }]
+      : [{ label: 'Cancel', value: null }, { label: 'Keep this device’s', value: 'this' }, { label: `Use ${d.otherDevice}’s`, value: 'other', primary: true }];
+    const text = d.kind === 'user' ? `A different user with the same name already exists on this device. Keep both (the account’s user is added as “… 2”), or use ${d.otherDevice}’s details.` : `${c.title} was changed on this device and on ${d.otherDevice} since they last synchronised. Nothing was overwritten. Choose which version to keep on all devices.`;
+    const keep = await dialog({ title: 'Choose a version', text, pre: d.kind === 'user' ? fmt(d.other) : d.otherDeleted ? `Deleted on ${d.otherDevice}; changed on this device.` : `What differs (this device \u2192 ${d.otherDevice}):\n${diff(d.this, d.other)}`, buttons });
+    if (keep) this.run(() => api('/api/account/conflict', { body: { id: c.id, keep } }), 'Resolved');
+  },
+  async panel(p) {
+    const st = await this.load() || {};
+    p.append(h('h2', {}, 'NEXUS Account'));
+    if (!st.signedIn) {
+      p.append(h('p', { class: 'note' }, 'A NEXUS account lets you use the same users, settings and amiibo on several devices: your PC, another PC, and NEXUS for Linux on a Steam Deck. Sign in on each device, or link a device with a one-time code. Everything in NEXUS works without an account.'));
+      if (st.ended) p.append(h('p', { class: 'banner-inline warn' }, st.ended));
+      p.append(infoRow('Account', 'Not signed in', `This device: ${st.deviceName} (${this.PLAT[st.platform] || st.platform})`));
+      if (st.linking) {
+        p.append(infoRow('Linking this device', 'Waiting for approval', `Approve this device on your signed-in device (account ${st.linking.account}).`));
+        p.append(rowButton('Cancel linking', { onClick: () => this.run(() => api('/api/account/link/cancel', { body: {} })) }));
+        this.waitApproval();
+        return;
+      }
+      if (!st.available) {
+        p.append(infoRow('Account service', 'Not set up yet', 'NEXUS accounts need the NEXUS account service on the internet. It has not been put online for this version of NEXUS yet, so you cannot create an account in this build. Nothing else in NEXUS is affected.'));
+      }
+      p.append(rowButton('Create a NEXUS account', { icon: I.plus, disabled: !st.available, sub: 'With your e-mail address and a password. On this device (your PC, for example).', onClick: () => this.create() }));
+      p.append(rowButton('Sign in', { disabled: !st.available, sub: 'You already have an account: sign in on this device too.', onClick: () => this.signIn() }));
+      p.append(rowButton('Link this device with a code', { disabled: !st.available, sub: 'Another device is signed in: it shows a code, you enter it here and approve it there. Handy on a Steam Deck.', onClick: () => this.linkThis() }));
+      p.append(rowButton('Forgot your password?', { disabled: !st.available, sub: 'Use your recovery code.', onClick: () => this.recover() }));
+      p.append(h('h3', {}, 'Advanced'));
+      p.append(rowButton('Account service address', { value: st.custom ? st.server : (st.server || 'None'), sub: 'Only if you run your own NEXUS account service (see the NEXUS documentation). Must start with https://.', onClick: async () => {
+        const v = await dialog({ title: 'Account service address', text: 'Leave empty to use NEXUS’s own service when it is available.', input: { value: st.custom ? st.server : '', placeholder: 'https://accounts.example.org', max: 200 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Save', value: true, primary: true }] });
+        if (v !== null) this.run(() => api('/api/account/server', { body: { server: v } }), 'Saved');
+      } }));
+      return;
+    }
+    // signed in
+    p.append(h('div', { class: 'acct-card' },
+      h('div', { class: 'acct-ic' }, svg(I.cloud)),
+      h('div', {}, h('b', {}, st.displayName || st.email), h('span', {}, st.email), h('span', { class: 'acct-state ' + st.state }, this.label())),
+    ));
+    p.append(infoRow('This device', st.deviceName, this.PLAT[st.platform] || st.platform));
+    p.append(infoRow('Synchronisation', this.STATE[st.state] || st.state, [st.lastSync ? `Last synchronised ${this.ago(st.lastSync)}.` : 'Not synchronised yet.', st.pending ? `${st.pending} change(s) on this device not sent yet.` : '', st.lastError && st.state !== 'synced' ? st.lastError : ''].filter(Boolean).join(' ')));
+    p.append(rowButton('Synchronise now', { icon: I.refresh, disabled: !st.syncOn, onClick: () => this.run(() => api('/api/account/sync', { body: {} }), null) }));
+    p.append(rowToggle('Synchronise this device', st.syncOn, v => this.run(() => api('/api/account/sync/settings', { body: { on: v } })), 'Off: this device keeps its changes to itself and receives nothing until you switch it on again.'));
+    if (st.conflicts?.length) {
+      p.append(h('h3', {}, `Needs your choice (${st.conflicts.length})`));
+      for (const c of st.conflicts) p.append(rowButton(c.title, { sub: `Changed here and on ${c.remoteFrom}. Nothing was overwritten.`, icon: I.warn, onClick: () => this.conflict(c) }));
+    }
+    p.append(h('h3', {}, 'Linked devices'));
+    for (const d of st.devices || []) {
+      p.append(rowButton(d.name + (d.current ? ' (this device)' : ''), { sub: `${this.PLAT[d.platform] || d.platform} · linked ${new Date(d.created * 1000).toLocaleDateString()} · last seen ${this.ago(d.lastSeen)}`, onClick: async () => {
+        if (d.current) { if (await confirmDlg('Sign out on this device?', 'This device leaves your account. Your users, saves and amiibo stay on it.', 'Sign out', true)) this.run(() => api('/api/account/signout', { body: {} }), 'Signed out'); return; }
+        if (await confirmDlg(`Remove ${d.name}?`, 'It is signed out of your NEXUS account at once and stops synchronising. Nothing on that device is deleted.', 'Remove', true)) this.run(() => api('/api/account/devices/remove', { body: { id: d.id } }), `${d.name} removed`);
+      } }));
+    }
+    p.append(rowButton('Link another device…', { icon: I.plus, sub: 'Another PC, or NEXUS for Linux on a Steam Deck. Shows a one-time code to enter there. Or simply sign in there with your e-mail and password.', onClick: () => this.linkOther() }));
+    p.append(h('h3', {}, 'What synchronises'));
+    for (const [id, label, sub] of this.CATS) p.append(rowToggle(label, !!st.categories?.[id], v => this.run(() => api('/api/account/sync/settings', { body: { categories: { [id]: v } } })), sub));
+    p.append(h('p', { class: 'note' }, 'Never synchronised: games, updates and DLC, keys and firmware, imported amiibo dumps, shader caches, screenshots and recordings. Game saves stay on each device for now: synchronising saves safely needs version history on the service, which is not built yet.'));
+    if (st.history?.length) {
+      p.append(h('h3', {}, 'Recent activity'));
+      for (const e of [...st.history].reverse().slice(0, 8)) p.append(infoRow(e.message, new Date(e.at * 1000).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })));
+    }
+    p.append(h('h3', {}, 'Account'));
+    p.append(rowButton('Your name', { value: st.displayName, onClick: async () => {
+      const n = await dialog({ title: 'Your name', input: { value: st.displayName, max: 40 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Save', value: true, primary: true }] });
+      if (n && n.trim()) this.run(() => api('/api/account/update', { body: { displayName: n.trim() } }), 'Saved');
+    } }));
+    p.append(rowButton('Rename this device', { value: st.deviceName, onClick: async () => {
+      const n = await dialog({ title: 'Name of this device', input: { value: st.deviceName, max: 60 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Save', value: true, primary: true }] });
+      if (n && n.trim()) this.run(() => api('/api/account/update', { body: { deviceName: n.trim() } }), 'Saved');
+    } }));
+    p.append(rowButton('Change password', { sub: 'Your other devices are signed out and sign in again with the new password.', onClick: async () => {
+      const v = await formDlg({ title: 'Change password', ok: 'Change', fields: [{ id: 'password', label: 'Current password', type: 'password', required: true }, { id: 'newPassword', label: 'New password', type: 'password', required: true, sub: 'At least 10 characters.' }],
+        validate: v => api('/api/account/update', { body: v }).then(() => null) });
+      if (v) { toast('Password changed', I.check); await this.load(); rebuildPanel(); }
+    } }));
+    p.append(infoRow('Sign-in on this device', 'Stored safely', `Kept with ${st.tokenStorage}. It can be revoked from any of your devices.`));
+    p.append(rowButton('Sign out on this device', { danger: true, sub: 'Your users, saves and amiibo stay on this device.', onClick: async () => {
+      if (await confirmDlg('Sign out?', 'This device stops synchronising and leaves your device list. Nothing on this device is deleted.', 'Sign out', true)) this.run(() => api('/api/account/signout', { body: {} }), 'Signed out');
+    } }));
+  },
+};
+
 const Panels = {
+  account(p) { return AccountUI.panel(p); },
   amiibo(p) { return AmiiboUI.panel(p); },
   perf(p) { return renderPerfSettings(p); },
   sync(p) { return renderSync(p); },
@@ -2560,6 +2947,8 @@ const Panels = {
       'Keep running: the game carries on in the background without sound and ignores your controls until you choose Resume (a green dot shows it is running). Pause: the game stops where it is. Either way one press of Home is one trip to NEXUS Home.'));
     p.append(rowToggle('Controller Home button', es.homeButton !== false, v => saveSettings({ emulator: { homeButton: v } }), 'The Xbox Guide button, the PlayStation button or a controller\u2019s Home button takes you straight to NEXUS Home (the game never sees it). Choose Resume Game to go back. If Steam or Windows uses the button for itself, use the Home key instead.'));
     p.append(h('h3', {}, 'While playing'));
+    p.append(rowChoice('Pause a game left in the background after', [{ v: 5, l: '5 minutes' }, { v: 15, l: '15 minutes' }, { v: 30, l: '30 minutes' }, { v: 60, l: '1 hour' }, { v: 0, l: 'Never' }], es.backgroundMinutes ?? 15, v => saveSettings({ emulator: { backgroundMinutes: v } }),
+      'A game kept running behind NEXUS Home is paused after this long, so a forgotten game stops using your processor and graphics card. Resume continues where it was.'));
     p.append(rowChoice('Game window', [{ v: 'inside', l: 'Inside NEXUS' }, { v: 'separate', l: 'Separate window' }], es.gameWindow || 'inside', v => saveSettings({ emulator: { gameWindow: v } }),
       'Inside NEXUS: the game is drawn in the NEXUS window, and the fullscreen key switches that window between full screen and its previous size. Separate window: the game opens in a window of its own (use this if a game shows a black picture inside NEXUS). Applies from the next game.'));
     p.append(rowButton('Fullscreen / window key', { value: es.fullscreenKey || 'Off', sub: 'Switches the game between full screen and a window without stopping it. If the key is one of the game\u2019s controls, it stays with the game.', onClick: async () => {
@@ -2581,6 +2970,7 @@ const Panels = {
   async recording(p) { await renderRecordingSettings(p); },
   users(p) {
     p.append(h('h2', {}, 'Users'));
+    p.append(AccountUI.row());
     for (const pr of S.profiles) {
       const r = rowButton(pr.name, { sub: pr.id === S.profile?.id ? 'Current user' : '', onClick: () => editProfile(pr.id) });
       r.querySelector('.rl').prepend(avatarEl(pr)); r.querySelector('.rl').style.cssText = 'flex-direction:row;align-items:center;gap:.8em';
@@ -3240,6 +3630,9 @@ function connectEvents() {
       case 'recording.failed': RecUI.stop(); Sound.play('error'); alertDlg('The recording could not be made', m.data.error || 'Unknown error.'); break;
       case 'saves.import': SaveImportUI.update(m.data); break;
       case 'amiibo.scanning': AmiiboUI.scanning(m.data); break;
+      case 'account.changed': AccountUI.update(m.data); break;
+      case 'emulator.autopaused': toast(`${m.data.title} was paused after ${m.data.minutes >= 60 ? '1 hour' : m.data.minutes + ' minutes'} in the background`, I.info, 5000); if (S.screen === 'home') renderBanner(); break;
+      case 'profiles.changed': await loadState(); if (S.screen === 'home') refreshTop(); break;
       case 'platform.device': S.platform = await api('/api/platform').catch(() => S.platform); if (S.screen === 'settings' && curCat === 'system') rebuildPanel(); break;
       case 'platform.thermal': if (S.platform) S.platform.device = { ...(S.platform.device || {}), thermalStatus: m.data.status };
         if (m.data.hot) toast(`Your device is very warm (${m.data.name}). Games slow down until it cools; take a break or remove a case.`, I.warn, 6000); break;

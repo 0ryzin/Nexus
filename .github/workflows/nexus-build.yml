@@ -33,8 +33,10 @@ jobs:
         with:
           go-version: "1.24"
           cache-dependency-path: app/go.sum
-      - run: go vet .
-      - run: go test -count=1 .
+      - run: go vet ./...
+      - run: go test -count=1 ./...
+      - name: Race detector (NEXUS and the account service)
+        run: go test -race -count=1 ./...
 
   windows:
     name: Engine + NEXUS (Windows x64)
@@ -72,7 +74,7 @@ jobs:
 
       - name: NEXUS tests on Windows (gate, before the long engine build)
         working-directory: app
-        run: go test -count=1 .
+        run: go test -count=1 ./...
 
       - name: Read engine.lock
         id: lock

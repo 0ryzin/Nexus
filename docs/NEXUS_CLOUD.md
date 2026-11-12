@@ -1,5 +1,7 @@
 # NEXUS Cloud — architecture proposal and costs (not built, nothing deployed)
 
+> **Update (0.5.0 development):** the account part now exists as the NEXUS account service (`app/accountd`, see [ACCOUNTS.md](ACCOUNTS.md)): accounts with passwords, device tokens, linking codes with approval, and synchronisation of settings, users and amiibo. It is not deployed. Save synchronisation with version history (below) is still a proposal.
+
 NEXUS Cloud would let linked devices synchronise when they are **not** on the same network.
 Nothing here is implemented or running, and NEXUS never claims cloud synchronisation works.
 Local Sync ([DEVICE_LINKING.md](DEVICE_LINKING.md)) needs no server at all.

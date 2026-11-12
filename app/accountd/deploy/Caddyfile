@@ -1,0 +1,5 @@
+# Replace accounts.example.org with your domain. Caddy obtains and renews the certificate.
+accounts.example.org {
+	encode gzip
+	reverse_proxy nexus-accountd:8480
+}

@@ -79,6 +79,10 @@ func (s *Server) guard(h http.Handler) http.Handler {
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		h.ServeHTTP(w, r)
+		// a change made in NEXUS: synchronise it soon (debounced; nothing happens when signed out)
+		if r.Method != http.MethodGet && s.app.Account != nil && !strings.HasPrefix(r.URL.Path, "/api/account") && !strings.HasPrefix(r.URL.Path, "/api/emulator") {
+			s.app.Account.Touch()
+		}
 	})
 }
 
@@ -1950,9 +1954,12 @@ func (s *Server) routes() {
 		writeJSON(w, am)
 	})
 	m.HandleFunc("POST /api/amiibo/virtual", func(w http.ResponseWriter, r *http.Request) {
-		var b struct{ AmiiboID, Name, Series, Owner string }
+		var b struct {
+			AmiiboID string
+			AmiiboDetails
+		}
 		_ = readBody(r, &b)
-		am, err := a.Amiibo.CreateVirtual(b.AmiiboID, b.Name, b.Series, b.Owner)
+		am, err := a.Amiibo.CreateVirtualWith(b.AmiiboID, b.AmiiboDetails)
 		if err != nil {
 			writeErr(w, 400, err)
 			return
@@ -1979,6 +1986,54 @@ func (s *Server) routes() {
 			return
 		}
 		writeJSON(w, am)
+	})
+	m.HandleFunc("POST /api/amiibo/edit", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			ID string
+			AmiiboDetails
+		}
+		_ = readBody(r, &b)
+		am, err := a.Amiibo.Edit(b.ID, b.AmiiboDetails)
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, am)
+	})
+	m.HandleFunc("POST /api/amiibo/duplicate", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ ID string }
+		_ = readBody(r, &b)
+		am, err := a.Amiibo.Duplicate(b.ID)
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, am)
+	})
+	m.HandleFunc("POST /api/amiibo/art/{id}", func(w http.ResponseWriter, r *http.Request) {
+		data, err := io.ReadAll(io.LimitReader(r.Body, 5<<20))
+		var am Amiibo
+		if err == nil {
+			if len(data) == 0 {
+				am, err = a.Amiibo.ClearArt(r.PathValue("id"))
+			} else {
+				am, err = a.Amiibo.SetArt(r.PathValue("id"), data)
+			}
+		}
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, am)
+	})
+	m.HandleFunc("GET /api/amiibo/art/{id}", func(w http.ResponseWriter, r *http.Request) {
+		p := a.Amiibo.ArtPath(r.PathValue("id"))
+		if p == "" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-cache")
+		http.ServeFile(w, r, p)
 	})
 	m.HandleFunc("POST /api/amiibo/remove", func(w http.ResponseWriter, r *http.Request) {
 		var b struct{ ID string }
@@ -2011,13 +2066,136 @@ func (s *Server) routes() {
 		writeJSON(w, true)
 	})
 	m.HandleFunc("GET /api/amiibo/lookup", func(w http.ResponseWriter, r *http.Request) {
-		list, err := LookupAmiibo(r.URL.Query().Get("q"))
+		list, err := LookupAmiibo(r.URL.Query().Get("q"), r.URL.Query().Get("by"))
 		if err != nil {
 			writeErr(w, 502, err)
 			return
 		}
 		writeJSON(w, map[string]any{"results": list})
 	})
+	// ----- NEXUS Account (account.go)
+	acct := func(w http.ResponseWriter, err error) {
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, a.Account.Status())
+	}
+	m.HandleFunc("GET /api/account", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, a.Account.Status()) })
+	m.HandleFunc("POST /api/account/server", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Server string }
+		_ = readBody(r, &b)
+		acct(w, a.Account.SetServer(b.Server))
+	})
+	m.HandleFunc("POST /api/account/register", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Email, Password, DisplayName, DeviceName string }
+		_ = readBody(r, &b)
+		code, err := a.Account.Register(b.Email, b.Password, b.DisplayName, b.DeviceName)
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, map[string]any{"recoveryCode": code, "status": a.Account.Status()})
+	})
+	m.HandleFunc("POST /api/account/signin", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Email, Password, DeviceName string }
+		_ = readBody(r, &b)
+		acct(w, a.Account.SignIn(b.Email, b.Password, b.DeviceName))
+	})
+	m.HandleFunc("POST /api/account/recover", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Email, Code, NewPassword, DeviceName string }
+		_ = readBody(r, &b)
+		code, err := a.Account.Recover(b.Email, b.Code, b.NewPassword, b.DeviceName)
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, map[string]any{"recoveryCode": code, "status": a.Account.Status()})
+	})
+	m.HandleFunc("POST /api/account/signout", func(w http.ResponseWriter, r *http.Request) { acct(w, a.Account.SignOut()) })
+	m.HandleFunc("POST /api/account/refresh", func(w http.ResponseWriter, r *http.Request) { acct(w, a.Account.Refresh()) })
+	m.HandleFunc("POST /api/account/update", func(w http.ResponseWriter, r *http.Request) {
+		var b map[string]any
+		_ = readBody(r, &b)
+		patch := map[string]any{}
+		for _, k := range []string{"displayName", "password", "newPassword", "deviceName"} {
+			if v, ok := b[k]; ok {
+				patch[k] = v
+			}
+		}
+		acct(w, a.Account.UpdateAccount(patch))
+	})
+	m.HandleFunc("POST /api/account/devices/remove", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ ID string }
+		_ = readBody(r, &b)
+		acct(w, a.Account.RemoveDevice(b.ID))
+	})
+	m.HandleFunc("POST /api/account/link/code", func(w http.ResponseWriter, r *http.Request) {
+		code, exp, err := a.Account.LinkCode()
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, map[string]any{"code": code, "expires": exp})
+	})
+	m.HandleFunc("GET /api/account/link/requests", func(w http.ResponseWriter, r *http.Request) {
+		reqs, err := a.Account.LinkRequests()
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, map[string]any{"requests": reqs})
+	})
+	m.HandleFunc("POST /api/account/link/decide", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			ID      string
+			Approve bool
+		}
+		_ = readBody(r, &b)
+		acct(w, a.Account.DecideLink(b.ID, b.Approve))
+	})
+	m.HandleFunc("POST /api/account/link/claim", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Code, DeviceName string }
+		_ = readBody(r, &b)
+		_, err := a.Account.ClaimCode(b.Code, b.DeviceName)
+		acct(w, err)
+	})
+	m.HandleFunc("POST /api/account/link/status", func(w http.ResponseWriter, r *http.Request) {
+		st, err := a.Account.LinkStatus()
+		if err != nil && st != "pending" {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, map[string]any{"status": st, "account": a.Account.Status()})
+	})
+	m.HandleFunc("POST /api/account/link/cancel", func(w http.ResponseWriter, r *http.Request) { a.Account.CancelLink(); acct(w, nil) })
+	m.HandleFunc("POST /api/account/sync", func(w http.ResponseWriter, r *http.Request) {
+		_, err := a.Account.Sync()
+		acct(w, err)
+	})
+	m.HandleFunc("POST /api/account/sync/settings", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			On         *bool
+			Categories map[string]bool
+		}
+		_ = readBody(r, &b)
+		a.Account.SetSync(b.On, b.Categories)
+		acct(w, nil)
+	})
+	m.HandleFunc("POST /api/account/conflict", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ ID, Keep string }
+		_ = readBody(r, &b)
+		acct(w, a.Account.ResolveConflict(b.ID, b.Keep))
+	})
+	m.HandleFunc("GET /api/account/conflict", func(w http.ResponseWriter, r *http.Request) {
+		d, err := a.Account.ConflictDetails(r.URL.Query().Get("id"))
+		if err != nil {
+			writeErr(w, 404, err)
+			return
+		}
+		writeJSON(w, d)
+	})
+	m.HandleFunc("POST /api/account/onboard-seen", func(w http.ResponseWriter, r *http.Request) { a.Account.SetOnboardSeen(); acct(w, nil) })
 }
 
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {

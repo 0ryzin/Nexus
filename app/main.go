@@ -152,6 +152,8 @@ func StartCore(o CoreOptions) (*Core, error) {
 			c.closers = append(c.closers, func() { l.Close() })
 		}
 	}
+	go app.Account.Run() // background synchronisation; idle unless signed in with sync on
+	c.closers = append(c.closers, app.Account.Close)
 	srv := NewServer(app)
 	url, err := srv.Start(o.Port)
 	if err != nil {

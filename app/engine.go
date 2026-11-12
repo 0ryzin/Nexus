@@ -451,6 +451,7 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 	shotsSeen := uint64(0)
 	recordSeen := uint64(0)
 	fullscreenSeen := uint64(0)
+	var bgSince time.Time // when the game started running in the background
 	revealAsked := time.Time{}
 	checkpoint := func() {
 		if st.Phase != "playing" {
@@ -500,6 +501,22 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 			}
 		case "stopping", "stopped", "error", "idle":
 			final = es
+		}
+		// a game forgotten in the background is paused after a while (Settings › Game sessions)
+		if es.State == "running" && es.Suspended && es.Background {
+			if bgSince.IsZero() {
+				bgSince = time.Now()
+			} else if lim := backgroundLimit(e.app); lim > 0 && time.Since(bgSince) >= lim {
+				host.Suspend(true) // engine: from running in the background to paused
+				host.SetVolume(st.Volume)
+				bgSince = time.Time{}
+				st.Background = false
+				e.setState(st)
+				e.app.Log.Printf("emulator: %s paused after %s in the background", st.Title, lim)
+				e.app.Events.Emit("emulator.autopaused", map[string]any{"title": st.Title, "minutes": int(lim.Minutes())})
+			}
+		} else {
+			bgSince = time.Time{}
 		}
 		if es.State == "running" && es.Suspended != st.Suspended {
 			// NEXUS Home while playing: time spent suspended is not play time
@@ -692,6 +709,16 @@ func (e *Emulator) Suspend(on bool) error {
 	}
 	h.Focus()
 	return nil
+}
+
+// testBackgroundLimit shortens the background limit in tests.
+var testBackgroundLimit time.Duration
+
+func backgroundLimit(a *App) time.Duration {
+	if testBackgroundLimit > 0 {
+		return testBackgroundLimit
+	}
+	return a.Settings.Get().Emulator.BackgroundLimit()
 }
 
 // GameWindow is the running game's window handle (0 if none).

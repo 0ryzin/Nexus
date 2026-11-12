@@ -74,6 +74,9 @@ func resolveData(root string) (string, bool) {
 	if ad := os.Getenv("APPDATA"); ad != "" {
 		return filepath.Join(ad, "NEXUS"), false
 	}
+	if xd := os.Getenv("XDG_DATA_HOME"); xd != "" && filepath.IsAbs(xd) { // Linux convention
+		return filepath.Join(xd, "NEXUS"), false
+	}
 	if home, err := os.UserHomeDir(); err == nil {
 		return filepath.Join(home, ".local", "share", "NEXUS"), false
 	}
@@ -142,6 +145,7 @@ type App struct {
 	Compat           *CompatStore
 	Saves            *SaveOrganizer
 	Amiibo           *AmiiboStore
+	Account          *Account // NEXUS Account and synchronisation (account.go)
 	Media            *MediaLibrary
 	Recorder         *Recorder
 	Controllers      *ControllerStore
@@ -181,6 +185,7 @@ func NewAppWithPaths(p *Paths) (*App, error) {
 	a.Compat.SetEngine(func() string { return a.Emu.Builds.ActiveVersionLabel() })
 	a.Saves = NewSaveOrganizer(a)
 	a.Amiibo = NewAmiiboStore(a, filepath.Join(p.UserData, "Amiibo"))
+	a.Account = NewAccount(a)
 	a.Media = NewMediaLibrary(a)
 	a.Recorder = NewRecorder(a)
 	a.Controllers = NewControllerStore(a)

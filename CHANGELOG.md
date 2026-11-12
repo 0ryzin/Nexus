@@ -14,7 +14,11 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
 - **Home key H** works for keyboard players: the engine's default keyboard layout put the R button on H. Default bindings on NEXUS shortcut keys now move to a free key for the session, with a message; bindings you chose are never changed.
 - **Advanced emulation settings** (global and per game): CPU clock and GPU clock (Normal, Boost, Overclock), Synchronise core speed, speed limit 10–1000 % with 50/100/200 % presets and a custom value, multi-core, and emulated memory 4/6/8/10/12 GB. NEXUS refuses a memory layout the PC does not have the memory for.
 - **Amiibo:** *Settings › Amiibo* library: import dumps of your own amiibo (checked, copied; the original is unchanged), create NEXUS virtual amiibo from a name (looked up in the open AmiiboAPI database) or an amiibo ID, rename, assign to a user, details, remove; optional user-supplied amiibo keys. When a game scans for an amiibo, NEXUS shows the library and gives the game the one you choose. Virtual amiibo work only in NEXUS and are not authenticated Nintendo amiibo. NEXUS includes no amiibo data or keys.
-- Docs: ANDROID, ENGINE_RESEARCH, RELEASES_1.0 (plan); SOURCE_AUDIT and ARCHITECTURE updated.
+- **NEXUS Account:** create an account, sign in, link another PC or a Steam Deck with a one-time code that the signed-in device approves, device list with removal, sign-out, password change, recovery code. Synchronises users, library names and choices, NEXUS preferences and the amiibo library (emulation settings optional) between devices: works offline, sends changes later, and asks you when the same item was changed on two devices. *Settings › NEXUS Account*, the cloud icon on Home and in the dock. The account service (`app/accountd`) is included and tested but **not deployed yet**, so accounts cannot be created in this build (docs/ACCOUNTS.md).
+- **Amiibo Creator:** search the open amiibo database by name, character or series, or type an ID; display name, character, series, type, user, notes and your own picture; live preview; edit, duplicate and remove; library search and filter. Entries are checked again before a game receives them.
+- A game left running in the background is paused after 15 minutes (configurable, or never).
+- F11 returns a maximised window to maximised.
+- Docs: ANDROID, ENGINE_RESEARCH, ACCOUNTS, RELEASES_1.0 (plan); SOURCE_AUDIT and ARCHITECTURE updated.
 
 ## 0.4.0 — Windows x64 (preview)
 

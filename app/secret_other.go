@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// Development builds for other systems keep no secrets (tokens need Windows' DPAPI).
+// The update-check token needs Windows' DPAPI; other systems do not store it.
 func protectSecret(data []byte) ([]byte, error) {
 	return nil, errors.New("storing an access token needs Windows")
 }

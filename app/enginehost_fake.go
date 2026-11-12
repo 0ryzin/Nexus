@@ -305,6 +305,16 @@ func (f *fakeEngine) PressHome() {
 func (f *fakeEngine) Reveal() {
 	f.mu.Lock()
 	f.reveal = true
+	if f.req.Embed && f.req.OwnerWindow != 0 {
+		f.st.Embedded = true // like the engine: drawn inside the NEXUS window once revealed
+	}
+	f.mu.Unlock()
+}
+
+// PressFullscreen: F11 in an embedded game is counted for NEXUS (engine 0.6).
+func (f *fakeEngine) PressFullscreen() {
+	f.mu.Lock()
+	f.st.FullscreenPresses++
 	f.mu.Unlock()
 }
 

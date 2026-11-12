@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 // GlobalSettings are machine-wide (startup happens before a profile is chosen).
@@ -88,6 +89,9 @@ type EmulatorSettings struct {
 	// HomeAction: what NEXUS Home does to the game: "background" keeps it running (muted, no
 	// input) behind NEXUS, "pause" pauses it.
 	HomeAction string `json:"homeAction"`
+	// BackgroundMinutes: a game left running in the background is paused after this many
+	// minutes (0 = never), so a forgotten game does not keep using the PC.
+	BackgroundMinutes *int `json:"backgroundMinutes,omitempty"`
 	// GameWindow: "inside" (default: the game is drawn inside the NEXUS window) or "separate"
 	// (a window of its own, as before 0.5)
 	GameWindow string `json:"gameWindow,omitempty"`
@@ -124,6 +128,14 @@ func DefaultSettings() GlobalSettings {
 	s.Emulator = EmulatorSettings{Fullscreen: true, QuitCombo: true, ManageSaves: true, WhoPlays: "several", HomeKey: "H", HomeButton: true,
 		FullscreenKey: "F11", ScreenshotKey: "Alt+F12", CaptureButton: true, FadeIn: true, HomeAction: "background", Overrides: map[string]string{}}
 	return s
+}
+
+// BackgroundLimit is how long a game may run in the background before NEXUS pauses it.
+func (e EmulatorSettings) BackgroundLimit() time.Duration {
+	if e.BackgroundMinutes == nil {
+		return 15 * time.Minute
+	}
+	return time.Duration(max(0, *e.BackgroundMinutes)) * time.Minute
 }
 
 // SupportedFormats are the file types the NEXUS engine's loader opens

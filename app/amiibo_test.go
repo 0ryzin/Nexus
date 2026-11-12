@@ -3,6 +3,10 @@ package main
 import (
 	"bytes"
 	"encoding/hex"
+	"fmt"
+	"image/color"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -194,6 +198,118 @@ func TestAmiiboInGame(t *testing.T) {
 	}
 	if err := app.Amiibo.Place(""); err != nil || f.Status().Amiibo != "scanning" {
 		t.Fatal("could not take the amiibo away")
+	}
+	app.Emu.Stop(true)
+}
+
+// TestAmiiboCreator: details, edit (data unchanged), duplicate (virtual: new figure; dump: exact
+// copy; the original unchanged), the user's own picture, and removal of everything.
+func TestAmiiboCreator(t *testing.T) {
+	app, root := newTestApp(t, "")
+	p, _ := app.Profiles.Create("Kai", Avatar{Kind: "glyph"})
+	v, err := app.Amiibo.CreateVirtualWith("0100000000040002", AmiiboDetails{Name: "My Link", Character: "Link", Series: "The Legend of Zelda", GameSeries: "The Legend of Zelda", Type: "Figure", Notes: "for Tears of the Kingdom", Owner: p.ID})
+	if err != nil || v.Kind != "virtual" || v.Character != "Link" || v.Notes == "" || v.Owner != p.ID {
+		t.Fatalf("%+v %v", v, err)
+	}
+	if _, err := app.Amiibo.CreateVirtualWith("0100000000040002", AmiiboDetails{Name: strings.Repeat("x", 41)}); err == nil {
+		t.Fatal("name too long accepted")
+	}
+	before, _ := os.ReadFile(app.Amiibo.Path(v))
+	e, err := app.Amiibo.Edit(v.ID, AmiiboDetails{Name: "Hero", Character: "Link", Type: "Card", Notes: "edited"})
+	if err != nil || e.Name != "Hero" || e.Type != "Card" || e.Owner != "" || e.AmiiboID != v.AmiiboID || e.UID != v.UID {
+		t.Fatalf("edit %+v %v", e, err)
+	}
+	if after, _ := os.ReadFile(app.Amiibo.Path(v)); !bytes.Equal(before, after) {
+		t.Fatal("editing changed the amiibo data")
+	}
+	d, err := app.Amiibo.Duplicate(v.ID)
+	if err != nil || d.ID == v.ID || d.UID == v.UID || d.AmiiboID != v.AmiiboID || d.Name != "Hero (copy)" || d.Notes != "edited" {
+		t.Fatalf("duplicate %+v %v", d, err)
+	}
+	src := filepath.Join(root, "dump.bin")
+	raw := rawAmiiboDump("0000000000000002", [7]byte{4, 3, 3, 3, 4, 4, 4})
+	os.WriteFile(src, raw, 0o644)
+	dump, _ := app.Amiibo.Import(src, "")
+	dd, err := app.Amiibo.Duplicate(dump.ID)
+	if err != nil || dd.UID != dump.UID || dd.Kind != "dump" {
+		t.Fatalf("dump duplicate %+v %v", dd, err)
+	}
+	if b, _ := os.ReadFile(app.Amiibo.Path(dd)); !bytes.Equal(b, raw) {
+		t.Fatal("dump copy differs")
+	}
+	// picture: only real images
+	if _, err := app.Amiibo.SetArt(v.ID, []byte("not a picture")); err == nil {
+		t.Fatal("text accepted as a picture")
+	}
+	if a, err := app.Amiibo.SetArt(v.ID, jpegBytes(64, color.RGBA{1, 2, 3, 255})); err != nil || !strings.HasSuffix(a.Art, ".jpg") || !fileExists(app.Amiibo.ArtPath(v.ID)) {
+		t.Fatalf("art %v", err)
+	}
+	art := app.Amiibo.ArtPath(v.ID)
+	app.Amiibo.Remove(v.ID)
+	if fileExists(art) || fileExists(app.Amiibo.Path(v)) {
+		t.Fatal("remove left files")
+	}
+	if b, _ := os.ReadFile(src); !bytes.Equal(b, raw) {
+		t.Fatal("the user's original dump changed")
+	}
+}
+
+// TestAmiiboLookup: searches the open database by name, character or series (a stand-in server
+// with AmiiboAPI's answer format), and handles "nothing found" and an unreachable service.
+func TestAmiiboLookup(t *testing.T) {
+	var got string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.URL.RawQuery
+		if r.URL.Query().Get("name") == "nothing" {
+			w.WriteHeader(404)
+			fmt.Fprint(w, `{"code":404,"error":"Not Found"}`)
+			return
+		}
+		fmt.Fprint(w, `{"amiibo":[{"amiiboSeries":"Super Smash Bros.","character":"Link","gameSeries":"The Legend of Zelda","head":"01000000","name":"Link","tail":"00040002","type":"Figure"}]}`)
+	}))
+	defer ts.Close()
+	old := amiiboAPIBases
+	amiiboAPIBases = []string{ts.URL + "/api/amiibo/"}
+	defer func() { amiiboAPIBases = old }()
+	l, err := LookupAmiibo("Link", "character")
+	if err != nil || len(l) != 1 || l[0].ID() != "0100000000040002" || l[0].Character != "Link" || got != "character=Link" {
+		t.Fatalf("%+v %v %q", l, err, got)
+	}
+	if LookupAmiibo("Smash", "series"); got != "amiiboSeries=Smash" {
+		t.Fatal(got)
+	}
+	if LookupAmiibo("0100000000040002", ""); got != "head=01000000&tail=00040002" {
+		t.Fatal(got)
+	}
+	if l, err := LookupAmiibo("nothing", ""); err != nil || len(l) != 0 {
+		t.Fatal("not found", err)
+	}
+	amiiboAPIBases = []string{"http://127.0.0.1:1/api/amiibo/"}
+	if _, err := LookupAmiibo("Link", ""); err == nil || !strings.Contains(err.Error(), "could not be reached") {
+		t.Fatal(err)
+	}
+}
+
+// TestAmiiboInGameVirtual: a NEXUS virtual amiibo is handed to the engine like a dump; a missing
+// or damaged data file is reported instead of being passed on.
+func TestAmiiboInGameVirtual(t *testing.T) {
+	app, _ := newTestApp(t, "")
+	v, _ := app.Amiibo.CreateVirtual("0100000000040002", "Link", "", "")
+	broken, _ := app.Amiibo.CreateVirtual("0000000000000002", "Mario", "", "")
+	_, f := playing(t, app)
+	f.Scan()
+	for i := 0; i < 100 && app.Emu.State().Amiibo != "scanning"; i++ {
+		time.Sleep(20 * time.Millisecond)
+	}
+	os.WriteFile(app.Amiibo.Path(broken), []byte("damaged"), 0o644)
+	if err := app.Amiibo.Place(broken.ID); err == nil || !strings.Contains(err.Error(), "damaged") {
+		t.Fatalf("damaged entry passed on: %v", err)
+	}
+	if f.Status().Amiibo != "scanning" {
+		t.Fatal("the game received something")
+	}
+	if err := app.Amiibo.Place(v.ID); err != nil || f.Status().Amiibo != "placed" {
+		t.Fatalf("virtual amiibo not placed: %v", err)
 	}
 	app.Emu.Stop(true)
 }

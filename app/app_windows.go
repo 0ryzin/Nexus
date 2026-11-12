@@ -110,6 +110,7 @@ type winUI struct {
 	chromium   *edge.Chromium
 	fullscreen bool
 	saved      rect
+	savedMax   bool // the window was maximised before full screen
 	mu         sync.Mutex
 	queue      []func()
 	shown      bool
@@ -143,6 +144,11 @@ func (u *winUI) SetFullscreen(on bool) { u.dispatch(func() { u.applyFullscreen(o
 func (u *winUI) applyFullscreen(on bool) {
 	if on {
 		if !u.fullscreen {
+			z, _, _ := procIsZoomed.Call(u.hwnd)
+			u.savedMax = z != 0
+			if u.savedMax {
+				procShowWindow.Call(u.hwnd, 9 /*SW_RESTORE: remember the normal size, not the maximised one*/)
+			}
 			procGetWindowRect.Call(u.hwnd, uintptr(unsafe.Pointer(&u.saved)))
 		}
 		mon, _, _ := procMonitorFromWindow.Call(u.hwnd, 2 /*MONITOR_DEFAULTTONEAREST*/)
@@ -162,6 +168,9 @@ func (u *winUI) applyFullscreen(on bool) {
 			r = rect{(int32(cx) - w) / 2, (int32(cy) - h) / 2, (int32(cx)+w)/2 + w%2, (int32(cy)+h)/2 + h%2}
 		}
 		procSetWindowPos.Call(u.hwnd, 0, uintptr(r.Left), uintptr(r.Top), uintptr(r.Right-r.Left), uintptr(r.Bottom-r.Top), swpFrameChanged|swpShowWindow)
+		if u.savedMax {
+			procShowWindow.Call(u.hwnd, 3 /*SW_MAXIMIZE*/)
+		}
 	}
 	u.fullscreen = on
 	if u.chromium != nil {

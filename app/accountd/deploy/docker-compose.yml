@@ -1,0 +1,18 @@
+# NEXUS account service with automatic HTTPS. Run from the repository's app/ folder:
+#   docker compose -f accountd/deploy/docker-compose.yml up -d
+# Back up the accountd-data volume regularly (it holds the account database).
+services:
+  nexus-accountd:
+    build: { context: ../.., dockerfile: accountd/deploy/Dockerfile }
+    restart: unless-stopped
+    volumes: [accountd-data:/data]
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+volumes:
+  accountd-data: {}
+  caddy-data: {}
