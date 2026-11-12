@@ -20,7 +20,9 @@ adb shell run-as dev.nexus.android cat files/nexus-data/Logs/nexus.log > "$out/n
 adb logcat -d > "$out/logcat.txt" || true
 adb exec-out screencap -p > "$out/screen.png" || true
 echo "----- nexus.log"; cat "$out/nexus.log"
-echo "----- crashes"; grep -E "FATAL|AndroidRuntime|SIGSEGV|panic:" "$out/logcat.txt" | head -40 || true
+echo "----- app files"; adb shell run-as dev.nexus.android ls -R files 2>&1 | head -40
+echo "----- logcat (NEXUS, crashes, loader)"
+grep -E "dev\.nexus|nexus|NEXUS|FATAL|AndroidRuntime|SIGSEGV|SIGABRT|panic|libc |DEBUG  |crash_dump|linker|houdini|ndk_translation|NativeBridge|GoLog|chromium" "$out/logcat.txt" | grep -v "NetworkStack" | tail -120 || true
 $ok || { echo "::error::the NEXUS core did not start on the emulator"; exit 1; }
 adb shell pidof dev.nexus.android >/dev/null || { echo "::error::NEXUS stopped"; exit 1; }
 grep -q "platform:" "$out/nexus.log" || true
