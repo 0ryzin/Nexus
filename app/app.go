@@ -19,7 +19,7 @@ const (
 )
 
 // AppVersion is overridden at build time with -ldflags "-X main.AppVersion=..."
-var AppVersion = "1.0.0-dev"
+var AppVersion = "0.5.0-dev" // release builds set it from VERSION (-ldflags -X main.AppVersion)
 
 // Paths holds every folder NEXUS uses. All of them live under Root so the
 // whole install stays portable.

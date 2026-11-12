@@ -19,6 +19,9 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
 - A game left running in the background is paused after 15 minutes (configurable, or never).
 - **Performance overlay redesigned** after the handheld style: a thin translucent strip over the game's picture with coloured labels, large values and small units, scaled to the picture's height; or the frame rate only, in a corner. It now belongs to the window the game is drawn in (not a topmost desktop window): it follows moves, resizes and F11 at once, sits on the picture (not the black bars), and hides when the game is minimised or closed. The REC indicator works the same way. Not yet checked on a real Windows desktop.
 - F11 returns a maximised window to maximised.
+- Fixed: a game played before NEXUS could read its Title ID (no keys yet, or a NUP package before 0.3.0) appeared twice in a user's play statistics. Play time recorded under the old file-name key is merged into the game after each library scan; different games, regions and editions (other Title IDs) are never merged.
+- NEXUS identifies itself as 0.5.0 (VERSION); development builds without a version say 0.5.0-dev.
+- NEXUS Account buttons explain why accounts are not available yet instead of doing nothing; the Amiibo Creator reports any problem opening it and logs it.
 - Docs: ANDROID, ENGINE_RESEARCH, ACCOUNTS, RELEASES_1.0 (plan); SOURCE_AUDIT and ARCHITECTURE updated.
 
 ## 0.4.0 — Windows x64 (preview)

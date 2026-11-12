@@ -354,6 +354,9 @@ func (l *Library) scan(force bool, onlyPath string) error {
 		}
 	}
 	l.app.Log.Printf("library: %d files, %d games, %d issues", len(files), len(games), len(errs))
+	if n := l.app.Profiles.MergeStatAliases(l.statAliases()); n > 0 {
+		l.app.Log.Printf("library: merged %d play-time entries recorded under a game's old file-name key", n)
+	}
 	l.app.Events.Emit("library.scan", map[string]any{"state": "done", "count": len(games), "errors": errs})
 	l.online.Queue(games, false)
 	return nil

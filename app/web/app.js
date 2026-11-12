@@ -2399,7 +2399,14 @@ const AmiiboUI = {
   TYPES: ['Figure', 'Card', 'Yarn', 'Band', 'Other'],
   createVirtual(owner) { return this.creator(null, owner); },
   creator(existing, owner) {
-    return new Promise(resolve => {
+    api('/api/app/log', { body: { level: 'info', message: `amiibo creator: open (${existing ? 'edit' : 'new'})` } }).catch(() => { });
+    return new Promise(resolve => { try { this.creatorBuild(existing, owner, resolve); } catch (e) {
+      api('/api/app/log', { body: { level: 'error', message: 'amiibo creator: ' + (e.stack || e) } }).catch(() => { });
+      alertDlg('The Amiibo Creator could not open', `${e.message}\n\nThis has been written to the NEXUS log (Logs\\nexus.log).`); resolve(null);
+    } });
+  },
+  creatorBuild(existing, owner, resolve) {
+    {
       const ed = existing || {};
       const isNew = !existing;
       const v = { amiiboId: ed.amiiboId || '', name: ed.name || '', character: ed.character || '', series: ed.series || '', gameSeries: ed.gameSeries || '', type: ed.type || '', notes: ed.notes || '', owner: existing ? (ed.owner || '') : (owner || '') };
@@ -2486,7 +2493,7 @@ const AmiiboUI = {
       });
       const layer = openLayer(box, { onBack: () => finish(null), initial: isNew ? q : els.name });
       if (S.lastInput !== 'gamepad') setTimeout(() => (isNew ? q : els.name).focus(), 50);
-    });
+    }
   },
   async manage(a) {
     const opts = [{ v: 'edit', l: 'Edit details…' }, { v: 'duplicate', l: 'Duplicate' }, { v: 'owner', l: `User: ${this.ownerName(a.owner)}` }, { v: 'info', l: 'Details' }, { v: 'remove', l: 'Remove from library' }];
@@ -2679,6 +2686,9 @@ const AccountUI = {
   async showRecovery(code, first) {
     await dialog({ title: first ? 'Your account is ready' : 'Your new recovery code', text: 'Write this recovery code down and keep it somewhere safe. It is the only way to set a new password if you forget yours, and NEXUS shows it only now.', pre: code, buttons: [{ label: 'I have saved it', value: true, primary: true }] });
   },
+  unavailable() {
+    return alertDlg('NEXUS accounts are not available yet', 'Creating an account and signing in need the NEXUS account service on the internet, and it has not been put online for this version of NEXUS. Nothing is wrong with your PC or your data, and everything else in NEXUS works without an account.\n\nIf you run your own NEXUS account service, enter its address under Advanced \u203a Account service address.');
+  },
   async create() {
     const st = this.st;
     let rec = null;
@@ -2795,10 +2805,11 @@ const AccountUI = {
       if (!st.available) {
         p.append(infoRow('Account service', 'Not set up yet', 'NEXUS accounts need the NEXUS account service on the internet. It has not been put online for this version of NEXUS yet, so you cannot create an account in this build. Nothing else in NEXUS is affected.'));
       }
-      p.append(rowButton('Create a NEXUS account', { icon: I.plus, disabled: !st.available, sub: 'With your e-mail address and a password. On this device (your PC, for example).', onClick: () => this.create() }));
-      p.append(rowButton('Sign in', { disabled: !st.available, sub: 'You already have an account: sign in on this device too.', onClick: () => this.signIn() }));
-      p.append(rowButton('Link this device with a code', { disabled: !st.available, sub: 'Another device is signed in: it shows a code, you enter it here and approve it there. Handy on a Steam Deck.', onClick: () => this.linkThis() }));
-      p.append(rowButton('Forgot your password?', { disabled: !st.available, sub: 'Use your recovery code.', onClick: () => this.recover() }));
+      const need = fn => () => st.available ? fn() : this.unavailable();
+      p.append(rowButton('Create a NEXUS account', { icon: I.plus, sub: 'With your e-mail address and a password. On this device (your PC, for example).', onClick: need(() => this.create()) }));
+      p.append(rowButton('Sign in', { sub: 'You already have an account: sign in on this device too.', onClick: need(() => this.signIn()) }));
+      p.append(rowButton('Link this device with a code', { sub: 'Another device is signed in: it shows a code, you enter it here and approve it there. Handy on a Steam Deck.', onClick: need(() => this.linkThis()) }));
+      p.append(rowButton('Forgot your password?', { sub: 'Use your recovery code.', onClick: need(() => this.recover()) }));
       p.append(h('h3', {}, 'Advanced'));
       p.append(rowButton('Account service address', { value: st.custom ? st.server : (st.server || 'None'), sub: 'Only if you run your own NEXUS account service (see the NEXUS documentation). Must start with https://.', onClick: async () => {
         const v = await dialog({ title: 'Account service address', text: 'Leave empty to use NEXUS’s own service when it is available.', input: { value: st.custom ? st.server : '', placeholder: 'https://accounts.example.org', max: 200 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Save', value: true, primary: true }] });
