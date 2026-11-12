@@ -441,3 +441,5 @@ app/dist-base/Resources/ArtworkDB/*.png
 app/resources/ArtworkDB/*.png
 !docs/releases/
 !docs/releases/**
+/app/nexus
+__pycache__/

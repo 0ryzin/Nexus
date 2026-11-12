@@ -23,6 +23,10 @@ type GlobalSettings struct {
 
 	// PerfMonitor: the in-game performance overlay (perf.go, overlay_windows.go)
 	PerfMonitor PerfMonitorSettings `json:"perfMonitor"`
+	// Recording: screen recording (recorder.go)
+	Recording RecordingSettings `json:"recording"`
+	// KeysVersion: 2 = F12 records and Alt+F12 takes screenshots (NEXUS 0.4.0)
+	KeysVersion int `json:"keysVersion"`
 
 	Startup struct {
 		Enabled bool   `json:"enabled"`
@@ -78,9 +82,12 @@ type EmulatorSettings struct {
 	// While playing: fullscreen/window toggle and screenshot keys ("" = off), the controller's
 	// capture/share button for screenshots, and the fade from the loading screen into the game.
 	FullscreenKey string `json:"fullscreenKey"`
-	ScreenshotKey string `json:"screenshotKey"`
+	ScreenshotKey string `json:"screenshotKey"` // default Alt+F12 (F12 records, Settings › Recording)
 	CaptureButton bool   `json:"captureButton"`
 	FadeIn        bool   `json:"fadeIn"`
+	// HomeAction: what NEXUS Home does to the game: "background" keeps it running (muted, no
+	// input) behind NEXUS, "pause" pauses it.
+	HomeAction string `json:"homeAction"`
 	// Overrides holds engine keys saved by NEXUS 1.2-1.5; migrated into Engine on load.
 	Overrides map[string]string `json:"overrides"`
 }
@@ -92,6 +99,8 @@ func DefaultSettings() GlobalSettings {
 	s.Display.Width, s.Display.Height = 1280, 760
 	s.PerfMonitor = PerfMonitorSettings{Mode: "off", Position: "top", Opacity: 80, Scale: 100,
 		Metrics: []string{"fps", "frametime", "cpu", "gpu", "vram", "ram"}}
+	s.Recording = DefaultRecordingSettings()
+	s.KeysVersion = 2
 	s.Startup.Enabled = true
 	s.Startup.Color = "#e60012"
 	s.Startup.Style = "standard"
@@ -108,7 +117,7 @@ func DefaultSettings() GlobalSettings {
 	s.Engine = map[string]string{}
 	s.Updates = UpdateSettings{AutoCheck: true, Repo: defaultReleaseRepo}
 	s.Emulator = EmulatorSettings{Fullscreen: true, QuitCombo: true, ManageSaves: true, WhoPlays: "several", HomeKey: "H", HomeButton: true,
-		FullscreenKey: "F11", ScreenshotKey: "F12", CaptureButton: true, FadeIn: true, Overrides: map[string]string{}}
+		FullscreenKey: "F11", ScreenshotKey: "Alt+F12", CaptureButton: true, FadeIn: true, HomeAction: "background", Overrides: map[string]string{}}
 	return s
 }
 
@@ -136,7 +145,9 @@ func LoadSettings(p *Paths) (*SettingsStore, error) {
 	if _, err := os.Stat(st.path); errors.Is(err, os.ErrNotExist) {
 		return st, st.saveLocked()
 	}
-	// Unmarshal over defaults so new fields keep their default values.
+	// Unmarshal over defaults so new fields keep their default values (but not version markers:
+	// a file without one is from before that version).
+	st.s.KeysVersion = 0
 	if err := readJSON(st.path, &st.s); err != nil {
 		st.s = DefaultSettings()
 		return st, err
@@ -150,7 +161,18 @@ func LoadSettings(p *Paths) (*SettingsStore, error) {
 	if st.s.Engine == nil {
 		st.s.Engine = map[string]string{}
 	}
-	if migrateGlobalSettings(&st.s) {
+	changed := migrateGlobalSettings(&st.s)
+	if st.s.KeysVersion < 2 {
+		// 0.4.0: F12 starts and stops recording; screenshots move from F12 to Alt+F12
+		if st.s.Emulator.ScreenshotKey == "F12" {
+			st.s.Emulator.ScreenshotKey = "Alt+F12"
+		}
+		if st.s.Emulator.HomeAction == "" {
+			st.s.Emulator.HomeAction = "background"
+		}
+		st.s.KeysVersion, changed = 2, true
+	}
+	if changed {
 		_ = st.saveLocked()
 	}
 	return st, nil

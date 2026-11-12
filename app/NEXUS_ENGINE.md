@@ -1,6 +1,23 @@
 # The NEXUS engine: investigation, architecture, status and plan
 
-## 0. NEXUS Engine 0.4.0 (NEXUS 0.3.0): upstream build-160 and patch 0014
+## 0. NEXUS Engine 0.5.0 (NEXUS 0.4.0): patch 0015 — recording key, background sessions
+
+Same upstream base as 0.4.0 (Lichii build-160, commit 2eb5f081c); the NEXUS patch series is now
+15 patches and still applies without conflicts. Patch 0015 changes only NEXUS's own engine host
+(`src/nexus_engine/nexus_engine.cpp`, `nexus_engine.h`), no upstream emulation code.
+
+| Change | Detail |
+|---|---|
+| Shortcuts with modifiers | `screenshot_key` and the new `record_key` accept `Ctrl+`, `Alt+`, `Shift+`, `Win+` prefixes (`Alt+F12`). A shortcut with a modifier never conflicts with a single game key. Defaults: screenshot `Alt+F12`, record `F12`. |
+| Record key | The engine only counts presses (`recordPresses` in the status); NEXUS starts and stops the recording with its own capture module (`nexus_capture.dll`, see `capture/` in the repository). The engine never records. |
+| Background sessions | `nexus_engine_background(1)` hides the game window and keeps the game running; an `SDL_SetEventFilter` drops keyboard, mouse, controller, touch and sensor events so the game ignores input (device connect/disconnect still passes). `nexus_engine_background(0)` shows it again. The filter is removed when the session ends. Status field `background`. |
+| Screenshot on request | `nexus_engine_screenshot()`: NEXUS can ask for a screenshot (the shortcut while the game is in the background). |
+| Game window | `nexus_engine_window()` returns the game window's handle, so the capture module records that window only. |
+
+All three exports are optional (looked up by name); NEXUS works with an engine without them
+(Home then pauses, and recording is unavailable).
+
+## 0a. NEXUS Engine 0.4.0 (NEXUS 0.3.0): upstream build-160 and patch 0014
 
 ### Upstream: Lichii build-150 → build-160 (30 commits)
 The NEXUS patch series was rebased onto build-160 (commit 2eb5f081c) without conflicts; all 14

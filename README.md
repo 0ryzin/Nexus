@@ -12,7 +12,7 @@ NEXUS is being developed around an integrated emulation engine. The intended exp
 
 **[⬇ Download the latest NEXUS for Windows (Releases)](https://github.com/0ryzin/Nexus/releases/latest)**
 
-**Platforms:** Windows x64 — available (preview). Linux — planned next, not available yet. macOS — planned after Linux, not available yet. See [Platforms](docs/PLATFORMS.md).
+**Platform:** Windows 10 and 11, x64 (preview). NEXUS is released for Windows only.
 
 Every release lists what it brings. Download `NEXUS-<version>-Windows-x64.zip`, extract the whole folder anywhere, and run `NEXUS\NEXUS.exe`. Nothing else needs installing. All versions: [Releases](https://github.com/0ryzin/Nexus/releases).
 
@@ -42,14 +42,16 @@ Every release lists what it brings. Download `NEXUS-<version>-Windows-x64.zip`, 
 - Controller layouts for all games or per game (Nintendo or Xbox button positions, controller type, any button remapped).
 - Frame generation (AMD FSR 3, or Lossless Scaling with your own copy), NVIDIA DLSS in place of a game's DLSS on RTX cards, AMD FSR 4 on Radeon RX 9000 — offered only when your graphics card supports them.
 - Save Data: every user's saves in `UserData\Saves\<PLAYER_ID>-<name>\<GAME_ID>-<SHORT>` (for example `0400486024DEC000-OOT`), with easy import (player and game identified), export, backup, restore and delete — never without confirmation and a backup.
-- Media tab: screenshots (F12 or the controller's capture button) with their game and date.
-- NEXUS Home with one press of H or the controller's Home button; F11 for fullscreen/window while playing.
+- Media tab: screenshots (Alt+F12 or the controller's capture button) and **screen recordings (F12)** with their game and date.
+- Screen recording of the game window only, with the game's sound and optionally your microphone, using the graphics card's video encoder (NVIDIA NVENC, AMD, Intel Quick Sync) when present; settings for resolution, frame rate, quality, format and folder.
+- Save import from Lichii's save folder (read only; NEXUS backs up before replacing anything).
+- NEXUS Home with one press of the Home key or the controller's Home button; F11 for fullscreen/window while playing.
 - Remembered controllers and a chosen controller per player.
 - Game Updates and Mods per game, checked before they are accepted.
 - Automatic NEXUS updates, verified by SHA-256, with automatic rollback.
 - NEXUS manages its own system files; it never needs another emulator.
 - A full-screen NEXUS loading screen with the game's artwork and real loading steps; the game window appears only once the game is drawing.
-- **NEXUS Home while playing:** press **H** (changeable, or off) or the controller's Home/Guide button to return to NEXUS. The game keeps running in the background, muted and receiving no input; its tile shows a green dot, with *Resume Game* and *Close Game*. If H is used by your game controls, NEXUS leaves it to the game and tells you.
+- **NEXUS Home while playing:** press the Home key (your choice, or off) or the controller's Home/Guide button to return to NEXUS. The game keeps running in the background, muted and receiving no input (or pauses, if you prefer); its tile shows a green dot, with *Resume* and *Close game*. If H is used by your game controls, NEXUS leaves it to the game and tells you.
 - **Performance monitor:** an overlay at the top or bottom of the screen with FPS, frame time, CPU and GPU use and temperature, VRAM, RAM and RAM speed. Anything that can't be measured on your PC shows N/A. Choose metrics, opacity and size, for all games or chosen games, and toggle it while playing.
 - **Frame rate and VSync:** a frame rate limit for Switch 2 games (30–240, presets 30/60/90/120/144/165/240) or "match my display's refresh rate", VSync on/off/mailbox, per game. Switch 1 games run at their own rate; turning off the emulation speed limit speeds the game up rather than adding frames; frame generation adds frames on top.
 
@@ -97,7 +99,7 @@ On the current Windows development build, NEXUS stores user data under:
 
 This includes profiles, settings, artwork, statistics, logs, saves and engine data. The program and engine-build folders remain alongside NEXUS.exe.
 
-An empty portable.txt beside NEXUS.exe enables portable mode, keeping application data inside the NEXUS folder. Data locations on other platforms will be documented with their respective builds.
+An empty portable.txt beside NEXUS.exe enables portable mode, keeping application data inside the NEXUS folder.
 
 ## Versioning
 
@@ -109,7 +111,9 @@ NEXUS application versions and NEXUS Engine build versions are tracked separatel
 
 - `app/` — the NEXUS application (Go + WebView2) and its release tooling.
 - `engine/patches/` — the NEXUS engine as patches on upstream Lichii; `app/engine.lock` names the upstream base.
-- `.github/workflows/nexus-build.yml` — the Windows build: engine, tests, NEXUS.exe, the ZIP, and the release for a `v*` tag.
+- `capture/` — the NEXUS screen-recording module (`nexus_capture.dll`, Windows APIs only).
+- `docs/` — [architecture](docs/ARCHITECTURE.md), [source audit](docs/SOURCE_AUDIT.md), [performance](docs/PERFORMANCE.md), [publisher identity and signing](docs/SIGNING.md), [engine status](docs/ENGINE_STATUS.md), release notes.
+- `.github/workflows/nexus-build.yml` — the Windows build: engine, tests, NEXUS.exe, the ZIP, and the release (when `docs/releases/v<version>.md` exists), with a check that the published download works.
 
 Every release ZIP contains the corresponding source (`Source\`) and the licence notices. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
@@ -125,7 +129,9 @@ NEXUS is an independent project and is not affiliated with, endorsed by, or spon
 
 ## Updates
 
-NEXUS has no self-updater yet. New versions appear on the [Releases](https://github.com/0ryzin/Nexus/releases) page.
+NEXUS checks for new versions itself (*Settings › Updates*), verifies the download's SHA-256, installs it and rolls back if the new version does not start. Every version is also on the [Releases](https://github.com/0ryzin/Nexus/releases) page.
+
+`NEXUS.exe` lists *Nexus Development* as its company in *Properties › Details*. That is the program's own description; NEXUS is not code-signed yet, so Windows SmartScreen may warn the first time. See [docs/SIGNING.md](docs/SIGNING.md).
 
 ## Disclaimer
 

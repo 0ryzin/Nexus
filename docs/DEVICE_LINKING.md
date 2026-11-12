@@ -42,5 +42,5 @@ listening in a normal NEXUS. Testers switch it on with `NEXUS_EXPERIMENTAL=devic
 3. **Conflict propagation.** A conflict is shown on the device that found it. Resolving it there makes the next synchronisation consistent. A second conflict notice on the other device is possible and should be suppressed.
 4. **Large saves.** Files travel whole (base64 in JSON). Saves of a few MB are fine. Streaming and resumable transfers are needed for very large saves (limit currently 512 MB per file).
 5. **Engine-version compatibility.** Saves are the games' own data, the same in every engine version, so they are compared by content. The protocol has a version (`linkProto`), and a device with another version refuses with a message. Engine *configuration* is deliberately not synchronised.
-6. **Linux / Steam Deck.** The code is portable Go with no Windows dependencies, but NEXUS for Linux does not exist yet (next platform step).
+6. **Other devices.** The Device Linking code is portable Go with no Windows dependencies; NEXUS itself is released for Windows only.
 7. **NEXUS Cloud** for devices on different networks. Designed in [NEXUS_CLOUD.md](NEXUS_CLOUD.md), not built.

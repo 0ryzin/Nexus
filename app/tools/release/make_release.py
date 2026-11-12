@@ -68,8 +68,11 @@ def main():
     ap.add_argument("--no-engine", action="store_true")
     ap.add_argument("--engine-source", help="engine checkout (for the corresponding-source archive)")
     ap.add_argument("--engine-patches", help="engine/patches folder; the engine must have been built from it")
+    ap.add_argument("--capture", help="nexus_capture.dll (screen recording); required for releases")
     ap.add_argument("--out", default=os.path.join(REPO, "out"))
     a = ap.parse_args()
+    if a.engine and not a.capture:
+        sys.exit("--capture is required for release packages (screen recording module)")
     if not a.engine and not a.no_engine:
         sys.exit("--engine is required (use --no-engine only for developer packages)")
 
@@ -77,6 +80,9 @@ def main():
     root = os.path.join(stage, "NEXUS")
     shutil.copytree(os.path.join(REPO, "dist-base"), root)
     shutil.copy2(a.exe, os.path.join(root, "NEXUS.exe"))
+    if a.capture:
+        # next to NEXUS.exe: the capture module is part of NEXUS, not of the engine
+        shutil.copy2(a.capture, os.path.join(root, "nexus_capture.dll"))
     for doc in ("README.md", "NEXUS_ENGINE.md"):
         shutil.copy2(os.path.join(REPO, doc), os.path.join(root, doc))
     os.makedirs(os.path.join(root, "Source"), exist_ok=True)
@@ -90,7 +96,7 @@ def main():
             for f in files:
                 z.write(os.path.join(d, f), os.path.join("nexus", rel, f))
 
-    release = {"nexus": a.version, "engine": None, "builtBy": "tools/release/make_release.py"}
+    release = {"nexus": a.version, "engine": None, "capture": bool(a.capture), "builtBy": "tools/release/make_release.py"}
     engine_dir = os.path.join(root, "Engine")
     os.makedirs(engine_dir, exist_ok=True)
     if a.engine:
@@ -138,6 +144,8 @@ def main():
         assert "NEXUS/NEXUS.exe" in names
         if a.engine:
             assert "NEXUS/Engine/nexus_engine.dll" in names and "NEXUS/Engine/engine.json" in names
+        if a.capture:
+            assert "NEXUS/nexus_capture.dll" in names
     with open(zpath + ".sha256", "w") as f:
         f.write(f"{sha256(zpath)}  {name}\n")
     shutil.rmtree(stage)

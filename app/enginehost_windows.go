@@ -19,6 +19,7 @@ type dllEngine struct {
 	dll                                                              *syscall.DLL
 	apiVersion, info, start, status, stop, setVolume, focus, suspend *syscall.Proc
 	reveal, controllers                                              *syscall.Proc // engine 0.4 (optional)
+	background, screenshot, window                                   *syscall.Proc // engine 0.5 (optional)
 }
 
 func loadEngineHost(dir string) (EngineHost, error) {
@@ -44,6 +45,9 @@ func loadEngineHost(dir string) (EngineHost, error) {
 	}
 	e.reveal, _ = d.FindProc("nexus_engine_reveal")
 	e.controllers, _ = d.FindProc("nexus_engine_controllers")
+	e.background, _ = d.FindProc("nexus_engine_background")
+	e.screenshot, _ = d.FindProc("nexus_engine_screenshot")
+	e.window, _ = d.FindProc("nexus_engine_window")
 	if v, _, _ := e.apiVersion.Call(); int32(v) != engineAPIVersion {
 		return nil, fmt.Errorf("this engine build uses interface version %d; NEXUS needs %d", int32(v), engineAPIVersion)
 	}
@@ -113,6 +117,34 @@ func (e *dllEngine) Reveal() {
 	if e.reveal != nil {
 		_, _, _ = e.reveal.Call()
 	}
+}
+
+func (e *dllEngine) Background(on bool) bool {
+	if e.background == nil {
+		return false
+	}
+	v := uintptr(0)
+	if on {
+		v = 1
+	}
+	_, _, _ = e.background.Call(v)
+	return true
+}
+
+func (e *dllEngine) Screenshot() bool {
+	if e.screenshot == nil {
+		return false
+	}
+	_, _, _ = e.screenshot.Call()
+	return true
+}
+
+func (e *dllEngine) Window() uintptr {
+	if e.window == nil {
+		return 0
+	}
+	h, _, _ := e.window.Call()
+	return h
 }
 
 func (e *dllEngine) Controllers() ([]PadInfo, error) {

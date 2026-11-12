@@ -18,6 +18,12 @@ type EngineHost interface {
 	Reveal()
 	// Controllers lists connected game controllers (engine 0.4; error for older builds).
 	Controllers() ([]PadInfo, error)
+	// Background hides the game window and keeps the game running with its input blocked (NEXUS
+	// Home); false shows it again. False is returned when the engine cannot (older builds).
+	Background(on bool) bool
+	// Screenshot asks the engine for a screenshot; Window is the game window's handle (0 if none).
+	Screenshot() bool
+	Window() uintptr
 }
 
 // PadInfo is one connected game controller as the engine (SDL) sees it.
@@ -66,6 +72,7 @@ type EngineRequest struct {
 	// F11 / F12 by default ("" = off); keys used by the game controls go to the game
 	FullscreenKey string `json:"fullscreenKey"`
 	ScreenshotKey string `json:"screenshotKey"`
+	RecordKey     string `json:"recordKey"` // presses are counted (recordPresses); NEXUS records
 	CaptureButton bool   `json:"captureButton"` // controller capture/share button: screenshot
 	ScreenshotDir string `json:"screenshotDir,omitempty"`
 	// ScreenshotName starts the screenshot file name (the game's short name)
@@ -104,6 +111,9 @@ type EngineStatus struct {
 	Screenshots        uint64 `json:"screenshots,omitempty"`
 	ScreenshotFailures uint64 `json:"screenshotFailures,omitempty"`
 	LastScreenshot     string `json:"lastScreenshot,omitempty"`
+	// engine 0.5
+	RecordPresses uint64 `json:"recordPresses,omitempty"`
+	Background    bool   `json:"background,omitempty"`
 }
 
 // EngineBuildInfo is nexus_engine_info plus what NEXUS knows about the installed build.

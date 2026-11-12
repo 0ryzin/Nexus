@@ -142,6 +142,7 @@ type App struct {
 	Compat           *CompatStore
 	Saves            *SaveOrganizer
 	Media            *MediaLibrary
+	Recorder         *Recorder
 	Controllers      *ControllerStore
 	Content          *GameContent
 	Updater          *Updater
@@ -176,6 +177,7 @@ func NewAppWithPaths(p *Paths) (*App, error) {
 	a.Compat.SetEngine(func() string { return a.Emu.Builds.ActiveVersionLabel() })
 	a.Saves = NewSaveOrganizer(a)
 	a.Media = NewMediaLibrary(a)
+	a.Recorder = NewRecorder(a)
 	a.Controllers = NewControllerStore(a)
 	a.Content = NewGameContent(a)
 	a.Updater = NewUpdater(a)

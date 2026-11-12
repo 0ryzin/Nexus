@@ -1,0 +1,284 @@
+From bf8a6e3478a512f67c3023ccabb4fb47b64d063c Mon Sep 17 00:00:00 2001
+From: NEXUS <nexus@localhost>
+Date: Thu, 12 Nov 2026 11:34:44 +0000
+Subject: [PATCH 15/15] nexus_engine 0.5: F12 recording key, Alt+F12
+ screenshots, games keep running behind NEXUS Home
+
+- shortcuts with modifiers ("Alt+F12"); a shortcut with modifiers never conflicts with a game key;
+  screenshot (Alt+F12) is matched before recording (F12) by exact modifiers
+- recordKey: presses are counted for NEXUS (recordPresses), which records the window itself
+- nexus_engine_background: NEXUS Home keeps the game running with its window hidden and keyboard,
+  mouse, touch and controller input blocked by an SDL event filter before the input layer
+  (device connect/disconnect still pass); nexus_engine_suspend(1) still pauses
+- nexus_engine_screenshot (also while in the background), nexus_engine_window (HWND for capture)
+- status: recordPresses, background
+---
+ src/nexus_engine/include/nexus_engine.h |  10 ++
+ src/nexus_engine/nexus_engine.cpp       | 148 ++++++++++++++++++++++--
+ 2 files changed, 148 insertions(+), 10 deletions(-)
+
+diff --git a/src/nexus_engine/include/nexus_engine.h b/src/nexus_engine/include/nexus_engine.h
+index 3080caabd..f326684a8 100644
+--- a/src/nexus_engine/include/nexus_engine.h
++++ b/src/nexus_engine/include/nexus_engine.h
+@@ -74,6 +74,16 @@ NEXUS_API void nexus_engine_reveal(void);
+ ///   "serial"}]. Returns the length needed, or -1 if controllers cannot be listed.
+ NEXUS_API int32_t nexus_engine_controllers(char* buf, int32_t buf_len);
+ 
++/// Engine 0.5 (optional exports):
++/// NEXUS Home without pausing: hides the game window and keeps the game running with keyboard,
++/// mouse and controller input blocked; 0 shows it again (same as nexus_engine_suspend(0)).
++NEXUS_API void nexus_engine_background(int32_t on);
++/// Takes a screenshot of the game (as the screenshot shortcut does), also while it runs in the
++/// background.
++NEXUS_API void nexus_engine_screenshot(void);
++/// The game window's native handle (HWND on Windows), or NULL when no game window exists.
++NEXUS_API void* nexus_engine_window(void);
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/src/nexus_engine/nexus_engine.cpp b/src/nexus_engine/nexus_engine.cpp
+index 1750cf16b..3d5be0ea1 100644
+--- a/src/nexus_engine/nexus_engine.cpp
++++ b/src/nexus_engine/nexus_engine.cpp
+@@ -114,7 +114,8 @@ struct Request {
+     // window and capture shortcuts (SDL scancode names; "" = off). Keys used by the game controls
+     // are left to the game.
+     std::string fullscreen_key{"F11"};
+-    std::string screenshot_key{"F12"};
++    std::string screenshot_key{"Alt+F12"};
++    std::string record_key{"F12"}; // NEXUS records (the engine only counts the presses)
+     bool capture_button{true}; // the controller's capture/share button takes a screenshot
+     std::string screenshot_dir;
+     std::string screenshot_name{"NEXUS"};
+@@ -133,7 +134,7 @@ struct Engine {
+     std::thread thread;
+     std::atomic<State> state{State::Idle};
+     std::atomic<bool> stop_requested{false};
+-    std::atomic<int> suspend_request{-1}; // -1 none, 0 resume, 1 suspend (handled on the engine thread)
++    std::atomic<int> suspend_request{-1}; // -1 none, 0 resume, 1 pause+hide, 2 hide and keep running (engine thread)
+     std::atomic<bool> suspended{false};
+     std::atomic<bool> force_stop{false};
+     std::atomic<int> volume{100};
+@@ -146,6 +147,9 @@ struct Engine {
+     std::atomic<std::uint64_t> load_total{0};
+     // NEXUS Home requests from the game window (keyboard key or controller Home button)
+     std::atomic<std::uint64_t> home_presses{0};
++    std::atomic<std::uint64_t> record_presses{0};
++    std::atomic<bool> background{false}; // hidden but running (NEXUS Home), input blocked
++    std::atomic<bool> screenshot_request{false};
+     std::atomic<bool> home_key_conflict{false};
+     std::atomic<bool> shown{false}; // the game window has been shown (first frame)
+     std::atomic<bool> ready{false}; // the first frame was drawn (window may still wait for reveal)
+@@ -267,6 +271,77 @@ constexpr std::array<std::pair<const char*, Settings::NativeButton::Values>, 12>
+     {"lstick", Settings::NativeButton::LStick},   {"rstick", Settings::NativeButton::RStick},
+ }};
+ 
++/// A keyboard shortcut: a key with an exact set of modifiers ("F12", "Alt+F12", "Ctrl+Shift+S").
++struct Shortcut {
++    SDL_Scancode key{SDL_SCANCODE_UNKNOWN};
++    SDL_Keymod mods{SDL_KMOD_NONE};
++    bool Matches(const SDL_KeyboardEvent& k) const;
++};
++
++SDL_Keymod NormalMods(SDL_Keymod m) {
++    SDL_Keymod out = SDL_KMOD_NONE;
++    if (m & SDL_KMOD_CTRL) out = static_cast<SDL_Keymod>(out | SDL_KMOD_CTRL);
++    if (m & SDL_KMOD_SHIFT) out = static_cast<SDL_Keymod>(out | SDL_KMOD_SHIFT);
++    if (m & SDL_KMOD_ALT) out = static_cast<SDL_Keymod>(out | SDL_KMOD_ALT);
++    if (m & SDL_KMOD_GUI) out = static_cast<SDL_Keymod>(out | SDL_KMOD_GUI);
++    return out;
++}
++
++bool Shortcut::Matches(const SDL_KeyboardEvent& k) const {
++    return key != SDL_SCANCODE_UNKNOWN && k.scancode == key && NormalMods(k.mod) == mods;
++}
++
++Shortcut ParseShortcut(const std::string& text) {
++    Shortcut sc;
++    std::string rest = text;
++    std::size_t plus;
++    // the last part is the key ("+" alone or at the end is not a modifier separator)
++    while ((plus = rest.find('+')) != std::string::npos && plus + 1 < rest.size()) {
++        std::string mod = rest.substr(0, plus);
++        for (auto& c : mod) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
++        if (mod == "ctrl" || mod == "control") sc.mods = static_cast<SDL_Keymod>(sc.mods | SDL_KMOD_CTRL);
++        else if (mod == "shift") sc.mods = static_cast<SDL_Keymod>(sc.mods | SDL_KMOD_SHIFT);
++        else if (mod == "alt") sc.mods = static_cast<SDL_Keymod>(sc.mods | SDL_KMOD_ALT);
++        else if (mod == "win" || mod == "gui" || mod == "cmd" || mod == "super") sc.mods = static_cast<SDL_Keymod>(sc.mods | SDL_KMOD_GUI);
++        else return {};
++        rest = rest.substr(plus + 1);
++    }
++    sc.key = rest.empty() ? SDL_SCANCODE_UNKNOWN : SDL_GetScancodeFromName(rest.c_str());
++    return sc;
++}
++
++/// While a game runs in the background (NEXUS Home), its input is blocked here, before the
++/// engine's input layer sees it. Device connect/disconnect events still pass.
++bool SDLCALL BlockGameInput(void*, SDL_Event* event) {
++    switch (event->type) {
++    case SDL_EVENT_KEY_DOWN:
++    case SDL_EVENT_KEY_UP:
++    case SDL_EVENT_TEXT_INPUT:
++    case SDL_EVENT_MOUSE_MOTION:
++    case SDL_EVENT_MOUSE_BUTTON_DOWN:
++    case SDL_EVENT_MOUSE_BUTTON_UP:
++    case SDL_EVENT_MOUSE_WHEEL:
++    case SDL_EVENT_JOYSTICK_AXIS_MOTION:
++    case SDL_EVENT_JOYSTICK_BALL_MOTION:
++    case SDL_EVENT_JOYSTICK_HAT_MOTION:
++    case SDL_EVENT_JOYSTICK_BUTTON_DOWN:
++    case SDL_EVENT_JOYSTICK_BUTTON_UP:
++    case SDL_EVENT_GAMEPAD_AXIS_MOTION:
++    case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
++    case SDL_EVENT_GAMEPAD_BUTTON_UP:
++    case SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN:
++    case SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION:
++    case SDL_EVENT_GAMEPAD_TOUCHPAD_UP:
++    case SDL_EVENT_GAMEPAD_SENSOR_UPDATE:
++    case SDL_EVENT_FINGER_DOWN:
++    case SDL_EVENT_FINGER_UP:
++    case SDL_EVENT_FINGER_MOTION:
++        return false;
++    default:
++        return true;
++    }
++}
++
+ void MapPlayer(InputCommon::InputSubsystem& input, std::size_t index, const Common::ParamPackage& pad,
+                const std::map<std::string, std::string>& button_map,
+                const std::string& controller_type) {
+@@ -694,7 +769,17 @@ void RunSession(Request req) {
+                         req.home_key);
+         }
+         const SDL_Scancode fullscreen_key = usable_key(req.fullscreen_key);
+-        const SDL_Scancode screenshot_key = usable_key(req.screenshot_key);
++        // shortcuts with modifiers (Alt+F12) never conflict with a single game key
++        const auto usable_shortcut = [](const std::string& text) {
++            Shortcut sc = ParseShortcut(text);
++            if (sc.key != SDL_SCANCODE_UNKNOWN && sc.mods == SDL_KMOD_NONE && KeyUsedByGameControls(sc.key)) {
++                LOG_WARNING(Frontend, "NEXUS Engine: shortcut {} is a game control; it goes to the game", text);
++                return Shortcut{};
++            }
++            return sc;
++        };
++        const Shortcut screenshot_key = usable_shortcut(req.screenshot_key);
++        const Shortcut record_key = usable_shortcut(req.record_key);
+         // one press = one Home request: key repeats, the button's release, a second device for
+         // the same pad (XInput + HID) and presses while NEXUS is showing are not counted
+         auto last_home = std::chrono::steady_clock::time_point{};
+@@ -739,13 +824,21 @@ void RunSession(Request req) {
+                         }
+                         continue;
+                     }
+-                    if ((key && screenshot_key != SDL_SCANCODE_UNKNOWN && event.key.scancode == screenshot_key) ||
++                    // Alt+F12 (screenshot) is checked before F12 (recording): the exact modifiers
++                    // decide, so a screenshot never starts a recording
++                    if ((key && screenshot_key.Matches(event.key)) ||
+                         (pad && req.capture_button && event.gbutton.button == SDL_GAMEPAD_BUTTON_MISC1)) {
+                         if ((key_down || pad_down) && e.shown && !e.suspended) {
+                             TakeScreenshot(system, req);
+                         }
+                         continue;
+                     }
++                    if (key && record_key.Matches(event.key)) {
++                        if (key_down && e.shown && !e.suspended) {
++                            ++e.record_presses;
++                        }
++                        continue;
++                    }
+                     window->OnEvent(event);
+                 } while (SDL_PollEvent(&event));
+             }
+@@ -784,20 +877,38 @@ void RunSession(Request req) {
+                 }
+             }
+             window->ApplyPendingTitle();
+-            // Home in NEXUS: pause emulation and hide the game window; resume shows it again.
++            if (e.screenshot_request.exchange(false) && e.shown) {
++                TakeScreenshot(system, req); // asked by NEXUS (also while the game is in the background)
++            }
++            // Home in NEXUS: hide the game window and either keep the game running with its
++            // input blocked (2) or pause it (1); resume shows it again.
+             if (const int req_s = e.suspend_request.exchange(-1); req_s >= 0) {
+                 SDL_Window* sdl_window = window->GetSDLWindow();
+-                if (req_s == 1 && !e.suspended) {
+-                    void(system.Pause());
++                if ((req_s == 1 || req_s == 2) && !e.suspended) {
++                    if (req_s == 1) {
++                        void(system.Pause());
++                    } else {
++                        SDL_SetEventFilter(BlockGameInput, nullptr);
++                        e.background = true;
++                    }
+                     SDL_HideWindow(sdl_window);
+                     e.suspended = true;
+-                    LOG_INFO(Frontend, "NEXUS Engine: suspended (Home)");
++                    LOG_INFO(Frontend, "NEXUS Engine: {} (Home)", req_s == 1 ? "paused" : "running in the background");
++                } else if (req_s == 1 && e.suspended && e.background) {
++                    void(system.Pause()); // from running in the background to paused
++                    SDL_SetEventFilter(nullptr, nullptr);
++                    e.background = false;
+                 } else if (req_s == 0 && e.suspended) {
+                     if (e.shown) {
+                         SDL_ShowWindow(sdl_window);
+                     }
+                     SDL_RaiseWindow(sdl_window);
+-                    void(system.Run());
++                    if (e.background) {
++                        SDL_SetEventFilter(nullptr, nullptr);
++                        e.background = false;
++                    } else {
++                        void(system.Run());
++                    }
+                     e.suspended = false;
+                     last_home = std::chrono::steady_clock::now(); // a press that resumed is not a new Home
+                     LOG_INFO(Frontend, "NEXUS Engine: resumed");
+@@ -818,6 +929,8 @@ void RunSession(Request req) {
+             system.ShutdownMainProcess();
+         }
+         e.window_handle = nullptr;
++        SDL_SetEventFilter(nullptr, nullptr);
++        e.background = false;
+         window.reset();
+         FileSys::NexusSaveFolders().clear();
+     }
+@@ -908,7 +1021,8 @@ NEXUS_API int32_t nexus_engine_start(const char* request_json) {
+         req.home_key = j.value("homeKey", std::string{});
+         req.home_button = j.value("homeButton", true);
+         req.fullscreen_key = j.value("fullscreenKey", std::string{"F11"});
+-        req.screenshot_key = j.value("screenshotKey", std::string{"F12"});
++        req.screenshot_key = j.value("screenshotKey", std::string{"Alt+F12"});
++        req.record_key = j.value("recordKey", std::string{"F12"});
+         req.capture_button = j.value("captureButton", true);
+         req.screenshot_dir = j.value("screenshotDir", std::string{});
+         req.screenshot_name = j.value("screenshotName", std::string{"NEXUS"});
+@@ -987,6 +1101,8 @@ NEXUS_API int32_t nexus_engine_status(char* buf, int32_t buf_len) {
+     j["suspended"] = e.suspended.load();
+     j["shown"] = e.shown.load();
+     j["homePresses"] = e.home_presses.load();
++    j["recordPresses"] = e.record_presses.load();
++    j["background"] = e.background.load();
+     j["homeKeyConflict"] = e.home_key_conflict.load();
+     j["ready"] = e.ready.load();
+     j["fullscreen"] = e.fullscreen_now.load();
+@@ -1033,6 +1149,18 @@ NEXUS_API void nexus_engine_set_volume(int32_t percent) {
+     E().volume = std::clamp<int32_t>(percent, 0, 200);
+ }
+ 
++NEXUS_API void nexus_engine_background(int32_t on) {
++    E().suspend_request = on != 0 ? 2 : 0;
++}
++
++NEXUS_API void nexus_engine_screenshot(void) {
++    E().screenshot_request = true;
++}
++
++NEXUS_API void* nexus_engine_window(void) {
++    return E().window_handle.load();
++}
++
+ NEXUS_API void nexus_engine_suspend(int32_t suspend) {
+     E().suspend_request = suspend != 0 ? 1 : 0;
+ }

@@ -1276,6 +1276,9 @@ func (o *SaveOrganizer) inspect(v saveVFS, rootName string) ([]SaveCandidate, st
 			}
 		}
 		for _, fi := range entries {
+			if n := strings.ToLower(fi.Name()); n == "cache" || n == "temp" || n == "system" {
+				continue // engine caches and system saves, not game saves
+			}
 			if fi.IsDir() && fi.Name() != "user" || fi.IsDir() && depth == 0 {
 				scan(join(fi.Name()), fi.Name(), name, depth+1)
 			}
@@ -1664,6 +1667,22 @@ func (o *SaveOrganizer) SharedEngineSaves() string {
 	p := filepath.Join(o.app.Emu.DataDir(), "nand", "user", "save")
 	if hasSaveData(p) {
 		return p
+	}
+	return ""
+}
+
+// lichiiSaveDir is Lichii's save folder on this PC ("" if Lichii is not installed for this user).
+// Save import only reads it.
+func lichiiSaveDir() string {
+	for _, base := range []string{os.Getenv("APPDATA"), os.Getenv("NEXUS_LICHII_DIR")} {
+		if base == "" {
+			continue
+		}
+		for _, d := range []string{filepath.Join(base, "lichii", "nand", "user", "save"), filepath.Join(base, "nand", "user", "save")} {
+			if dirExists(d) {
+				return d
+			}
+		}
 	}
 	return ""
 }

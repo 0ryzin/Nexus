@@ -320,3 +320,63 @@ func TestSaveImportIdentifiesAndProtects(t *testing.T) {
 		t.Fatal("path escape accepted")
 	}
 }
+
+// TestLichiiSaveImport: Lichii's own save folder (nand/user/save) is found, inspected without
+// changing it, and its saves identified by player and game; caches are not offered as saves.
+func TestLichiiSaveImport(t *testing.T) {
+	app, _ := newTestApp(t, "")
+	app.Library.Scan()
+	tom, _ := app.Profiles.Create("Tom", Avatar{Kind: "glyph"})
+	ad := t.TempDir()
+	t.Setenv("APPDATA", ad)
+	save := filepath.Join(ad, "lichii", "nand", "user", "save")
+	writeOOTSave(t, filepath.Join(save, "0000000000000000", testUID, "0100AAAA00010000"), "lichii")
+	writeSave(t, filepath.Join(save, "0000000000000000", "00000000000000000000000000000000", "0100AAAA00010000", "dev.bin"), "device")
+	writeSave(t, filepath.Join(save, "cache", "0100AAAA00010000", "shader.bin"), "cache")
+	if lichiiSaveDir() != save {
+		t.Fatalf("lichii dir %q", lichiiSaveDir())
+	}
+	before := mustHash(t, save)
+	insp, err := app.Saves.Inspect(save, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(insp.Candidates) != 2 {
+		t.Fatalf("%d candidates: %+v", len(insp.Candidates), insp.Candidates)
+	}
+	var picks []SaveImportPick
+	for _, c := range insp.Candidates {
+		if c.TitleID != "0100AAAA00010000" || !c.Confident {
+			t.Fatalf("%+v", c)
+		}
+		if !c.Device && (c.PlayerID != testUID || len(c.Items) != 8) {
+			t.Fatalf("account save %+v", c)
+		}
+		picks = append(picks, SaveImportPick{ID: c.ID, TitleID: c.TitleID, Device: c.Device})
+	}
+	if _, err := app.Saves.Import(insp.Token, tom.ID, picks); err != nil {
+		t.Fatal(err)
+	}
+	dir := app.Profiles.SaveDir(tom.ID)
+	if readFile(t, filepath.Join(dir, "0100AAAA00010000-AQ", "account.sav")) != "lichii account" ||
+		readFile(t, filepath.Join(dir, "0100AAAA00010000-AQ (device)", "dev.bin")) != "device" {
+		t.Fatal("import")
+	}
+	if mustHash(t, save) != before {
+		t.Fatal("the Lichii folder was changed")
+	}
+}
+
+// mustHash: names, sizes and contents of every file below dir.
+func mustHash(t *testing.T, dir string) string {
+	t.Helper()
+	var b strings.Builder
+	filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() {
+			data, _ := os.ReadFile(p)
+			b.WriteString(p + "|" + string(data) + "\n")
+		}
+		return nil
+	})
+	return b.String()
+}

@@ -11,6 +11,7 @@ package main
 // windowed games.
 
 import (
+	"fmt"
 	"runtime"
 	"sync"
 	"unsafe"
@@ -97,6 +98,9 @@ type perfOverlay struct {
 	app     *App
 	mu      sync.Mutex
 	hwnd    uintptr
+	rec     uintptr // recording indicator ("● REC 01:23", top-right corner)
+	recText string
+	recOn   bool
 	text    string
 	dark    bool
 	shown   bool
@@ -130,6 +134,9 @@ func (o *perfOverlay) loop() {
 		return
 	}
 	o.hwnd = hwnd
+	recTitle, _ := windows.UTF16PtrFromString("NEXUS recording")
+	o.rec, _, _ = procOvCreateWindowEx.Call(wsExLayered|wsExTransparent|wsExTopmost|wsExToolWindow|wsExNoActivate,
+		uintptr(unsafe.Pointer(name)), uintptr(unsafe.Pointer(recTitle)), wsPopup, 0, 0, 10, 10, 0, 0, 0, 0)
 	procOvSetTimer.Call(hwnd, 1, 500, 0)
 	var m ovMsg
 	for {
@@ -148,7 +155,11 @@ func (o *perfOverlay) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr 
 		o.tick()
 		return 0
 	case wmPaint:
-		o.paint(hwnd)
+		if hwnd == o.rec {
+			o.paintRec(hwnd)
+		} else {
+			o.paint(hwnd)
+		}
 		return 0
 	}
 	r, _, _ := procOvDefWindowProc.Call(hwnd, uintptr(msg), wp, lp)
@@ -156,6 +167,7 @@ func (o *perfOverlay) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr 
 }
 
 func (o *perfOverlay) tick() {
+	o.tickRec()
 	a := o.app
 	cfg := a.Settings.Get().PerfMonitor
 	st := a.Emu.State()
@@ -214,6 +226,77 @@ func (o *perfOverlay) paint(hwnd uintptr) {
 	procOvSetTextColor.Call(hdc, fg)
 	text, _ := windows.UTF16FromString(o.text)
 	procOvDrawText.Call(hdc, uintptr(unsafe.Pointer(&text[0])), uintptr(len(text)-1), uintptr(unsafe.Pointer(&ps.Rc)), 0x1|0x4|0x20 /*CENTER|VCENTER|SINGLELINE*/)
+	procOvSelectObject.Call(hdc, old)
+	procOvDeleteObject.Call(font)
+}
+
+// tickRec shows the recording indicator while a recording runs and the game is in front.
+func (o *perfOverlay) tickRec() {
+	a := o.app
+	if o.rec == 0 {
+		return
+	}
+	st := a.Emu.State()
+	want := a.Recorder != nil && a.Recorder.Active() && st.Running && st.Phase == "playing" && !st.Suspended
+	if !want {
+		if o.recOn {
+			procOvShowWindow.Call(o.rec, swHide)
+			o.recOn = false
+		}
+		return
+	}
+	d := int(a.Recorder.Elapsed().Seconds())
+	if d >= 3600 {
+		o.recText = fmt.Sprintf("REC %d:%02d:%02d", d/3600, d/60%60, d%60)
+	} else {
+		o.recText = fmt.Sprintf("REC %02d:%02d", d/60, d%60)
+	}
+	var mi ovMonitorInfo
+	mi.Size = uint32(unsafe.Sizeof(mi))
+	win := a.Emu.GameWindow()
+	if win == 0 {
+		win = a.UI.WindowHandle()
+	}
+	mon, _, _ := procOvMonitorFromWindow.Call(win, 2 /*NEAREST*/)
+	procOvGetMonitorInfo.Call(mon, uintptr(unsafe.Pointer(&mi)))
+	const w, h, margin = 150, 34, 18
+	x := mi.Monitor.R - w - margin
+	y := mi.Monitor.T + margin
+	if cfg := a.Settings.Get().PerfMonitor; cfg.Position != "bottom" && cfg.For(st.GameKey) {
+		y += o.height // below the performance strip
+	}
+	procOvSetLayeredAttributes.Call(o.rec, 0, 225, lwaAlpha)
+	procOvSetWindowPos.Call(o.rec, hwndTopmost, uintptr(x), uintptr(y), w, h, swpNoActivate)
+	if !o.recOn {
+		procOvShowWindow.Call(o.rec, swShowNoActivate)
+		o.recOn = true
+	}
+	procOvInvalidateRect.Call(o.rec, 0, 1)
+}
+
+func (o *perfOverlay) paintRec(hwnd uintptr) {
+	var ps ovPaint
+	hdc, _, _ := procOvBeginPaint.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
+	defer procOvEndPaint.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
+	brush, _, _ := procOvCreateSolidBrush.Call(rgb(20, 20, 22))
+	procOvFillRect.Call(hdc, uintptr(unsafe.Pointer(&ps.Rc)), brush)
+	procOvDeleteObject.Call(brush)
+	face, _ := windows.UTF16PtrFromString("Segoe UI Semibold")
+	px := int32(-17) // font height in pixels (negative: character height)
+	font, _, _ := procOvCreateFont.Call(uintptr(px), 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 5, 0, uintptr(unsafe.Pointer(face)))
+	old, _, _ := procOvSelectObject.Call(hdc, font)
+	procOvSetBkMode.Call(hdc, 1)
+	// red dot, then the time
+	dot := ps.Rc
+	dot.R = dot.L + 34
+	procOvSetTextColor.Call(hdc, rgb(235, 40, 40))
+	d, _ := windows.UTF16FromString("\u25CF")
+	procOvDrawText.Call(hdc, uintptr(unsafe.Pointer(&d[0])), uintptr(len(d)-1), uintptr(unsafe.Pointer(&dot)), 0x1|0x4|0x20)
+	txt := ps.Rc
+	txt.L += 30
+	procOvSetTextColor.Call(hdc, rgb(245, 245, 247))
+	t, _ := windows.UTF16FromString(o.recText)
+	procOvDrawText.Call(hdc, uintptr(unsafe.Pointer(&t[0])), uintptr(len(t)-1), uintptr(unsafe.Pointer(&txt)), 0x1|0x4|0x20)
 	procOvSelectObject.Call(hdc, old)
 	procOvDeleteObject.Call(font)
 }

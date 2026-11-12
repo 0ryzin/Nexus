@@ -111,6 +111,21 @@ jobs:
         with:
           arch: x64
 
+      # screen recording module (capture/): built with MSVC and tested before the long engine build
+      - name: Build the NEXUS capture module
+        shell: pwsh
+        run: |
+          cmake -S capture -B build-capture -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl
+          cmake --build build-capture
+          if ($LASTEXITCODE -ne 0) { throw "capture module build failed" }
+
+      - name: Capture module self-test (video + audio -> MP4 -> read back; a real window)
+        shell: pwsh
+        working-directory: build-capture
+        run: |
+          ./nexus_capture_test.exe "$PWD\selftest.mp4" "$PWD\window.mp4"
+          if ($LASTEXITCODE -ne 0) { throw "capture self-test failed" }
+
       - name: Install LLVM (clang-cl, as upstream's Windows builds use)
         shell: pwsh
         working-directory: engine-src
@@ -229,7 +244,9 @@ jobs:
       - name: Build NEXUS.exe
         working-directory: app
         shell: bash
-        run: go build -ldflags "-H windowsgui -s -w -X main.AppVersion=$NEXUS_VERSION" -o NEXUS.exe .
+        # Windows version resource (CompanyName "Nexus Development", version) from app/VERSION;
+        # application metadata only, not a signature (docs/SIGNING.md)
+        run: python tools/release/make_rsrc.py --version "$NEXUS_VERSION" && go build -ldflags "-H windowsgui -s -w -X main.AppVersion=$NEXUS_VERSION" -o NEXUS.exe .
 
       - name: Make the NEXUS ZIP (NEXUS + engine)
         working-directory: app
@@ -237,7 +254,8 @@ jobs:
         run: |
           python tools/release/make_release.py --version "$NEXUS_VERSION" --exe NEXUS.exe \
             --engine ../engine-out/nexus-engine-${{ steps.lock.outputs.version }}-win64.zip \
-            --engine-patches ../engine/patches --engine-source ../engine-src --out ../out
+            --engine-patches ../engine/patches --engine-source ../engine-src \
+            --capture ../build-capture/nexus_capture.dll --out ../out
 
       - name: Fresh-extract check (what a user does)
         shell: pwsh
@@ -247,7 +265,7 @@ jobs:
           $fresh = Join-Path $env:RUNNER_TEMP 'fresh extract'
           Expand-Archive $z.FullName -DestinationPath $fresh
           $n = Join-Path $fresh 'NEXUS'
-          foreach ($f in 'NEXUS.exe', 'Engine/nexus_engine.dll', 'Engine/engine.json') {
+          foreach ($f in 'NEXUS.exe', 'nexus_capture.dll', 'Engine/nexus_engine.dll', 'Engine/engine.json') {
             if (!(Test-Path (Join-Path $n $f))) { throw "$f missing from the ZIP" }
           }
           # every DLL the engine imports is either in the package or a Windows system DLL
@@ -264,6 +282,24 @@ jobs:
             if (!$inPkg -and !$inSys) { throw "$d is needed by the engine but not in the package" }
           }
           python engine-src/tools/nexus/abi_smoke.py (Join-Path $n 'Engine/nexus_engine.dll')
+          # the capture module needs only Windows itself (static C++ runtime)
+          $cdeps = dumpbin /dependents (Join-Path $n 'nexus_capture.dll') | Select-String '^\s+(\S+\.dll)$' | ForEach-Object { $_.Matches[0].Groups[1].Value.ToLower() }
+          foreach ($d in $cdeps) {
+            $inSys = ($d -like 'api-ms-win-*') -or ($d -like 'ext-ms-*') -or (Test-Path (Join-Path $env:WINDIR "System32/$d"))
+            Write-Host "capture: $d  system=$inSys"
+            if (!$inSys) { throw "nexus_capture.dll needs $d, which Windows does not provide" }
+          }
+          # the packaged capture module records (test program run next to the extracted DLL)
+          $ct = Join-Path $env:RUNNER_TEMP 'capture-check'
+          New-Item -ItemType Directory -Force $ct | Out-Null
+          Copy-Item (Join-Path $n 'nexus_capture.dll') $ct
+          Copy-Item build-capture/nexus_capture_test.exe $ct
+          & (Join-Path $ct 'nexus_capture_test.exe') (Join-Path $ct 'check.mp4')
+          if ($LASTEXITCODE -ne 0) { throw "the packaged capture module failed its self-test" }
+          # publisher metadata is in NEXUS.exe (not a signature)
+          $vi = (Get-Item (Join-Path $n 'NEXUS.exe')).VersionInfo
+          Write-Host "NEXUS.exe: CompanyName=$($vi.CompanyName) ProductName=$($vi.ProductName) FileVersion=$($vi.FileVersion)"
+          if ($vi.CompanyName -ne 'Nexus Development' -or $vi.ProductVersion -ne $env:NEXUS_VERSION) { throw "NEXUS.exe version information is wrong" }
           # Another Switch emulator's data on the PC must not stop NEXUS (NEXUS 0.0.0 failed with
           # "Legacy emulator data or an unfinished import was found" in exactly this situation).
           foreach ($d in 'eden\keys', 'yuzu') { New-Item -ItemType Directory -Force (Join-Path $env:APPDATA $d) | Out-Null }
@@ -307,6 +343,13 @@ jobs:
           fi
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          # the release page: a Windows download table generated from the ZIP that was built
+          # (with its SHA-256), then the notes; checks the notes' sections and that no other
+          # platform is offered
+          if [[ "$publish" == true ]]; then
+            python app/tools/release/release_body.py --version "$NEXUS_VERSION" --repo "$GITHUB_REPOSITORY" \
+              --zip "out/NEXUS-$NEXUS_VERSION-Windows-x64.zip" --notes "docs/releases/$tag.md" --out out/release-body.md || exit 1
+          fi
 
       - name: Publish the release
         if: steps.rel.outputs.publish == 'true'
@@ -315,9 +358,37 @@ jobs:
           tag_name: ${{ steps.rel.outputs.tag }}
           target_commitish: ${{ github.sha }}
           name: NEXUS ${{ env.NEXUS_VERSION }} — Windows x64
-          body_path: docs/releases/${{ steps.rel.outputs.tag }}.md
+          body_path: out/release-body.md
           prerelease: ${{ contains(env.NEXUS_VERSION, '-') }}
           make_latest: ${{ !contains(env.NEXUS_VERSION, '-') }}
           files: |
             out/*.zip
             out/*.sha256
+
+      # The page says "Available" with a direct link, so the link must work: the published
+      # assets are downloaded again and checked against the build. If anything is missing or
+      # different, the release goes back to draft (invisible to users) and the build fails.
+      - name: Check the published downloads
+        if: steps.rel.outputs.publish == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          tag="${{ steps.rel.outputs.tag }}"; name="NEXUS-$NEXUS_VERSION-Windows-x64.zip"
+          mkdir -p verify && cd verify
+          ok=true
+          gh release download "$tag" -R "$GITHUB_REPOSITORY" -p "$name" -p "$name.sha256" || ok=false
+          if $ok; then
+            want=$(cut -d' ' -f1 "../out/$name.sha256")
+            got=$(sha256sum "$name" | cut -d' ' -f1)
+            [[ "$want" == "$got" ]] && grep -q "$want" "$name.sha256" || ok=false
+            echo "built $want, published $got"
+          fi
+          n=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" -q '.assets | length')
+          [[ "$n" == "2" ]] || { echo "::error::expected 2 assets, found $n"; ok=false; }
+          if ! $ok; then
+            gh release edit "$tag" -R "$GITHUB_REPOSITORY" --draft=true
+            echo "::error::the published download did not check out; $tag was set back to draft"; exit 1
+          fi
+          echo "$tag: $name is downloadable and matches the build"

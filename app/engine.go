@@ -30,6 +30,8 @@ type RunState struct {
 	Volume    int    `json:"volume"`
 	// Suspended: the game is paused and hidden while NEXUS Home is shown (session kept).
 	Suspended bool `json:"suspended,omitempty"`
+	// Background: while suspended, the game keeps running (muted, no input) behind NEXUS
+	Background bool `json:"background,omitempty"`
 	// Fullscreen: the game window is fullscreen (F11 switches)
 	Fullscreen bool `json:"fullscreen,omitempty"`
 	// Stage, while starting: preparing (NEXUS writes the session) | loading (the engine reads the
@@ -362,6 +364,7 @@ func (e *Emulator) Launch(g *Game, profileID string) error {
 		Contents: e.extraContents(g), AutoMapController: e.inputProfileFor(g, pr) == "",
 		HomeKey: s.Emulator.HomeKey, HomeButton: s.Emulator.HomeButton,
 		FullscreenKey: s.Emulator.FullscreenKey, ScreenshotKey: s.Emulator.ScreenshotKey, CaptureButton: s.Emulator.CaptureButton,
+		RecordKey:     recordKey(s),
 		ScreenshotDir: e.app.Media.ScreenshotsDir(), ScreenshotName: captureName(g),
 		RevealOnRequest: true, RevealTimeoutMs: 1500, Controllers: e.app.Controllers.ForSession(pr)}
 	if s.Emulator.FadeIn {
@@ -408,6 +411,7 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 	homeSeen := uint64(0)
 	lastHome := time.Time{}
 	shotsSeen := uint64(0)
+	recordSeen := uint64(0)
 	revealAsked := time.Time{}
 	checkpoint := func() {
 		if st.Phase != "playing" {
@@ -465,7 +469,7 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 			} else if !es.Suspended {
 				playStart = time.Now()
 			}
-			st.Suspended = es.Suspended
+			st.Suspended, st.Background = es.Suspended, es.Background
 			e.setState(st)
 			if st.Suspended {
 				e.app.UI.Restore()
@@ -482,7 +486,7 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 		if home && st.Phase == "playing" && time.Since(lastHome) > 500*time.Millisecond {
 			lastHome = time.Now()
 			if !st.Suspended && !es.Suspended {
-				host.Suspend(true)
+				go func() { _ = e.Suspend(true) }()
 			} else {
 				e.app.Events.Emit("input.home", nil)
 			}
@@ -501,7 +505,16 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 			st.Fullscreen = es.Fullscreen
 			e.setState(st)
 		}
-		// screenshots saved by the engine (F12 / capture button)
+		// the recording key (F12) in the game window: NEXUS records
+		if es.RecordPresses > recordSeen {
+			recordSeen = es.RecordPresses
+			go func() {
+				if err := e.app.Recorder.Toggle(); err != nil {
+					e.app.Events.Emit("recording.failed", map[string]any{"error": err.Error()})
+				}
+			}()
+		}
+		// screenshots saved by the engine (Alt+F12 / capture button)
 		if es.Screenshots > shotsSeen {
 			shotsSeen = es.Screenshots
 			if es.LastScreenshot != "" {
@@ -531,6 +544,11 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 	}
 	if st.Phase == "playing" && !st.Suspended {
 		played += time.Since(playStart)
+	}
+	if e.app.Recorder.Active() { // the game closed while recording: keep what was recorded
+		if _, err := e.app.Recorder.Stop(); err != nil {
+			e.app.Events.Emit("recording.failed", map[string]any{"error": err.Error()})
+		}
 	}
 	// wait for the engine to finish shutting the game down
 	for i := 0; i < 400 && final.State == "stopping"; i++ {
@@ -582,6 +600,8 @@ func (e *Emulator) Stop(force bool) error {
 }
 
 // Suspend shows NEXUS Home while the game stays loaded (on=true), or returns to the game.
+// With "Keep the game running" (the default) the game goes on behind NEXUS, muted and without
+// input; otherwise, or with an engine that cannot, it is paused.
 func (e *Emulator) Suspend(on bool) error {
 	st := e.State()
 	if !st.Running {
@@ -591,9 +611,49 @@ func (e *Emulator) Suspend(on bool) error {
 	if err != nil {
 		return err
 	}
-	h.Suspend(on)
-	if !on {
-		h.Focus()
+	if on {
+		if e.app.Settings.Get().Emulator.HomeAction != "pause" && h.Background(true) {
+			h.SetVolume(0) // muted while NEXUS is showing
+			st.Background = true
+		} else {
+			h.Suspend(true)
+			st.Background = false
+		}
+		e.setState(st)
+		return nil
+	}
+	if st.Background {
+		h.Background(false)
+		h.SetVolume(st.Volume)
+		st.Background = false
+		e.setState(st)
+	} else {
+		h.Suspend(false)
+	}
+	h.Focus()
+	return nil
+}
+
+// GameWindow is the running game's window handle (0 if none).
+func (e *Emulator) GameWindow() uintptr {
+	if h, err := e.Host(); err == nil && e.State().Running {
+		return h.Window()
+	}
+	return 0
+}
+
+// Screenshot of the running game (also while it runs behind NEXUS).
+func (e *Emulator) Screenshot() error {
+	st := e.State()
+	if !st.Running || st.Phase != "playing" {
+		return errNoGameWindow
+	}
+	h, err := e.Host()
+	if err != nil {
+		return err
+	}
+	if !h.Screenshot() {
+		return errors.New("This engine build cannot take screenshots on request.")
 	}
 	return nil
 }
@@ -694,4 +754,12 @@ func primaryRefresh(h Hardware) int {
 		return d.RefreshHz
 	}
 	return 0
+}
+
+// recordKey is the recording shortcut the engine reports ("" when recording is off).
+func recordKey(s GlobalSettings) string {
+	if !s.Recording.Enabled {
+		return ""
+	}
+	return s.Recording.Key
 }

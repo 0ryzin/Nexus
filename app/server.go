@@ -981,6 +981,44 @@ func (s *Server) routes() {
 		}
 		writeJSON(w, true)
 	})
+	m.HandleFunc("POST /api/dev/fake-record", func(w http.ResponseWriter, r *http.Request) {
+		// development only: the stand-in engine's record key (F12)
+		if !fakeEngineEnabled() || fakeLast == nil {
+			writeErr(w, 404, errors.New("not available"))
+			return
+		}
+		fakeLast.PressRecord()
+		writeJSON(w, true)
+	})
+	// ----- screen recording (recorder.go) and screenshots on request
+	m.HandleFunc("GET /api/recording", func(w http.ResponseWriter, r *http.Request) {
+		caps := a.Recorder.Caps()
+		eff := a.Recorder.settingsFor(caps)
+		writeJSON(w, map[string]any{"status": a.Recorder.Status(), "caps": caps, "settings": a.Settings.Get().Recording,
+			"effective": eff, "bitrate": RecordingBitrate(eff), "folder": firstNonEmpty(a.Settings.Get().Recording.Folder, a.Media.RecordingsDir())})
+	})
+	m.HandleFunc("POST /api/recording/toggle", func(w http.ResponseWriter, r *http.Request) {
+		if err := a.Recorder.Toggle(); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, a.Recorder.Status())
+	})
+	m.HandleFunc("POST /api/recording/folder", func(w http.ResponseWriter, r *http.Request) {
+		p, err := a.UI.PickFolder("Choose where recordings are saved")
+		if err != nil || p == "" {
+			writeJSON(w, map[string]any{"cancelled": true})
+			return
+		}
+		writeJSON(w, map[string]string{"path": p})
+	})
+	m.HandleFunc("POST /api/emulator/screenshot", func(w http.ResponseWriter, r *http.Request) {
+		if err := a.Emu.Screenshot(); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, true)
+	})
 	m.HandleFunc("GET /api/perf", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"sample": perf.Sample(a.Emu), "metrics": PerfMetrics,
 			"text": formatPerf(perf.Sample(a.Emu), a.Settings.Get().PerfMonitor.Metrics, "    ")})
@@ -1812,6 +1850,16 @@ func (s *Server) routes() {
 			if path == "" {
 				writeErr(w, 404, errors.New("There are no saves in the NEXUS engine's shared storage."))
 				return
+			}
+		case path == "" && b.Pick == "lichii":
+			// Lichii's own save folder when it is on this PC (only read, never changed),
+			// otherwise the user points to it (a portable Lichii, another PC's copy …)
+			if path = lichiiSaveDir(); path == "" {
+				p, ok := pick(w, "", "Lichii's save folder was not found. Choose it (Lichii's user\\nand\\user\\save folder, a player folder or a game folder)", "", true)
+				if !ok {
+					return
+				}
+				path = p
 			}
 		case path == "" && b.Pick == "zip":
 			p, ok := pick(w, "", "Choose a ZIP archive of saves", "ZIP archive (*.zip)|*.zip|", false)

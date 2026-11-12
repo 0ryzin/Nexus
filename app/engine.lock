@@ -5,4 +5,4 @@
 upstream=zortos293/Lichii
 upstreamCommit=2eb5f081c8734affd272466f89133aa4e3e56e18
 upstreamBase=build-160
-version=0.4.0
+version=0.5.0

@@ -601,8 +601,17 @@ func TestNoEmulatorProgramsRemain(t *testing.T) {
 	}
 	for _, f := range []string{"web/index.html", "web/app.js"} {
 		src, _ := os.ReadFile(f)
+		// the one allowed mention: importing saves from Lichii's save folder (0.4.0, requested);
+		// NEXUS never starts or offers Lichii itself
+		var kept []string
+		for _, line := range strings.Split(string(src), "\n") {
+			if strings.Contains(line, "Import saves") || strings.Contains(line, "{ label: 'From Lichii', value: 'lichii' }") || strings.Contains(line, "how === 'lichii'") {
+				continue
+			}
+			kept = append(kept, line)
+		}
 		for _, bad := range []string{"Lichii", "Ryujinx", "lichii", "ryujinx"} {
-			if n := strings.Count(string(src), bad); n > 0 {
+			if n := strings.Count(strings.Join(kept, "\n"), bad); n > 0 {
 				t.Errorf("%s mentions %s %d times", f, bad, n)
 			}
 		}
@@ -628,6 +637,8 @@ func TestHomeSuspendKeepsSession(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	time.Sleep(500 * time.Millisecond)
+	// this test covers "pause" (TestHomeKeepsGameRunning covers the default, running in the background)
+	app.Settings.Update(func(g *GlobalSettings) { g.Emulator.HomeAction = "pause" })
 	if err := app.Emu.Suspend(true); err != nil {
 		t.Fatal(err)
 	}

@@ -113,7 +113,7 @@ func (f *fakeEngine) run(req EngineRequest) {
 			return
 		case <-t.C:
 			f.mu.Lock()
-			if f.st.Suspended {
+			if f.st.Suspended && !f.st.Background { // paused (running in the background keeps going)
 				f.mu.Unlock()
 				continue
 			}
@@ -203,8 +203,39 @@ func (f *fakeEngine) Suspend(on bool) {
 	f.mu.Lock()
 	if f.st.State == "running" {
 		f.st.Suspended = on
+		f.st.Background = false
 	}
 	f.mu.Unlock()
+}
+
+// Background: like engine 0.5, hidden but running (frames keep coming), input blocked.
+func (f *fakeEngine) Background(on bool) bool {
+	f.mu.Lock()
+	if f.st.State == "running" {
+		f.st.Suspended, f.st.Background = on, on
+	}
+	f.mu.Unlock()
+	return true
+}
+
+func (f *fakeEngine) Screenshot() bool { return f.PressScreenshot() == nil }
+
+func (f *fakeEngine) Window() uintptr {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.st.Shown {
+		return 0x1234
+	}
+	return 0
+}
+
+// PressRecord: like the record key (F12) in the game window.
+func (f *fakeEngine) PressRecord() {
+	f.set(func(s *EngineStatus) {
+		if !s.Suspended {
+			s.RecordPresses++
+		}
+	})
 }
 
 // Peak of the last played buffer (tests / dev UI).

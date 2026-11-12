@@ -387,8 +387,6 @@ func (l *Library) decorateLocked(g *Game) {
 		g.Title = p.Title
 	case g.EmbedName != "":
 		g.Title = g.EmbedName
-	case l.gameListCachedName(g.TitleID) != "":
-		g.Title = l.gameListCachedName(g.TitleID)
 	case p.Online.Name != "":
 		g.Title = p.Online.Name
 	default:
@@ -407,19 +405,17 @@ func (l *Library) decorateLocked(g *Game) {
 	}
 }
 
-func (l *Library) gameListCacheDir() string {
-	return filepath.Join(l.app.Emu.UserDir(), "cache", "game_list")
-}
-
-func (l *Library) gameListCachedName(titleID string) string {
-	if titleID == "" {
-		return ""
+// RemoveImportedGameListCache deletes the game-list icon and name cache that older NEXUS versions
+// copied in from another emulator (<engine data>\cache\game_list). NEXUS reads names and icons
+// from the games themselves; the NEXUS engine never writes this cache. It holds no saves or
+// settings.
+func (l *Library) RemoveImportedGameListCache() {
+	d := filepath.Join(l.app.Emu.UserDir(), "cache", "game_list")
+	if dirExists(d) {
+		if err := os.RemoveAll(d); err == nil {
+			l.app.Log.Printf("library: removed the game-list cache imported from another emulator (%s)", d)
+		}
 	}
-	b, err := os.ReadFile(filepath.Join(l.gameListCacheDir(), titleID+".appname.txt"))
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(b))
 }
 
 var imageExts = []string{".png", ".jpg", ".jpeg", ".webp"}
@@ -472,15 +468,6 @@ func (l *Library) artFor(g *Game, p GameProfile) (string, string) {
 		}
 		return ""
 	}
-	cached := func() string {
-		if g.TitleID != "" {
-			pth := filepath.Join(l.gameListCacheDir(), g.TitleID+".jpeg")
-			if fi, err := os.Stat(pth); err == nil && fi.Size() > 0 {
-				return pth
-			}
-		}
-		return ""
-	}
 	switch p.ArtPreference {
 	case "custom":
 		if f := custom(); f != "" {
@@ -513,9 +500,6 @@ func (l *Library) artFor(g *Game, p GameProfile) (string, string) {
 	}
 	if f := online(); f != "" {
 		return f, "online"
-	}
-	if f := cached(); f != "" {
-		return f, "game-list-cache"
 	}
 	return "", ""
 }

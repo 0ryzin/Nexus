@@ -256,9 +256,6 @@ func (o *OnlineArtwork) lookup(g Game) (*onlineResult, error) {
 	// metadata's echoed ID is the main check. Names are compared when we have the
 	// game's real name, or when the ID itself only came from the file name.
 	localName := g.EmbedName
-	if localName == "" {
-		localName = o.lib.gameListCachedName(g.TitleID)
-	}
 	if localName == "" && g.IDSource == "filename" {
 		localName = g.FileTitle
 	}

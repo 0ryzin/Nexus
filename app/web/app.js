@@ -351,7 +351,14 @@ const Pad = {
       this.prev[key] = state;
       Controllers.liveUpdate(p);
     }
-    requestAnimationFrame(() => this.poll());
+    this.schedule(pads.length > 0);
+  },
+  // every frame while a controller is connected; four times a second otherwise (connecting a
+  // controller is also announced by the browser), so an idle NEXUS without controllers does no
+  // per-frame work
+  schedule(fast) {
+    clearTimeout(this.t); cancelAnimationFrame(this.r);
+    if (fast) this.r = requestAnimationFrame(() => this.poll()); else this.t = setTimeout(() => this.poll(), 250);
   },
   dir(d) { if ((d === 'left' || d === 'right') && adjust(d === 'left' ? -1 : 1)) return; Nav.move(d); },
   rumble(ms = 120, strong = .4) {
@@ -1477,12 +1484,14 @@ function renderBanner() {
   let msg = null, action = null, label = '';
   if (S.playing?.suspended) {
     b.hidden = false; b.innerHTML = '';
-    const ic = svg(I.play); ic.style.cssText = 'width:1.4em;height:1.4em;fill:var(--accent);flex:none';
+    const bg = !!S.playing.background;
+    const ic = bg ? h('i', { class: 'bg-run-dot', title: 'Running in the background' }) : svg(I.play);
+    if (!bg) ic.style.cssText = 'width:1.4em;height:1.4em;fill:var(--accent);flex:none';
     const resume = h('button', { class: 'btn primary', 'data-nav': true }, 'Resume');
     const close = h('button', { class: 'btn', 'data-nav': true }, 'Close game');
     resume.addEventListener('click', () => resumeGame());
     close.addEventListener('click', async () => { if (await confirmDlg(`Close ${S.playing.title}?`, 'Unsaved progress will be lost.', 'Close', true)) api('/api/emulator/stop', { body: {} }).catch(e => toast(e.message, I.warn)); });
-    b.append(ic, h('span', { class: 'grow' }, h('b', {}, `${S.playing.title} is paused. `), 'It keeps its place until you resume it.'), resume, close);
+    b.append(ic, h('span', { class: 'grow' }, h('b', {}, bg ? `${S.playing.title} is running in the background. ` : `${S.playing.title} is paused. `), bg ? 'It is muted and ignores controls until you resume it.' : 'It keeps its place until you resume it.'), resume, close);
     return;
   }
   if (en.job?.active) { msg = h('span', { class: 'grow' }, h('b', {}, 'Installing the NEXUS engine… '), en.job.message || ''); }
@@ -1927,7 +1936,7 @@ async function gameConfig(key, startSection = 'general') {
       body.append(rowButton('Optimise this game…', { sub: 'Settings for this game only, from your hardware and what is known about the game. Other games are not changed.', onClick: () => {
         sheet(`Optimise ${g.title}`, (sb) => { const ob = h('div'); sb.append(ob); optimiserPanel(ob, key, async () => { view = withContent(await api(`/api/games/${key}/settings`)); draw(false); }); });
       } }));
-      if (!S.engine?.installed) body.append(h('p', { class: 'note warn' }, 'The NEXUS engine is not installed yet. Install it in Settings › NEXUS Engine.'));
+      if (!S.engine?.installed) body.append(h('p', { class: 'note warn' }, 'The NEXUS engine files are missing or damaged. Extract the complete NEXUS ZIP again; Settings › NEXUS Engine shows what is wrong.'));
       if (!view.perGameOk) body.append(h('p', { class: 'note warn' }, view.perGameReason));
       body.append(h('h3', {}, 'Game-specific settings'));
       const ov = Object.entries(view.overrides || {});
@@ -1967,7 +1976,7 @@ async function gameConfig(key, startSection = 'general') {
 function artNote(g) {
   return {
     builtin: 'Using artwork from the built-in NEXUS artwork database.', custom: 'Using artwork you chose.', sidecar: 'Using the image next to the game file.', 'artwork-folder': 'Using an image from NEXUS data\\Artwork.',
-    embedded: 'Using the icon stored inside the game.', online: 'Using artwork downloaded for this Title ID.', 'game-list-cache': 'Using the icon from the game-list cache of the emulator NEXUS used before.',
+    embedded: 'Using the icon stored inside the game.', online: 'Using artwork downloaded for this Title ID.',
   }[g.artSource] || 'No artwork yet. NEXUS reads the icon from the game file (needs prod.keys), downloads it by Title ID, or uses an image you choose.';
 }
 function refreshViews() { if (S.screen === 'home') { const cur = Nav.cur; const k = cur?._game?.key; const dockIdx = cur ? $$('#dock .dock-btn').indexOf(cur) : -1; const topIdx = cur ? $$('#tb-profiles button').indexOf(cur) : -1; const inHome = cur && $('#home').contains(cur); renderHome(); if (Nav.top()?.dialog) return; let t = null; if (dockIdx >= 0) t = $$('#dock .dock-btn')[dockIdx]; else if (topIdx >= 0) t = $$('#tb-profiles button')[topIdx]; else t = $$('#tiles .tile').find(t => t._game?.key === k) || (inHome || !cur ? $('#tiles .tile') : null); if (t) Nav.setFocus(t, { silent: true }); } if (S.screen === 'library') { const k = Nav.cur?._game?.key; const keep = renderLibrary(k); if (keep) Nav.setFocus(keep, { silent: true }); } }
@@ -2055,17 +2064,28 @@ function whoIsPlaying(g) {
 }
 
 // Waits for one key (for the NEXUS Home key). Esc keeps the old key, Backspace/Delete turns it off.
+const keyCombo = (ev, k) => (ev.ctrlKey ? 'Ctrl+' : '') + (ev.altKey ? 'Alt+' : '') + (ev.shiftKey ? 'Shift+' : '') + k;
+// does a browser key event match a NEXUS shortcut such as "F12" or "Alt+F12"?
+function shortcutMatches(ev, sc) {
+  if (!sc) return false;
+  const k = SDL_KEY(ev.code); if (!k) return false;
+  return keyCombo(ev, k).toLowerCase() === sc.replace(/control\+/i, 'Ctrl+').toLowerCase();
+}
 const SDL_KEY = c => /^Key[A-Z]$/.test(c) ? c.slice(3) : /^Digit\d$/.test(c) ? c.slice(5) : /^F([1-9]|1[0-2])$/.test(c) ? c :
   ({ Home: 'Home', End: 'End', Insert: 'Insert', PageUp: 'PageUp', PageDown: 'PageDown', Pause: 'Pause', ScrollLock: 'ScrollLock', Backquote: '`' })[c];
-function captureKey() {
+// captureKey({ mods: true }) also accepts Ctrl / Alt / Shift combinations ("Alt+F12")
+function captureKey({ mods = false } = {}) {
   return new Promise(resolve => {
-    const box = h('div', { class: 'dialog' }, h('div', { class: 'd-body' }, h('h2', {}, 'Press a key'), h('p', {}, 'Letters, numbers, F1–F12, Home, End, Insert, Page Up/Down, Pause or Scroll Lock. Backspace turns the Home key off; Esc cancels.')));
+    const box = h('div', { class: 'dialog' }, h('div', { class: 'd-body' }, h('h2', {}, mods ? 'Press a key or a combination' : 'Press a key'),
+      h('p', {}, 'Letters, numbers, F1–F12, Home, End, Insert, Page Up/Down, Pause or Scroll Lock' + (mods ? ', optionally with Ctrl, Alt or Shift (for example Alt+F12)' : '') + '. Backspace turns the shortcut off; Esc cancels.')));
     let layer;
     const onKey = ev => {
       ev.preventDefault(); ev.stopPropagation();
+      if (/^(Control|Alt|Shift|Meta|OS)/.test(ev.code)) return; // waiting for the key itself
       if (ev.code === 'Escape') return done(undefined);
       if (ev.code === 'Backspace' || ev.code === 'Delete') return done('');
-      const k = SDL_KEY(ev.code); if (k) done(k); else toast('That key cannot be used', I.warn, 1500);
+      const k = SDL_KEY(ev.code); if (!k) { toast('That key cannot be used', I.warn, 1500); return; }
+      done(mods ? keyCombo(ev, k) : k);
     };
     const done = v => { window.removeEventListener('keydown', onKey, true); layer.close(); resolve(v); };
     layer = openLayer(box, { onBack: () => done(undefined) });
@@ -2198,7 +2218,7 @@ $('#play-close').addEventListener('click', async () => {
 // ---------- settings
 const CATS = [
   ['appearance', 'Appearance'], ['startup', 'Startup'], ['library', 'Game library'], ['controllers', 'Controllers'], ['users', 'Users'], ['savedata', 'Save Data'], ['system', 'System'], ['updates', 'Updates'],
-  ['-', 'System & Emulation'], ['engine', 'NEXUS Engine'], ['sysfiles', 'System files'], ['emusettings', 'Emulation settings'], ['emulator', 'Game sessions & saves'], ['perf', 'Performance Monitor'],
+  ['-', 'System & Emulation'], ['engine', 'NEXUS Engine'], ['sysfiles', 'System files'], ['emusettings', 'Emulation settings'], ['emulator', 'Game sessions & saves'], ['recording', 'Screen recording'], ['perf', 'Performance Monitor'],
 ];
 const NAVCATS = () => catList().filter(c => c[0] !== '-' && c[0] !== 'controllers');
 // NEXUS Sync appears only when the experimental Device Linking feature is switched on
@@ -2323,7 +2343,12 @@ async function importAnimatedWallpaper(done) {
   URL.revokeObjectURL(url);
 }
 
-async function themePatch(patch) { if (!S.profile) return; await patchProfile(S.profile.id, { theme: patch }); }
+async function themePatch(patch) {
+  if (!S.profile) return;
+  await patchProfile(S.profile.id, { theme: patch });
+  // keep the Appearance panel in step when the theme was changed from somewhere else
+  if (('mode' in patch || 'accent' in patch) && S.screen === 'settings' && curCat === 'appearance' && !document.activeElement?.closest?.('.swatches')) rebuildPanel();
+}
 
 const ACCENTS = ['#ff2a3a', '#00c8ff', '#ff3b5c', '#ff9f0a', '#ffd60a', '#30d158', '#64d2ff', '#5e5ce6', '#bf5af2', '#ff6ec7', '#ffffff'];
 const BOOT_COLORS = ['#e60012', '#ff5a1f', '#f5b300', '#1fae5b', '#0a84ff', '#5e2bff', '#e0218a', '#1d1e21', '#f2f2f2'];
@@ -2338,7 +2363,7 @@ const Panels = {
     p.append(h('h3', {}, 'Interface animations'));
     p.append(rowChoice('Interface animations', [{ v: 'full', l: 'Full' }, { v: 'reduced', l: 'Reduced (faster)' }, { v: 'off', l: 'Off' }], th.animations, v => themePatch({ animations: v }).then(rebuildPanel), 'Off also stops animated wallpapers and the Home transition.'));
     p.append(rowChoice('Home transition', [{ v: 'zoom', l: 'Zoom' }, { v: 'fade', l: 'Fade' }, { v: 'slide', l: 'Slide' }, { v: 'off', l: 'Off' }], th.homeTransition || 'zoom', v => { themePatch({ homeTransition: v }).then(() => { if (v !== 'off') { const pv = $('#set-panel .ht-demo'); pv && (pv.classList.remove('ht-' + v), void pv.offsetWidth, pv.classList.add('ht-' + v)); } }); },
-      'How the Home screen appears when you press Home, including from a game (the game pauses and keeps its place).'));
+      'How the Home screen appears when you press Home, including from a game (what the game does meanwhile is set in Emulation › Home button).'));
     wallpaperSettings(p, th);
     p.append(h('h3', {}, 'Home'));
     p.append(rowChoice('Home screen order', SORTS, S.profile?.sort || 'recent', v => patchProfile(S.profile.id, { sort: v })));
@@ -2413,14 +2438,17 @@ const Panels = {
       const k = await captureKey(); if (k === undefined) return;
       saveSettings({ emulator: { homeKey: k } }).then(rebuildPanel);
     } }));
+    p.append(rowChoice('When you press Home in a game', [{ v: 'background', l: 'Keep the game running (muted)' }, { v: 'pause', l: 'Pause the game' }], es.homeAction || 'background', v => saveSettings({ emulator: { homeAction: v } }),
+      'Keep running: the game carries on in the background without sound and ignores your controls until you choose Resume (a green dot shows it is running). Pause: the game stops where it is. Either way one press of Home is one trip to NEXUS Home.'));
     p.append(rowToggle('Controller Home button', es.homeButton !== false, v => saveSettings({ emulator: { homeButton: v } }), 'The Xbox Guide button, the PlayStation button or a controller\u2019s Home button takes you straight to NEXUS Home (the game never sees it). Choose Resume Game to go back. If Steam or Windows uses the button for itself, use the Home key instead.'));
     p.append(h('h3', {}, 'While playing'));
     p.append(rowButton('Fullscreen / window key', { value: es.fullscreenKey || 'Off', sub: 'Switches the game between full screen and a window without stopping it. If the key is one of the game\u2019s controls, it stays with the game.', onClick: async () => {
       const k = await captureKey(); if (k === undefined) return;
       saveSettings({ emulator: { fullscreenKey: k } }).then(rebuildPanel);
     } }));
-    p.append(rowButton('Screenshot key', { value: es.screenshotKey || 'Off', sub: 'Saves a screenshot to Media (NEXUS data\\Media\\Screenshots).', onClick: async () => {
-      const k = await captureKey(); if (k === undefined) return;
+    p.append(rowButton('Screenshot key', { value: es.screenshotKey || 'Off', sub: 'Saves a screenshot to Media (NEXUS data\\Media\\Screenshots). Alt+F12 by default; F12 starts and stops a recording (Settings › Screen recording).', onClick: async () => {
+      const k = await captureKey({ mods: true }); if (k === undefined) return;
+      if (k && k.toLowerCase() === (S.settings.recording?.key || '').toLowerCase()) { alertDlg('That shortcut is taken', `${k} starts and stops recordings. Choose another key for screenshots.`); return; }
       saveSettings({ emulator: { screenshotKey: k } }).then(rebuildPanel);
     } }));
     p.append(rowToggle('Controller Share / Capture button takes screenshots', es.captureButton !== false, v => saveSettings({ emulator: { captureButton: v } }), 'The Xbox Share button, the Switch Pro Controller\u2019s Capture button or a similar button.'));
@@ -2430,6 +2458,7 @@ const Panels = {
     p.append(rowButton('Save Data…', { sub: 'Every user has their own saves.', onClick: () => selectCat('savedata', true) }));
     p.append(rowButton('Keys and firmware…', { sub: 'Install or replace prod.keys and firmware.', onClick: () => selectCat('sysfiles', true) }));
   },
+  async recording(p) { await renderRecordingSettings(p); },
   users(p) {
     p.append(h('h2', {}, 'Users'));
     for (const pr of S.profiles) {
@@ -2481,7 +2510,7 @@ const Panels = {
       if (await confirmDlg('Reset settings?', 'Users, saves and game folders are kept.', 'Reset', true)) { S.settings = await api('/api/settings/reset', { body: {} }); rebuildPanel(); toast('Settings reset', I.check); }
     } }));
     p.append(h('h3', {}, 'Updates'));
-    p.append(h('p', { class: 'note' }, 'NEXUS does not update itself. New NEXUS engine builds are installed and rolled back in Settings › NEXUS Engine; your data is never touched.'));
+    p.append(h('p', { class: 'note' }, 'NEXUS and its engine update together (Settings › Updates): the update is checked before it is installed, and the previous version comes back if the new one does not start. Your data is never touched.'));
     p.append(h('h3', {}, 'Legal'));
     p.append(h('p', { class: 'note' }, 'NEXUS is independent software, not affiliated with or endorsed by Nintendo. NEXUS and its engine are free software under the GPL-3.0-or-later; the engine is built on the yuzu/Eden emulator core and other open-source projects — see Settings › NEXUS Engine and the Licences folder for notices and source code. NEXUS does not include games, keys or firmware: use only content you legally own.'));
   },
@@ -2820,7 +2849,7 @@ async function renderEngine(p) {
     h('dt', {}, 'Status'), h('dd', {}, e.state?.running ? pill('ok', 'Running a game') : e.installed ? pill('ok', 'Ready') : pill('bad', 'Not installed')),
     h('dt', {}, 'Engine'), h('dd', {}, e.active === 'bundled' ? `Included with NEXUS — version ${e.activeLabel}` : e.active ? `Added build ${e.activeLabel}` : 'Missing from the NEXUS folder'),
     h('dt', {}, 'Location'), h('dd', {}, e.engineDir || '—'),
-    info.upstream ? [h('dt', {}, 'Built from'), h('dd', {}, `${info.upstream.project || ''} ${info.upstream.describe || ''} ${(info.upstream.commit || '').slice(0, 10)}`.trim())] : '',
+    info.upstream ? [h('dt', {}, 'Open-source base'), h('dd', {}, `${info.upstream.project || ''} ${info.upstream.describe || ''} ${(info.upstream.commit || '').slice(0, 10)}`.trim())] : '',
     h('dt', {}, 'Interface'), h('dd', {}, `version ${e.apiVersion}`),
     h('dt', {}, 'Keys'), h('dd', {}, e.keys ? pill('ok', 'Installed') : pill('bad', 'Missing')),
     h('dt', {}, 'Firmware'), h('dd', {}, e.firmware ? pill('ok', 'Installed') : pill('bad', 'Missing')),
@@ -3075,6 +3104,13 @@ function connectEvents() {
         toast(`Screenshot saved${m.data.title ? ' · ' + m.data.title : ''}`, I.media, 2200);
         if (S.screen === 'media') { await Media.load(); Media.render(); }
         break;
+      case 'recording.started': RecUI.start(); break;
+      case 'recording.saved':
+        RecUI.stop();
+        toast(`Recording saved${m.data.title ? ' · ' + m.data.title : ''} (${fmtDur(m.data.seconds)})`, I.media, 3500);
+        if (S.screen === 'media') { await Media.load(); Media.render(); }
+        break;
+      case 'recording.failed': RecUI.stop(); Sound.play('error'); alertDlg('The recording could not be made', m.data.error || 'Unknown error.'); break;
       case 'media.changed': if (S.screen === 'media') { await Media.load(); Media.render(); } break;
       case 'dlss.job':
         if (!m.data.running) { if (m.data.ok) toast('NVIDIA DLSS installed', I.check, 3000); else if (m.data.error) alertDlg('NVIDIA DLSS was not installed', m.data.error + '\n\nNothing incomplete was kept.'); }
@@ -3242,12 +3278,13 @@ async function restoreDlg(pid, g, done) {
 // Import: pick a folder or ZIP → NEXUS inspects it → shows what it found (player, game, slots) →
 // the user confirms the user and game → import (existing saves only replaced after confirming).
 async function saveImportWizard(pid, gameId, done) {
-  const how = await dialog({ title: 'Import saves', text: 'Choose a save folder (a game’s folder with slot_00, account.sav…, or a folder holding several games, from NEXUS, Eden, yuzu or another PC) or a ZIP archive of one. NEXUS looks inside and shows what it found before anything is copied.',
-    buttons: [{ label: 'Cancel', value: null }, { label: 'ZIP archive…', value: 'zip' }, { label: 'Folder…', value: 'folder', primary: true }] });
+  const how = await dialog({ title: 'Import saves', text: 'Choose a save folder (a game’s folder with slot_00, account.sav…, or a folder holding several games, from NEXUS, Eden, yuzu or another PC) or a ZIP archive of one. From Lichii reads Lichii’s own save folder on this PC. NEXUS looks inside and shows what it found before anything is copied; the originals are never changed.',
+    buttons: [{ label: 'Cancel', value: null }, { label: 'From Lichii', value: 'lichii' }, { label: 'ZIP archive…', value: 'zip' }, { label: 'Folder…', value: 'folder', primary: true }] });
   if (!how) return;
   let insp;
   try {
-    if (!S.app.native && how === 'folder') {
+    if (how === 'lichii') insp = await api('/api/saves/inspect', { body: { pick: 'lichii' } });
+    else if (!S.app.native && how === 'folder') {
       const v = await dialog({ title: 'Folder', text: 'Full path of the save folder on this PC.', input: { value: '', max: 500 }, buttons: [{ label: 'Cancel', value: null }, { label: 'OK', value: true, primary: true }] });
       if (!v) return;
       insp = await api('/api/saves/inspect', { body: { path: v } });
@@ -3334,7 +3371,7 @@ const Media = {
     const list = this.visible();
     if (!list.length) {
       body.append(h('div', { class: 'sd-empty' }, h('b', {}, this.items.length ? 'Nothing matches' : 'No captures yet'),
-        h('span', {}, 'Press F12 or your controller’s Share / Capture button while playing to take a screenshot. Recording from inside NEXUS is not available yet; video files you put in Media\\Recordings (for example from the Xbox Game Bar) appear here too.')));
+        h('span', {}, `Press ${S.settings.emulator?.screenshotKey || 'Alt+F12'} or your controller’s Share / Capture button while playing to take a screenshot, and ${S.settings.recording?.key || 'F12'} to start and stop a recording. Video files you put in Media\\Recordings appear here too.`)));
       return;
     }
     const grid = h('div', { class: 'media-grid' });
@@ -3599,13 +3636,13 @@ Object.assign(Panels, {
   connectEvents();
   pollSystem(); setInterval(pollSystem, 15000);
   tickClock(); setInterval(tickClock, 1000);
-  requestAnimationFrame(() => Pad.poll());
+  Pad.schedule(true); window.addEventListener('gamepadconnected', () => Pad.schedule(true));
   // Prepare the home screen underneath the boot animation
   await Boot.run();
   await gamesLoad;
   const st = await api('/api/system').catch(() => ({}));
   if (S.app.migrated?.length) toast(S.app.migrated[0], I.check, 6000);
-  if (st.emulator?.running) { S.playing = st.emulator; showPlaying(); return; }
+  if (st.emulator?.running) { S.playing = st.emulator; RecUI.sync(); showPlaying(); return; }
   if (!S.profile) { showWho(); return; }
   renderHome();
   const home = $('#home');
@@ -3621,3 +3658,79 @@ Object.assign(Panels, {
   }
   if (Nav.cur?._game) updateSelLabel(Nav.cur._game);
 })();
+
+// ------------------------------------------------------------------ screen recording (0.4.0)
+// The game window is recorded by the NEXUS capture module (never the NEXUS interface). While a
+// recording runs, a small red indicator with the time is shown here and, over the game, by the
+// NEXUS overlay window.
+const RecUI = {
+  el: null, t0: 0, timer: null,
+  start(seconds = 0) {
+    this.t0 = performance.now() - seconds * 1000;
+    if (!this.el) { this.el = h('div', { class: 'rec-badge', role: 'status', 'aria-live': 'polite' }, h('i'), h('span', {}, '0:00')); document.body.append(this.el); }
+    clearInterval(this.timer);
+    const tick = () => { const s = Math.floor((performance.now() - this.t0) / 1000); this.el.lastChild.textContent = `REC ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+    tick(); this.timer = setInterval(tick, 500);
+  },
+  stop() { clearInterval(this.timer); this.timer = null; this.el?.remove(); this.el = null; },
+  async sync() { try { const r = await api('/api/recording'); if (r.status?.active) this.start(r.status.seconds || 0); else this.stop(); } catch { } },
+};
+
+// While a game runs in the background behind NEXUS, the record and screenshot shortcuts reach
+// NEXUS rather than the game, so they are handled here.
+window.addEventListener('keydown', ev => {
+  if (!S.playing?.running || !S.playing.suspended || ev.repeat) return;
+  if (Nav.layers.some(l => l.dialog)) return;
+  const rec = S.settings.recording || {}, es = S.settings.emulator || {};
+  if (rec.enabled !== false && shortcutMatches(ev, rec.key)) {
+    ev.preventDefault(); ev.stopPropagation();
+    api('/api/recording/toggle', { body: {} }).catch(e => toast(e.message, I.warn, 3500));
+  } else if (shortcutMatches(ev, es.screenshotKey)) {
+    ev.preventDefault(); ev.stopPropagation();
+    api('/api/emulator/screenshot', { body: {} }).catch(e => toast(e.message, I.warn, 3500));
+  }
+}, true);
+
+async function renderRecordingSettings(p) {
+  let info;
+  try { info = await api('/api/recording'); } catch (e) { p.append(h('h2', {}, 'Screen recording'), h('p', { class: 'note' }, e.message)); return; }
+  const rs = info.settings || {}, caps = info.caps || {}, eff = info.effective || {};
+  const save = patch => saveSettings({ recording: patch }).then(rebuildPanel);
+  p.append(h('h2', {}, 'Screen recording'), h('p', { class: 'note' }, 'Records the game window only — never the NEXUS screens — with the game’s sound. Recordings go to Media › Recordings.'));
+  if (!caps.available) {
+    p.append(h('p', { class: 'note warn' }, 'Recording is not available on this PC: ' + (caps.reason || 'the NEXUS capture module could not be loaded.') + ' Screenshots still work.'));
+  }
+  p.append(rowToggle('Screen recording', rs.enabled !== false, v => save({ enabled: v }), 'When off, the record shortcut does nothing.'));
+  if (rs.enabled === false) return;
+  p.append(rowButton('Start / stop shortcut', { value: rs.key || 'Off', sub: 'Press it while playing to start a recording and again to stop it. Changes apply to the next game you start.', onClick: async () => {
+    const k = await captureKey({ mods: true }); if (k === undefined) return;
+    if (k && k.toLowerCase() === (S.settings.emulator?.screenshotKey || '').toLowerCase()) { alertDlg('That shortcut is taken', `${k} takes screenshots. Choose another key, or change the screenshot key in Game sessions & saves.`); return; }
+    save({ key: k });
+  } }));
+  // encoder line: what will actually be used
+  const hw = (caps.encoders || []).filter(e => e.hardware);
+  const encLine = !caps.available ? 'None' : rs.hardware !== false && caps.hardware
+    ? `Hardware: ${hw.map(e => e.name).filter((v, i, a) => a.indexOf(v) === i).join(', ')}`
+    : 'Software (Windows Media Foundation)';
+  const VEND = { nvidia: 'NVIDIA NVENC', amd: 'AMD', intel: 'Intel Quick Sync' };
+  p.append(rowButton('Encoder', { value: caps.vendor && rs.hardware !== false && caps.hardware ? (VEND[caps.vendor] || caps.vendor) : (caps.available ? 'Software' : '—'), sub: encLine + (caps.hardware ? '' : '. No hardware video encoder was found, so recording uses the processor; resolution is limited to 1080p to keep games smooth.') }));
+  if (caps.hardware) p.append(rowToggle('Use the graphics card to encode', rs.hardware !== false, v => save({ hardware: v }), 'NVIDIA NVENC, AMD or Intel Quick Sync. Much lighter on games than software encoding. Turn off only if recordings fail with your driver.'));
+  const RES = { native: 'Game resolution', '720p': '720p', '1080p': '1080p', '1440p': '1440p', '2160p': '4K (2160p)' };
+  const resList = (caps.resolutions?.length ? caps.resolutions : ['native', '720p', '1080p']).map(v => ({ v, l: RES[v] || v }));
+  p.append(rowChoice('Resolution', resList, eff.resolution || rs.resolution, v => save({ resolution: v }), 'The game picture is scaled to fit (never stretched).'));
+  const fpsList = (caps.fps?.length ? caps.fps : [30, 60]).map(v => ({ v, l: v + ' fps' }));
+  p.append(rowChoice('Frame rate', fpsList, eff.fps || rs.fps, v => save({ fps: +v })));
+  p.append(rowChoice('Quality', [{ v: 'standard', l: 'Standard' }, { v: 'high', l: 'High' }, { v: 'max', l: 'Maximum' }, { v: 'custom', l: 'Custom bit rate' }], rs.quality || 'high', v => save({ quality: v }),
+    `About ${(info.bitrate / 1000).toFixed(info.bitrate < 10000 ? 1 : 0)} Mbit/s, roughly ${fmtBytes(info.bitrate * 1000 / 8 * 60)} per minute.`));
+  if (rs.quality === 'custom') p.append(rowRange('Bit rate', { min: 2000, max: 80000, step: 1000, value: rs.bitrate || 12000, fmt: v => (v / 1000) + ' Mbit/s', onChange: (v, commit) => { if (commit) saveSettings({ recording: { bitrate: v } }); } }));
+  const codecs = [{ v: 'h264', l: 'H.264 (plays everywhere)' }];
+  if (caps.hardwareHevc) codecs.push({ v: 'hevc', l: 'HEVC / H.265 (smaller files)' });
+  p.append(rowChoice('Video format', codecs, codecs.some(c => c.v === rs.codec) ? rs.codec : 'h264', v => save({ codec: v }), 'MP4 file. HEVC is offered only when your graphics card can encode it.'));
+  p.append(rowToggle('Record game sound', rs.audio !== false, v => save({ audio: v }), caps.processAudio ? 'Only the game’s sound — not other apps.' : 'This version of Windows cannot record one app’s sound on its own, so everything you hear is recorded.'));
+  p.append(rowToggle('Record microphone', !!rs.mic, v => save({ mic: v }), 'Your default microphone, as a separate audio track.'));
+  p.append(rowButton('Save recordings to', { value: rs.folder ? '' : 'Media › Recordings', sub: info.folder, onClick: async () => {
+    const r = await api('/api/recording/folder', { body: {} }).catch(e => { toast(e.message, I.warn); return null; });
+    if (r?.path) save({ folder: r.path });
+  } }));
+  if (rs.folder) p.append(rowButton('Use Media › Recordings again', { onClick: () => save({ folder: '' }) }));
+}

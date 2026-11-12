@@ -1,12 +1,14 @@
-# NEXUS 0.3.0 (preview)
+# NEXUS 0.4.0 (preview)
 
 NEXUS is a console-style game system for Windows. It starts with a power-on animation, then opens a home screen with your game library, user profiles, themes and controller navigation.
 
 **What NEXUS does:**
 - **NEXUS sets itself up and manages its own files.** At the first start NEXUS creates its engine data folder and configuration on its own. It never reads or needs another emulator's folders: keys and firmware are installed in *System files*, saves in *Save Data*, updates and mods per game.
 - **Save Data:** every user has `UserData\Saves\<PLAYER_ID>-<name>\<GAME_ID>-<SHORT>\` (for example `0400486024DEC000-OOT` with `slot_00 … slot_05`, `account.sav`, `option.sav`), which games read and write directly. Save Data shows each game's slots and files by name, and imports saves from a folder or ZIP (it tells you which player and game they belong to, from the folder IDs or the save's own metadata), exports, backs up, restores and deletes — never replacing or deleting a save without asking and without a backup.
-- **Media:** screenshots (F12, or your controller's Share / Capture button while playing) in `Media\Screenshots`, shown in the Media tab with their game and date; filter, sort, view, open, show in folder, delete (to the Recycle Bin). Recording from inside NEXUS is not available yet; video files you put in `Media\Recordings` appear too.
-- **NEXUS Home while playing:** one press of the Home key (H) or the controller's Home/Guide button goes to NEXUS Home; the game is paused and keeps its place (green dot on its tile) until *Resume Game*. The button no longer reaches the game itself.
+- **Media:** screenshots (Alt+F12, or your controller's Share / Capture button while playing) in `Media\Screenshots`, and recordings in `Media\Recordings`, shown in the Media tab with their game and date; filter, sort, view, open, show in folder, delete (to the Recycle Bin).
+- **Screen recording:** F12 while playing starts and stops a recording of the game window (never the NEXUS screens), with the game's sound and optionally the microphone. A red *REC* indicator with a timer shows while it records; *Recording saved* or the reason it failed afterwards. NEXUS uses the graphics card's encoder (NVIDIA NVENC, AMD, Intel Quick Sync) when there is one and software encoding otherwise. *Settings › Screen recording*: on/off, shortcut, resolution, frame rate, quality / bit rate, H.264 or HEVC, game sound, microphone, folder. Files are fragmented MP4 written as `<name>.mp4.part` until the recording stops, so a crash still leaves a playable file, renamed "… (interrupted).mp4" at the next start.
+- **NEXUS Home while playing:** one press of the Home key or the controller's Home/Guide button goes to NEXUS Home. By default the game keeps running in the background, muted and receiving no input (a green dot on its tile and a *running in the background* banner) until *Resume*; *Settings › Game sessions & saves › When you press Home in a game › Pause the game* stops it instead. The button never reaches the game itself. The record and screenshot shortcuts work on Home too.
+- **Import saves from Lichii:** *Save Data › Import › From Lichii* reads Lichii's save folder (`%APPDATA%\lichii\nand\user\save`), shows the player, game, slots, account and option data it found, and imports into the NEXUS user you choose. Lichii's files are only read; a NEXUS save is replaced only after confirming, and after a backup.
 - **F11** switches the game between fullscreen and a window without restarting it.
 - **Controllers:** NEXUS remembers every controller (by serial number where it has one), lets each user choose which controller is player 1, 2 … (multiplayer), and gives a controller its own button layout if you want.
 - **Game Updates and Mods** in each game's *Configure Game Settings*: NEXUS reads a package and accepts it only if it really is an update for that game; mods install for that game only and can be switched on and off.
@@ -21,7 +23,7 @@ NEXUS is a console-style game system for Windows. It starts with a power-on anim
 - **Light and dark themes everywhere:** every screen, list, dialog and the setup use one set of theme colours, and text in your profile colour is adjusted to stay readable on both themes.
 - **One download.** `NEXUS-<version>-Windows-x64.zip` contains NEXUS *and* its engine (`NEXUS\Engine`). Extract it and run `NEXUS.exe`; nothing else to install. The engine is found relative to `NEXUS.exe`, so the folder works wherever you put it, and it is updated together with NEXUS.
 - **Hardware information** and **Optimise for my device** (*Emulation settings*): NEXUS reads your CPU, GPU, memory, Windows version and display, and recommends engine settings with *Performance*, *Balanced* or *Quality* profiles, for all games or for one game. You see every change first, choose which to apply, and can restore the previous settings.
-- **Animated wallpapers** (GIF, animated WebP, MP4, WebM) with a preview, and **Home transitions**: pressing Home during a game pauses it and opens the Home screen; *Resume* takes you back.
+- **Animated wallpapers** (GIF, animated WebP, MP4, WebM) with a preview, and **Home transitions** (how the Home screen appears when you press Home, including from a game); *Resume* takes you back to the game.
 - **NEXUS runs games itself.** The NEXUS engine (Switch emulation core built on the yuzu/Eden code base) is loaded inside NEXUS. When you press Play, NEXUS opens the game window, plays the game and brings you back to the home screen. No other emulator program is started, and there is no emulator to choose.
 - **NEXUS Engine** settings: status, supported systems, engine builds with verified install and rollback.
 - **Game volume 0–200 %** with a NEXUS slider: in *Game sessions & saves*, *Emulation settings › Audio*, per game, and live on the playing screen. 100 % is the game's own level; above it a soft limiter prevents harsh clipping.
@@ -118,6 +120,8 @@ Your own data is deliberately **not** inside this folder (so an update can never
 | Change sort or settings tab | LB / RB | Q / E | — |
 | Home | Guide (if your pad reports it) | H | — |
 | Full screen / windowed | — | F11 | Power menu |
+| Start / stop recording (while playing) | — | F12 | — |
+| Screenshot (while playing) | Share / Capture | Alt+F12 | — |
 | **Quit a running game** | Hold **View + Menu** (Back + Start) for 2 s | *Close game* on the NEXUS screen (Esc while playing) | — |
 
 In *Controllers*, you can switch to Nintendo-style confirm (A on the right) and remap every NEXUS action to any button.
@@ -392,7 +396,10 @@ NEXUS never downloads or swaps an emulator executable. The engine is built from 
 - **No real game has been run yet.** The engine is built and loads, but window ownership and focus, a second game in one NEXUS session, audio volume on real output, the controller layouts inside a game and the Joy-Con presets need a PC with a GPU and games. These are the first checks to do with this ZIP.
 - **Switch 2:** the engine contains experimental upstream code; NEXUS has not run any Switch 2 game and makes no claim. Results appear per game under Compatibility.
 - The quit shortcut needs an XInput controller.
-- NEXUS has no self-updater.
+- **Screen recording** was tested on Windows in the project's build with Microsoft's software encoder: generated video and sound, a real test window, the microphone track, and reading the files back. Hardware encoders (NVIDIA, AMD, Intel) and recording a real game have not been tested yet. If a recording fails, NEXUS shows why; turning off *Use the graphics card to encode* falls back to software.
+- Recording only the game's sound needs Windows 11; on Windows 10 all sound playing on the PC is recorded.
+- Input blocking while a game runs in the background is done inside the engine and was tested with the stand-in engine only.
+- `NEXUS.exe` is not code-signed (docs/SIGNING.md in the repository).
 
 ## 8. Troubleshooting
 

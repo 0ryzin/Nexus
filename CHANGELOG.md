@@ -4,6 +4,20 @@ All notable NEXUS changes will be recorded here.
 
 The project is in preview. Releases are numbered from **0.0.0**; the first intended stable release is **1.0.0**. Every release, with its notes and download, is on the [Releases page](https://github.com/0ryzin/Nexus/releases).
 
+## 0.4.0 — Windows x64 (preview)
+
+- Screen recording (F12): game window only, game sound and optional microphone, hardware encoding (NVIDIA NVENC, AMD, Intel Quick Sync) with software fallback, fragmented MP4 written safely with recovery after a crash, REC indicator, saved/failed messages, *Settings › Screen recording*. New module `capture/` (`nexus_capture.dll`).
+- Screenshots move to Alt+F12 (migrated from F12); shortcuts accept Ctrl/Alt/Shift.
+- Home keeps the game running in the background (muted, input blocked by the engine), with a green indicator and Resume; *Pause the game* is an option. NEXUS Engine 0.5.0 (patch 0015).
+- Save import from Lichii's save folder (read only, backup before replacing).
+- The upstream game-list cache is no longer read and is removed from NEXUS's engine data.
+- Interface idle CPU on Home from 5.3 % to 0.3 % of a core, Library from 12.3 % to 0.4 % (docs/PERFORMANCE.md).
+- Appearance page always shows the current theme and accent.
+- `NEXUS.exe` version information: CompanyName "Nexus Development" (metadata only; NEXUS is not code-signed, docs/SIGNING.md).
+- Release page: Windows download table generated from the built ZIP with its SHA-256; the published download is downloaded again and checked, or the release returns to draft.
+- Docs: SOURCE_AUDIT, ARCHITECTURE, PERFORMANCE, SIGNING, MOBILE_RESEARCH (research only).
+- Release notes: [docs/releases/v0.4.0.md](docs/releases/v0.4.0.md).
+
 ## 0.3.0 — Windows x64 (preview)
 
 - NEXUS Engine 0.4.0: upstream Lichii build-160 (30 commits: Ocarina of Time guard-house freeze fix, Vulkan pipeline/memory fixes, shader and CPU performance work, stability fixes) + patch 0014.

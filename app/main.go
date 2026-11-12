@@ -52,6 +52,8 @@ func main() {
 		app.saveMigrationErr = err.Error()
 	}
 	app.Saves.TidyAll()
+	app.Library.RemoveImportedGameListCache()
+	app.Recorder.RecoverInterrupted() // recordings cut off by a crash: kept, playable
 	app.Emu.cleanDLSSPartials() // an interrupted DLSS download leaves no half files
 	// started by the updater (updater.go): use the engine that came with the update and report a
 	// good start, or show why an update was rolled back

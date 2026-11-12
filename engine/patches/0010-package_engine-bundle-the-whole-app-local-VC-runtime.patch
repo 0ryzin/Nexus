@@ -1,7 +1,7 @@
 From ba77966e361269922fe8e6fc1cdb72dcde9a1284 Mon Sep 17 00:00:00 2001
 From: NEXUS <nexus@users.noreply.github.com>
 Date: Wed, 11 Nov 2026 14:40:54 +0000
-Subject: [PATCH 10/14] package_engine: bundle the whole app-local VC++ runtime
+Subject: [PATCH 10/15] package_engine: bundle the whole app-local VC++ runtime
 
 The engine also imports msvcp140_atomic_wait.dll and msvcp140_codecvt_ids.dll;
 without them it would not load on a PC without the VC++ Redistributable.

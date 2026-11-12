@@ -36,6 +36,16 @@ The supplied engine source package contains licence texts for third-party compon
 
 The exact licence applicable to each component must be checked against that component's own source and notices. Do not infer that every listed licence applies to every dependency.
 
+## NEXUS screen-recording module (`nexus_capture.dll`)
+
+Original NEXUS code (`capture/`, GPL-3.0-or-later). It uses only operating-system components of
+Windows, which are not distributed with NEXUS: Windows Graphics Capture (through the C++/WinRT
+headers of the Windows SDK), Direct3D 11, Media Foundation (including the H.264/HEVC encoders
+that Windows or the graphics driver provides) and WASAPI. It is linked with the static MSVC C++
+runtime. It contains no third-party source code. Video encoders from NVIDIA, AMD or Intel are
+used only through Media Foundation when the graphics driver installs them; NEXUS does not ship
+them.
+
 ## NVIDIA DLSS (not distributed)
 
 NEXUS does not include NVIDIA's files. On a GeForce RTX PC, when the user asks for DLSS, NEXUS shows NVIDIA's licence texts (NVIDIA Streamline and NVIDIA DLSS) from NVIDIA's Streamline SDK release on GitHub (NVIDIA-RTX/Streamline) and, only after the user accepts, downloads `sl.interposer.dll`, `sl.common.dll`, `sl.dlss.dll` and `nvngx_dlss.dll` from that release into the user's NEXUS engine data folder, checking each file's checksum and NVIDIA code signature. Those files remain under NVIDIA's licences. The engine compiles only Streamline's MIT-licensed headers.

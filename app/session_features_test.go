@@ -24,7 +24,7 @@ func TestHomePressNeverFlips(t *testing.T) {
 		t.Fatal(err)
 	}
 	req := fakeLast.req
-	if !req.RevealOnRequest || req.ScreenshotDir != app.Media.ScreenshotsDir() || req.ScreenshotName != "AQ" || req.FullscreenKey != "F11" || req.ScreenshotKey != "F12" || !req.CaptureButton || req.FadeInMs != 300 {
+	if !req.RevealOnRequest || req.ScreenshotDir != app.Media.ScreenshotsDir() || req.ScreenshotName != "AQ" || req.FullscreenKey != "F11" || req.ScreenshotKey != "Alt+F12" || req.RecordKey != "F12" || !req.CaptureButton || req.FadeInMs != 300 {
 		t.Fatalf("request %+v", req)
 	}
 	if waitEvent(t, ev, "launch.reveal") == nil {
