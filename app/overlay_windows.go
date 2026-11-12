@@ -39,6 +39,12 @@ var (
 	procOvDrawText             = ovUser.NewProc("DrawTextW")
 	procOvMonitorFromWindow    = ovUser.NewProc("MonitorFromWindow")
 	procOvGetMonitorInfo       = ovUser.NewProc("GetMonitorInfoW")
+	procOvGetForegroundWindow  = ovUser.NewProc("GetForegroundWindow")
+	procOvGetAncestor          = ovUser.NewProc("GetAncestor")
+	procOvIsIconic             = ovUser.NewProc("IsIconic")
+	procOvIsWindowVisible      = ovUser.NewProc("IsWindowVisible")
+	procOvGetClientRect        = ovUser.NewProc("GetClientRect")
+	procOvClientToScreen       = ovUser.NewProc("ClientToScreen")
 	procOvCreateSolidBrush     = ovGdi.NewProc("CreateSolidBrush")
 	procOvDeleteObject         = ovGdi.NewProc("DeleteObject")
 	procOvSetBkMode            = ovGdi.NewProc("SetBkMode")
@@ -63,6 +69,41 @@ const (
 )
 
 type ovRect struct{ L, T, R, B int32 }
+
+// gameArea is where the game is on screen: the NEXUS window's client area when the game is drawn
+// inside it, or the game's own window; ok=false when it is not visible to the user (NEXUS is not
+// the active application or is minimised), so overlays never float over other programs or stay
+// behind at an old position.
+func gameArea(a *App) (ovRect, bool) {
+	main := a.UI.WindowHandle()
+	win := main
+	if st := a.Emu.State(); !st.Embedded {
+		if g := a.Emu.GameWindow(); g != 0 {
+			win = g
+		}
+	}
+	if win == 0 {
+		return ovRect{}, false
+	}
+	fg, _, _ := procOvGetForegroundWindow.Call()
+	root, _, _ := procOvGetAncestor.Call(fg, 3 /*GA_ROOTOWNER*/)
+	if fg == 0 || (root != main && fg != win) {
+		return ovRect{}, false
+	}
+	if ic, _, _ := procOvIsIconic.Call(main); ic != 0 {
+		return ovRect{}, false
+	}
+	if vis, _, _ := procOvIsWindowVisible.Call(win); vis == 0 {
+		return ovRect{}, false
+	}
+	var r ovRect
+	procOvGetClientRect.Call(win, uintptr(unsafe.Pointer(&r)))
+	pt := [2]int32{0, 0}
+	procOvClientToScreen.Call(win, uintptr(unsafe.Pointer(&pt[0])))
+	r.L, r.T, r.R, r.B = pt[0], pt[1], pt[0]+r.R, pt[1]+r.B
+	return r, r.R > r.L && r.B > r.T
+}
+
 type ovMonitorInfo struct {
 	Size          uint32
 	Monitor, Work ovRect
@@ -171,7 +212,8 @@ func (o *perfOverlay) tick() {
 	a := o.app
 	cfg := a.Settings.Get().PerfMonitor
 	st := a.Emu.State()
-	want := st.Running && st.Phase == "playing" && !st.Suspended && cfg.For(st.GameKey)
+	area, visible := gameArea(a)
+	want := st.Running && st.Phase == "playing" && !st.Suspended && cfg.For(st.GameKey) && visible
 	if !want {
 		if o.shown {
 			procOvShowWindow.Call(o.hwnd, swHide)
@@ -184,21 +226,17 @@ func (o *perfOverlay) tick() {
 	if p, ok := a.Profiles.Get(st.ProfileID); ok {
 		o.dark = p.Theme.Mode != "light"
 	}
-	// strip at the top or bottom of the monitor NEXUS (and so the game) is on
-	var mi ovMonitorInfo
-	mi.Size = uint32(unsafe.Sizeof(mi))
-	mon, _, _ := procOvMonitorFromWindow.Call(a.UI.WindowHandle(), 2 /*NEAREST*/)
-	procOvGetMonitorInfo.Call(mon, uintptr(unsafe.Pointer(&mi)))
+	// strip at the top or bottom of the game's area (the NEXUS window or the game's window)
 	scale := clampF(float64(cfg.Scale), 75, 200) / 100
 	o.height = int32(30 * scale)
-	w := mi.Monitor.R - mi.Monitor.L
-	y := mi.Monitor.T
+	w := area.R - area.L
+	y := area.T
 	if cfg.Position == "bottom" {
-		y = mi.Monitor.B - o.height
+		y = area.B - o.height
 	}
 	alpha := uintptr(clampF(float64(cfg.Opacity), 30, 100) * 255 / 100)
 	procOvSetLayeredAttributes.Call(o.hwnd, 0, alpha, lwaAlpha)
-	procOvSetWindowPos.Call(o.hwnd, hwndTopmost, uintptr(mi.Monitor.L), uintptr(y), uintptr(w), uintptr(o.height), swpNoActivate)
+	procOvSetWindowPos.Call(o.hwnd, hwndTopmost, uintptr(area.L), uintptr(y), uintptr(w), uintptr(o.height), swpNoActivate)
 	if !o.shown {
 		procOvShowWindow.Call(o.hwnd, swShowNoActivate)
 		o.shown = true
@@ -237,7 +275,8 @@ func (o *perfOverlay) tickRec() {
 		return
 	}
 	st := a.Emu.State()
-	want := a.Recorder != nil && a.Recorder.Active() && st.Running && st.Phase == "playing" && !st.Suspended
+	area, visible := gameArea(a)
+	want := a.Recorder != nil && a.Recorder.Active() && st.Running && st.Phase == "playing" && !st.Suspended && visible
 	if !want {
 		if o.recOn {
 			procOvShowWindow.Call(o.rec, swHide)
@@ -251,17 +290,9 @@ func (o *perfOverlay) tickRec() {
 	} else {
 		o.recText = fmt.Sprintf("REC %02d:%02d", d/60, d%60)
 	}
-	var mi ovMonitorInfo
-	mi.Size = uint32(unsafe.Sizeof(mi))
-	win := a.Emu.GameWindow()
-	if win == 0 {
-		win = a.UI.WindowHandle()
-	}
-	mon, _, _ := procOvMonitorFromWindow.Call(win, 2 /*NEAREST*/)
-	procOvGetMonitorInfo.Call(mon, uintptr(unsafe.Pointer(&mi)))
 	const w, h, margin = 150, 34, 18
-	x := mi.Monitor.R - w - margin
-	y := mi.Monitor.T + margin
+	x := area.R - w - margin
+	y := area.T + margin
 	if cfg := a.Settings.Get().PerfMonitor; cfg.Position != "bottom" && cfg.For(st.GameKey) {
 		y += o.height // below the performance strip
 	}

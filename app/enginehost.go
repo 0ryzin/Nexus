@@ -24,6 +24,10 @@ type EngineHost interface {
 	// Screenshot asks the engine for a screenshot; Window is the game window's handle (0 if none).
 	Screenshot() bool
 	Window() uintptr
+	// Amiibo places an amiibo dump on the virtual NFC reader ("" removes it): 0 placed,
+	// 1 the game is not scanning, 2 unreadable file, 3 not an amiibo, -1 no game, -2 this
+	// engine build cannot (engine 0.6).
+	Amiibo(path string) int
 }
 
 // PadInfo is one connected game controller as the engine (SDL) sees it.
@@ -84,6 +88,9 @@ type EngineRequest struct {
 	RevealOnRequest bool `json:"revealOnRequest,omitempty"`
 	RevealTimeoutMs int  `json:"revealTimeoutMs,omitempty"`
 	FadeInMs        int  `json:"fadeInMs,omitempty"`
+	// Embed: the game is drawn inside the NEXUS window (OwnerWindow) instead of a window of its
+	// own (engine 0.6); NEXUS makes its own window full screen for F11.
+	Embed bool `json:"embed,omitempty"`
 }
 
 // EngineStatus is the JSON returned by nexus_engine_status.
@@ -114,6 +121,11 @@ type EngineStatus struct {
 	// engine 0.5
 	RecordPresses uint64 `json:"recordPresses,omitempty"`
 	Background    bool   `json:"background,omitempty"`
+	// engine 0.6
+	Embedded          bool   `json:"embedded,omitempty"`          // drawn inside the NEXUS window
+	FullscreenPresses uint64 `json:"fullscreenPresses,omitempty"` // F11 while embedded
+	Amiibo            string `json:"amiibo,omitempty"`            // none | scanning | placed
+	KeyboardMoves     string `json:"keyboardMoves,omitempty"`     // "R H -> E": default keys freed for shortcuts
 }
 
 // EngineBuildInfo is nexus_engine_info plus what NEXUS knows about the installed build.

@@ -88,6 +88,11 @@ type EmulatorSettings struct {
 	// HomeAction: what NEXUS Home does to the game: "background" keeps it running (muted, no
 	// input) behind NEXUS, "pause" pauses it.
 	HomeAction string `json:"homeAction"`
+	// GameWindow: "inside" (default: the game is drawn inside the NEXUS window) or "separate"
+	// (a window of its own, as before 0.5)
+	GameWindow string `json:"gameWindow,omitempty"`
+	// AmiiboPrompt: "" (ask: NEXUS shows the amiibo library when a game scans) or "off"
+	AmiiboPrompt string `json:"amiiboPrompt,omitempty"`
 	// Overrides holds engine keys saved by NEXUS 1.2-1.5; migrated into Engine on load.
 	Overrides map[string]string `json:"overrides"`
 }

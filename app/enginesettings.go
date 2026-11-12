@@ -27,11 +27,13 @@ type NSetting struct {
 	Step    int         `json:"step,omitempty"`
 	Suffix  string      `json:"suffix,omitempty"`
 	Presets []int       `json:"presets,omitempty"` // int: values offered in the picker (all steps when empty)
+	Custom  bool        `json:"custom,omitempty"`  // int: any value from Min to Max can be typed in
 	Help    string      `json:"help,omitempty"`
 }
 
 var NexusSections = []EmuChoice{{"general", "General"}, {"graphics", "Graphics"}, {"advanced", "Advanced Graphics"},
-	{"enhance", "Frame generation & DLSS"}, {"audio", "Audio"}, {"controls", "Controls"}, {"system", "System"}}
+	{"enhance", "Frame generation & DLSS"}, {"audio", "Audio"}, {"controls", "Controls"}, {"system", "System"},
+	{"core", "Core"}, {"memory", "Memory layout"}}
 
 var languages = []EmuChoice{{"ja", "Japanese"}, {"en-US", "English (US)"}, {"fr", "French"}, {"de", "German"}, {"it", "Italian"},
 	{"es", "Spanish"}, {"zh", "Chinese"}, {"ko", "Korean"}, {"nl", "Dutch"}, {"pt", "Portuguese"}, {"ru", "Russian"},
@@ -76,10 +78,21 @@ var NexusSettings = []NSetting{
 	{ID: "adv.vram", Section: "advanced", Label: "Video memory usage", Kind: "enum", Choices: []EmuChoice{{"conservative", "Conservative"}, {"aggressive", "Aggressive"}}},
 	{ID: "adv.nvdec", Section: "advanced", Label: "Video decoding", Kind: "enum", Choices: []EmuChoice{{"gpu", "GPU"}, {"cpu", "CPU"}, {"off", "Off"}}},
 	{ID: "adv.cpu_accuracy", Section: "advanced", Label: "CPU accuracy", Kind: "enum", Choices: []EmuChoice{{"auto", "Automatic"}, {"accurate", "Accurate"}, {"unsafe", "Unsafe (faster)"}, {"paranoid", "Paranoid (slowest)"}}},
-	{ID: "adv.multicore", Section: "advanced", Label: "Multicore CPU emulation", Kind: "bool"},
-	{ID: "adv.speed_limit_on", Section: "advanced", Label: "Limit emulation speed", Kind: "bool",
-		Help: "On: games run at real-time speed. Off (uncapped): the game's own simulation runs as fast as your PC allows — the game itself speeds up; this is not the same as a higher frame rate."},
-	{ID: "adv.speed_limit", Section: "advanced", Label: "Speed limit", Kind: "int", Min: 25, Max: 400, Step: 25, Suffix: "%"},
+	// Core (engine: Core/use_multi_core, sync_core_speed, use_speed_limit, speed_limit)
+	{ID: "adv.multicore", Section: "core", Label: "Multi-core CPU emulation", Kind: "bool",
+		Help: "Emulates the console's CPU cores on separate threads of your processor. Much faster on most PCs; turn off only to diagnose a game that misbehaves with it. Takes effect when the game starts."},
+	{ID: "core.sync_speed", Section: "core", Label: "Synchronise core speed", Kind: "bool",
+		Help: "Makes the game's own clock follow the speed limit, so at 50% or 200% the game's timers (and its audio pacing) slow down or speed up with it. Off: only frame pacing follows the limit. Leave off unless a game runs at the wrong speed with a limit other than 100%."},
+	{ID: "adv.speed_limit_on", Section: "core", Label: "Limit emulation speed", Kind: "bool",
+		Help: "On: games run at the speed limit below (100% = real console speed). Off (uncapped): the game's own simulation runs as fast as your PC allows — the game itself speeds up; this is not the same as a higher frame rate."},
+	{ID: "adv.speed_limit", Section: "core", Label: "Speed limit", Kind: "int", Min: 10, Max: 1000, Step: 1, Suffix: "%",
+		Presets: []int{50, 100, 200}, Custom: true,
+		Help: "50% = half speed (slow), 100% = normal, 200% = double speed (turbo, if your PC can reach it). Choose Custom for any value from 10% to 1000%. This is emulation speed, not a frame-rate setting."},
+	// Memory layout (engine: Core/memory_layout_mode; KSystemControl's memory arrangements)
+	{ID: "memory.layout", Section: "memory", Label: "Emulated memory (DRAM)", Kind: "enum",
+		Choices: []EmuChoice{{"4", "4 GB — standard (retail Switch)"}, {"6", "6 GB — development-unit layout"}, {"8", "8 GB — development-kit size, enlarged game memory"},
+			{"10", "10 GB — experimental (no Switch has this)"}, {"12", "12 GB — experimental for Switch games (Switch 2 size)"}},
+		Help: "How much memory the emulated console has. 4 GB is the retail Switch and works for all games. 6 GB and 8 GB are layouts the console's own system software defines for development units; some mods (for example high-resolution packs) need them. 10 GB and 12 GB do not exist on any Switch: they can break games, and use that much more of your PC's memory. Switch 2 games always use 12 GB. Applied when a game starts; NEXUS refuses a layout your PC does not have the memory for."},
 	// Frame generation & upscaler replacement (enhancements.go decides what this PC can use)
 	{ID: "enhance.framegen", Section: "enhance", Label: "Frame generation", Kind: "bool",
 		Help: "Adds generated frames between the game's own frames for smoother motion. Vulkan only. Adds a little input latency; best when the game already runs at a steady frame rate."},
@@ -113,6 +126,13 @@ var NexusSettings = []NSetting{
 	{ID: "controls.sensitivity", Section: "controls", Label: "Stick sensitivity and dead zone", Kind: "info"},
 	// System
 	{ID: "system.firmware", Section: "system", Label: "Firmware", Kind: "info"},
+	// emulated clocks (engine: System/fast_cpu_time, System/fast_gpu_time)
+	{ID: "system.cpu_clock", Section: "system", Label: "CPU clock", Kind: "enum",
+		Choices: []EmuChoice{{"normal", "Normal (1020 MHz)"}, {"boost", "Boost (1734 MHz)"}, {"overclock", "Overclock (2040 MHz)"}},
+		Help:    "The clock speed the emulated console's CPU reports to the game. Some games do less work per frame at a low clock and run smoother at Boost; others run too fast. This does not change your own processor's speed."},
+	{ID: "system.gpu_clock", Section: "system", Label: "GPU clock", Kind: "enum",
+		Choices: []EmuChoice{{"normal", "Normal"}, {"boost", "Boost (engine default)"}, {"overclock", "Overclock"}},
+		Help:    "How long the game believes its graphics work takes on the emulated console's GPU. Boost or Overclock lets games that adapt to GPU time render at full detail or frame rate. This does not change your own graphics card's clock."},
 	{ID: "system.docked", Section: "system", Label: "Console mode", Kind: "enum", Choices: []EmuChoice{{"docked", "Docked (TV)"}, {"handheld", "Handheld"}}},
 	{ID: "system.language", Section: "system", Label: "System language", Kind: "enum", Choices: languages},
 	{ID: "system.region", Section: "system", Label: "Console region", Kind: "enum",
@@ -187,6 +207,10 @@ var engineBinds = map[string]engineBind{
 	"adv.nvdec":               {"Renderer/nvdec_emulation", map[string]string{"off": "0", "cpu": "1", "gpu": "2"}},
 	"adv.cpu_accuracy":        {"Cpu/cpu_accuracy", map[string]string{"auto": "0", "accurate": "1", "unsafe": "2", "paranoid": "3"}},
 	"adv.multicore":           {"Core/use_multi_core", nil},
+	"core.sync_speed":         {"Core/sync_core_speed", nil},
+	"memory.layout":           {"Core/memory_layout_mode", map[string]string{"4": "0", "6": "1", "8": "2", "10": "3", "12": "4"}},
+	"system.cpu_clock":        {"System/fast_cpu_time", map[string]string{"normal": "0", "boost": "1", "overclock": "2"}},
+	"system.gpu_clock":        {"System/fast_gpu_time", map[string]string{"normal": "0", "boost": "1", "overclock": "2"}},
 	"adv.speed_limit_on":      {"Core/use_speed_limit", nil},
 	"adv.speed_limit":         {"Core/speed_limit", nil},
 	"graphics.fps_limit":      {"Renderer/nx2_frame_rate_limit", nil},

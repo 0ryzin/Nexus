@@ -57,6 +57,7 @@ type dlEngine struct {
 	// mobile additions (optional, see docs/ANDROID.md): the surface to draw into, touch
 	// controls, app lifecycle and memory pressure
 	setSurface, touch, lifecycle, trimMemory unsafe.Pointer
+	amiibo                                   unsafe.Pointer // engine 0.6 (optional)
 }
 
 // openDLEngine loads the engine library at path and checks its interface version.
@@ -91,6 +92,7 @@ func openDLEngine(path string) (*dlEngine, error) {
 	e.background, e.screenshot, e.window = sym("nexus_engine_background"), sym("nexus_engine_screenshot"), sym("nexus_engine_window")
 	e.setSurface, e.touch = sym("nexus_engine_set_surface"), sym("nexus_engine_touch")
 	e.lifecycle, e.trimMemory = sym("nexus_engine_lifecycle"), sym("nexus_engine_trim_memory")
+	e.amiibo = sym("nexus_engine_amiibo")
 	if v := int32(C.nx_call_i32_void(e.apiVersion)); v != engineAPIVersion {
 		return nil, fmt.Errorf("this engine build uses interface version %d; NEXUS needs %d", v, engineAPIVersion)
 	}
@@ -185,6 +187,18 @@ func (e *dlEngine) Controllers() ([]PadInfo, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+func (e *dlEngine) Amiibo(path string) int {
+	if e.amiibo == nil {
+		return -2
+	}
+	var cs *C.char
+	if path != "" {
+		cs = C.CString(path)
+		defer C.free(unsafe.Pointer(cs))
+	}
+	return int(C.nx_call_i32_str(e.amiibo, cs))
 }
 
 // ---- mobile additions (MobileEngine, platform_mobile.go)

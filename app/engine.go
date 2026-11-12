@@ -42,6 +42,12 @@ type RunState struct {
 	LoadTotal uint64 `json:"loadTotal,omitempty"`
 	// HomeKeyConflict: the Home key is one of the game's controls, so it goes to the game
 	HomeKeyConflict bool `json:"homeKeyConflict,omitempty"`
+	// Embedded: the game is drawn inside the NEXUS window (engine 0.6)
+	Embedded bool `json:"embedded,omitempty"`
+	// Amiibo: the game is "scanning" for an amiibo, or one is "placed" (engine 0.6)
+	Amiibo string `json:"amiibo,omitempty"`
+	// KeyboardMoves: game buttons moved off NEXUS shortcut keys in the default keyboard layout
+	KeyboardMoves string `json:"keyboardMoves,omitempty"`
 }
 
 const engineID = "nexus"
@@ -54,6 +60,9 @@ type Emulator struct {
 	host    EngineHost
 	hostErr error
 	hostDir string
+
+	// restoreFullscreen: the NEXUS window's full-screen state before an embedded game started
+	restoreFullscreen *bool
 
 	Builds *EngineBuilds
 
@@ -248,6 +257,9 @@ func (e *Emulator) writeSessionConfig(g *Game, pr *Profile) (string, error) {
 			pref = v
 		}
 	}
+	if err := e.checkMemoryLayout(g, s); err != nil {
+		return "", err
+	}
 	if devs, err := vulkanDevices(); err == nil {
 		if idx, why := ChooseVulkanDevice(devs, pref); idx >= 0 {
 			ini.SetSetting("Renderer", "vulkan_device", strconv.Itoa(idx))
@@ -381,6 +393,18 @@ func (e *Emulator) Launch(g *Game, profileID string) error {
 		RecordKey:     recordKey(s),
 		ScreenshotDir: e.app.Media.ScreenshotsDir(), ScreenshotName: captureName(g),
 		RevealOnRequest: true, RevealTimeoutMs: 1500, Controllers: e.app.Controllers.ForSession(pr)}
+	// one NEXUS window: the game is drawn inside it (Settings › Game sessions › Game window)
+	req.Embed = s.Emulator.GameWindow != "separate" && e.app.UI.Native() && req.OwnerWindow != 0
+	if req.Embed {
+		req.Fullscreen = false
+		wasFull := e.app.UI.IsFullscreen()
+		e.mu.Lock()
+		e.restoreFullscreen = &wasFull
+		e.mu.Unlock()
+		if s.Emulator.Fullscreen && !wasFull {
+			e.app.UI.SetFullscreen(true) // games start full screen: the NEXUS window does
+		}
+	}
 	if s.Emulator.FadeIn {
 		req.FadeInMs = 300
 	}
@@ -426,6 +450,7 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 	lastHome := time.Time{}
 	shotsSeen := uint64(0)
 	recordSeen := uint64(0)
+	fullscreenSeen := uint64(0)
 	revealAsked := time.Time{}
 	checkpoint := func() {
 		if st.Phase != "playing" {
@@ -519,6 +544,19 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 			st.Fullscreen = es.Fullscreen
 			e.setState(st)
 		}
+		// engine 0.6: drawn inside the NEXUS window; F11 makes the NEXUS window full screen
+		if es.Embedded != st.Embedded || es.Amiibo != st.Amiibo || es.KeyboardMoves != st.KeyboardMoves {
+			scanning := es.Amiibo == "scanning" && st.Amiibo != "scanning"
+			st.Embedded, st.Amiibo, st.KeyboardMoves = es.Embedded, es.Amiibo, es.KeyboardMoves
+			e.setState(st)
+			if scanning {
+				e.app.Events.Emit("amiibo.scanning", map[string]any{"title": st.Title})
+			}
+		}
+		if es.FullscreenPresses > fullscreenSeen {
+			fullscreenSeen = es.FullscreenPresses
+			e.app.UI.SetFullscreen(!e.app.UI.IsFullscreen())
+		}
 		// the recording key (F12) in the game window: NEXUS records
 		if es.RecordPresses > recordSeen {
 			recordSeen = es.RecordPresses
@@ -568,6 +606,14 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 	for i := 0; i < 400 && final.State == "stopping"; i++ {
 		time.Sleep(50 * time.Millisecond)
 		final = host.Status()
+	}
+	// the NEXUS window goes back to how it was before the game (full screen or not)
+	e.mu.Lock()
+	restore := e.restoreFullscreen
+	e.restoreFullscreen = nil
+	e.mu.Unlock()
+	if restore != nil && e.app.UI.IsFullscreen() != *restore {
+		e.app.UI.SetFullscreen(*restore)
 	}
 	secs := int64(played.Seconds())
 	crashed := final.State == "error"
@@ -651,6 +697,11 @@ func (e *Emulator) Suspend(on bool) error {
 // GameWindow is the running game's window handle (0 if none).
 func (e *Emulator) GameWindow() uintptr {
 	if h, err := e.Host(); err == nil && e.State().Running {
+		if e.State().Embedded {
+			// the game fills the NEXUS window's client area; screen capture records top-level
+			// windows, so the NEXUS window is recorded (its client area: the game)
+			return e.app.UI.WindowHandle()
+		}
 		return h.Window()
 	}
 	return 0
@@ -776,4 +827,32 @@ func recordKey(s GlobalSettings) string {
 		return ""
 	}
 	return s.Recording.Key
+}
+
+// checkMemoryLayout refuses a memory layout (memory.layout) the PC cannot back: the engine
+// reserves the whole emulated DRAM in host memory, and the system, NEXUS and the graphics driver
+// need about 4 GB besides. Switch 2 games always use 12 GB (the engine decides that itself).
+func (e *Emulator) checkMemoryLayout(g *Game, s GlobalSettings) error {
+	layout := s.Engine["memory.layout"]
+	if g != nil {
+		if v, ok := gameNexusSettings(e.app.Library.GP.Get(g.Key))["memory.layout"]; ok && v != "" {
+			layout = v
+		}
+	}
+	gb, _ := strconv.Atoi(layout)
+	if gb <= 4 {
+		return nil
+	}
+	total := e.app.DetectHardware(false).Memory.TotalMB
+	if total <= 0 {
+		return nil // unknown: the engine reports a failed allocation itself
+	}
+	if need := int64(gb+4) * 1024; total < need-512 { // installed RAM shows a little under its size
+		return fmt.Errorf("This game is set to %d GB of emulated memory, which needs a PC with at least %d GB of RAM; this PC has %.0f GB. Choose a smaller memory layout in the game's settings (Memory layout) or in Emulation settings.",
+			gb, gb+4, float64(total)/1024)
+	}
+	if gb >= 10 {
+		e.app.Log.Printf("engine: experimental %d GB memory layout", gb)
+	}
+	return nil
 }

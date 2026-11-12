@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -20,6 +21,7 @@ type dllEngine struct {
 	apiVersion, info, start, status, stop, setVolume, focus, suspend *syscall.Proc
 	reveal, controllers                                              *syscall.Proc // engine 0.4 (optional)
 	background, screenshot, window                                   *syscall.Proc // engine 0.5 (optional)
+	amiibo                                                           *syscall.Proc // engine 0.6 (optional)
 }
 
 func loadEngineHost(dir string) (EngineHost, error) {
@@ -48,6 +50,7 @@ func loadEngineHost(dir string) (EngineHost, error) {
 	e.background, _ = d.FindProc("nexus_engine_background")
 	e.screenshot, _ = d.FindProc("nexus_engine_screenshot")
 	e.window, _ = d.FindProc("nexus_engine_window")
+	e.amiibo, _ = d.FindProc("nexus_engine_amiibo")
 	if v, _, _ := e.apiVersion.Call(); int32(v) != engineAPIVersion {
 		return nil, fmt.Errorf("this engine build uses interface version %d; NEXUS needs %d", int32(v), engineAPIVersion)
 	}
@@ -145,6 +148,23 @@ func (e *dllEngine) Window() uintptr {
 	}
 	h, _, _ := e.window.Call()
 	return h
+}
+
+func (e *dllEngine) Amiibo(path string) int {
+	if e.amiibo == nil {
+		return -2
+	}
+	var p uintptr
+	if path != "" {
+		b, err := syscall.BytePtrFromString(path) // UTF-8, as the engine's file functions expect
+		if err != nil {
+			return 2
+		}
+		p = uintptr(unsafe.Pointer(b))
+		defer runtime.KeepAlive(b)
+	}
+	r, _, _ := e.amiibo.Call(p)
+	return int(int32(r))
 }
 
 func (e *dllEngine) Controllers() ([]PadInfo, error) {

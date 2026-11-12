@@ -1925,6 +1925,99 @@ func (s *Server) routes() {
 		}
 		writeJSON(w, true)
 	})
+	// ----- amiibo (amiibo.go) -----
+	amiiboState := func() map[string]any {
+		st := a.Emu.State()
+		return map[string]any{"list": a.Amiibo.List(), "keys": a.Amiibo.KeysInstalled(), "scanning": st.Running && st.Amiibo == "scanning", "running": st.Running}
+	}
+	m.HandleFunc("GET /api/amiibo", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, amiiboState()) })
+	m.HandleFunc("POST /api/amiibo/import", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Path, Owner string }
+		_ = readBody(r, &b)
+		if b.Path == "" {
+			p, err := a.UI.PickFile("Choose an amiibo dump", "amiibo dump (*.bin;*.nfc)|*.bin;*.nfc|All files|*.*|")
+			if err != nil || p == "" {
+				writeJSON(w, map[string]any{"cancelled": true})
+				return
+			}
+			b.Path = p
+		}
+		am, err := a.Amiibo.Import(b.Path, b.Owner)
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, am)
+	})
+	m.HandleFunc("POST /api/amiibo/virtual", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ AmiiboID, Name, Series, Owner string }
+		_ = readBody(r, &b)
+		am, err := a.Amiibo.CreateVirtual(b.AmiiboID, b.Name, b.Series, b.Owner)
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, am)
+	})
+	m.HandleFunc("POST /api/amiibo/update", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			ID    string
+			Name  *string
+			Owner *string
+		}
+		_ = readBody(r, &b)
+		am, err := a.Amiibo.Update(b.ID, func(x *Amiibo) {
+			if b.Name != nil {
+				x.Name = *b.Name
+			}
+			if b.Owner != nil {
+				x.Owner = *b.Owner
+			}
+		})
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, am)
+	})
+	m.HandleFunc("POST /api/amiibo/remove", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ ID string }
+		_ = readBody(r, &b)
+		if err := a.Amiibo.Remove(b.ID); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, true)
+	})
+	m.HandleFunc("POST /api/amiibo/place", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ ID string }
+		_ = readBody(r, &b)
+		if err := a.Amiibo.Place(b.ID); err != nil {
+			writeErr(w, 409, err)
+			return
+		}
+		writeJSON(w, true)
+	})
+	m.HandleFunc("POST /api/amiibo/keys", func(w http.ResponseWriter, r *http.Request) {
+		p, err := a.UI.PickFile("Choose your amiibo keys file (key_retail.bin)", "key_retail.bin|key_retail.bin|All files|*.*|")
+		if err != nil || p == "" {
+			writeJSON(w, map[string]any{"cancelled": true})
+			return
+		}
+		if err := a.Amiibo.InstallKeys(p); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, true)
+	})
+	m.HandleFunc("GET /api/amiibo/lookup", func(w http.ResponseWriter, r *http.Request) {
+		list, err := LookupAmiibo(r.URL.Query().Get("q"))
+		if err != nil {
+			writeErr(w, 502, err)
+			return
+		}
+		writeJSON(w, map[string]any{"results": list})
+	})
 }
 
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {

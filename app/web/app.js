@@ -1777,6 +1777,22 @@ function nchoices(st, only) {
   if (only?.length) out = out.filter(c => only.includes(c.v));
   return out;
 }
+// int settings that accept any value (speed limit): the presets, the current custom value and
+// "Custom…", which asks for a number
+function withCustom(st, ch, cur, setter, unset) {
+  if (!st.custom) return [ch, setter];
+  if (cur !== undefined && cur !== null && !ch.some(c => c.v === String(cur)) && /^\d+$/.test(String(cur))) ch.push({ v: String(cur), l: cur + (st.suffix || '') + ' (custom)' });
+  ch.push({ v: '__custom', l: 'Custom…' });
+  return [ch, async v => {
+    if (v !== '__custom') return setter(v);
+    const txt = await dialog({ title: st.label, text: `Enter a value from ${st.min} to ${st.max}${st.suffix || ''}.`, input: { value: /^\d+$/.test(String(cur)) ? String(cur) : '100', max: 5 },
+      buttons: [{ label: 'Cancel', value: null }, { label: 'Set', value: true, primary: true }] });
+    if (txt === null || txt === undefined) return setter(cur ?? unset); // cancelled: unchanged
+    const n = parseInt(String(txt).replace(/[^0-9]/g, ''), 10);
+    if (!(n >= st.min && n <= st.max)) { alertDlg('Not a valid value', `${st.label} can be ${st.min}–${st.max}${st.suffix || ''}.`); return; }
+    return setter(String(n));
+  }];
+}
 function infoRow(label, value, sub, cls = '') {
   return h('div', { class: 'row info ' + cls }, h('span', { class: 'rl' }, h('span', {}, label), sub && h('small', {}, sub)), h('span', { class: 'rv muted' }, value || ''));
 }
@@ -1853,12 +1869,12 @@ function settingRows(container, view, section, { mode, engine, save }) {
       }
       const [gv, gsrc] = effValue(view, id, engine, false);
       const glabel = gv !== undefined ? nlabel(st, gv) : 'engine default';
-      const ch = [{ v: '__global', l: `Use global (${glabel})` }, ...nchoices(st, cap.choices)];
       const cur = view.overrides[id];
+      const [ch, onPick] = withCustom(st, [{ v: '__global', l: `Use global (${glabel})` }, ...nchoices(st, cap.choices)], cur, v => save({ settings: { [id]: v === '__global' ? null : v } }), '__global');
       if (cur !== undefined && !ch.some(c => c.v === cur)) ch.push({ v: cur, l: nlabel(st, cur) + ' (not supported by the engine, ignored)' });
       let sub = st.help || '';
       if (gsrc === 'engine') sub = (sub ? sub + ' ' : '') + 'Global value comes from the engine configuration.';
-      const r = rowChoice(st.label, ch, cur ?? '__global', v => save({ settings: { [id]: v === '__global' ? null : v } }), sub);
+      const r = rowChoice(st.label, ch, cur ?? '__global', onPick, sub);
       if (cur !== undefined) r.classList.add('overridden');
       container.append(r);
     } else {
@@ -1873,10 +1889,10 @@ function settingRows(container, view, section, { mode, engine, save }) {
         continue;
       }
       const engineNow = engines.map(e => view.caps[e][id]?.available ? `Engine default: ${view.engineValues[e]?.[id] !== undefined ? nlabel(st, view.engineValues[e][id]) : 'built-in'}` : 'Not supported').join(' · ');
-      const ch = [{ v: '__engine', l: 'Engine default' }, ...nchoices(st, view.caps[engines[0]][id]?.choices)];
       const cur = view.global[id];
+      const [ch, onPick] = withCustom(st, [{ v: '__engine', l: 'Engine default' }, ...nchoices(st, view.caps[engines[0]][id]?.choices)], cur, v => save({ settings: { [id]: v === '__engine' ? null : v } }), '__engine');
       let sub = (st.help ? st.help + ' ' : '') + engineNow;
-      const r = rowChoice(st.label, ch, cur ?? '__engine', v => save({ settings: { [id]: v === '__engine' ? null : v } }), sub);
+      const r = rowChoice(st.label, ch, cur ?? '__engine', onPick, sub);
       if (cur !== undefined) r.classList.add('overridden');
       container.append(r);
     }
@@ -2227,7 +2243,7 @@ $('#play-close').addEventListener('click', async () => {
 // ---------- settings
 const CATS = [
   ['appearance', 'Appearance'], ['startup', 'Startup'], ['library', 'Game library'], ['controllers', 'Controllers'], ['users', 'Users'], ['savedata', 'Save Data'], ['system', 'System'], ['updates', 'Updates'],
-  ['-', 'System & Emulation'], ['engine', 'NEXUS Engine'], ['sysfiles', 'System files'], ['emusettings', 'Emulation settings'], ['emulator', 'Game sessions & saves'], ['recording', 'Screen recording'], ['perf', 'Performance Monitor'],
+  ['-', 'System & Emulation'], ['engine', 'NEXUS Engine'], ['sysfiles', 'System files'], ['emusettings', 'Emulation settings'], ['emulator', 'Game sessions & saves'], ['amiibo', 'Amiibo'], ['recording', 'Screen recording'], ['perf', 'Performance Monitor'],
 ];
 const NAVCATS = () => catList().filter(c => c[0] !== '-' && c[0] !== 'controllers');
 // NEXUS Sync appears only when the experimental Device Linking feature is switched on
@@ -2361,7 +2377,100 @@ async function themePatch(patch) {
 
 const ACCENTS = ['#ff2a3a', '#00c8ff', '#ff3b5c', '#ff9f0a', '#ffd60a', '#30d158', '#64d2ff', '#5e5ce6', '#bf5af2', '#ff6ec7', '#ffffff'];
 const BOOT_COLORS = ['#e60012', '#ff5a1f', '#f5b300', '#1fae5b', '#0a84ff', '#5e2bff', '#e0218a', '#1d1e21', '#f2f2f2'];
+
+// ---------- amiibo (amiibo.go): the user's own dumps and NEXUS virtual amiibo
+const AmiiboUI = {
+  KIND: { dump: 'Imported dump', mifare: 'Imported MIFARE dump', virtual: 'NEXUS virtual amiibo' },
+  ownerName(id) { return id ? (S.profiles.find(p => p.id === id)?.name || 'A removed user') : 'Everyone'; },
+  async load() { return api('/api/amiibo'); },
+  async import(owner) {
+    try { const r = await api('/api/amiibo/import', { body: { owner: owner || '' } }); if (!r.cancelled) { toast(`Added ${r.name}`, I.check); return r; } }
+    catch (e) { alertDlg('The amiibo was not added', e.message); }
+    return null;
+  },
+  async createVirtual(owner) {
+    const q = await dialog({ title: 'Create a virtual amiibo', text: 'Type the amiibo’s name to look it up in the open amiibo database (AmiiboAPI; names only, no images or data are downloaded), or type its 16-digit amiibo ID. A virtual amiibo works only in NEXUS: it is not an authenticated Nintendo amiibo and cannot be written to a figure or card.', input: { placeholder: 'Name or amiibo ID', max: 60 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Next', value: true, primary: true }] });
+    if (!q || !q.trim()) return null;
+    let pick = null;
+    const id = q.trim().toLowerCase().replace(/^0x/, '');
+    if (/^[0-9a-f]{14}02$/.test(id)) pick = { id, name: '', series: '' };
+    else {
+      let res;
+      try { res = (await api('/api/amiibo/lookup?q=' + encodeURIComponent(q.trim()))).results || []; }
+      catch (e) { alertDlg('The amiibo database could not be reached', e.message); return null; }
+      if (!res.length) { alertDlg('No amiibo found', `Nothing in the amiibo database is called “${q.trim()}”. Check the spelling, or type the amiibo ID.`); return null; }
+      const items = res.map((r, i) => ({ v: i, l: `${r.name} · ${r.amiiboSeries}${r.type && r.type !== 'Figure' ? ' (' + r.type + ')' : ''}` }));
+      const i = await listPick('Which amiibo?', items);
+      if (i === undefined) return null;
+      pick = { id: (res[i].head + res[i].tail).toLowerCase(), name: res[i].name, series: res[i].amiiboSeries };
+    }
+    try { const a = await api('/api/amiibo/virtual', { body: { amiiboId: pick.id, name: pick.name, series: pick.series, owner: owner || '' } }); toast(`Created ${a.name} (virtual)`, I.check); return a; }
+    catch (e) { alertDlg('The virtual amiibo was not created', e.message); return null; }
+  },
+  async manage(a) {
+    const v = await listPick(a.name, [{ v: 'rename', l: 'Rename' }, { v: 'owner', l: `User: ${this.ownerName(a.owner)}` }, { v: 'info', l: 'Details' }, { v: 'remove', l: 'Remove from library' }]);
+    if (v === 'rename') {
+      const n = await dialog({ title: 'Rename', input: { value: a.name, max: 40 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Save', value: true, primary: true }] });
+      if (n && n.trim()) await api('/api/amiibo/update', { body: { id: a.id, name: n.trim() } }).catch(e => toast(e.message, I.warn));
+    } else if (v === 'owner') {
+      const o = await listPick('Whose amiibo is this?', [{ v: '', l: 'Everyone' }, ...S.profiles.map(p => ({ v: p.id, l: p.name }))], a.owner || '');
+      if (o !== undefined) await api('/api/amiibo/update', { body: { id: a.id, owner: o } }).catch(e => toast(e.message, I.warn));
+    } else if (v === 'info') {
+      await alertDlg(a.name, null, [`Kind: ${this.KIND[a.kind] || a.kind}`, a.series && `Series: ${a.series}`, a.amiiboId && `Amiibo ID: ${a.amiiboId}`, a.uid && `Serial number: ${a.uid}`, `User: ${this.ownerName(a.owner)}`, `Added: ${new Date(a.added * 1000).toLocaleString()}`,
+        a.kind === 'virtual' ? '\nCreated by NEXUS. It is not an authenticated Nintendo amiibo and works only in NEXUS.' : '\nNEXUS keeps a copy; the file you imported is unchanged.'].filter(Boolean).join('\n'));
+    } else if (v === 'remove') {
+      if (await confirmDlg(`Remove ${a.name}?`, a.kind === 'virtual' ? 'Data games saved on this virtual amiibo is lost.' : 'NEXUS’s copy is deleted, including anything games saved on it since you imported it. The file you imported is not touched.', 'Remove', true))
+        await api('/api/amiibo/remove', { body: { id: a.id } }).catch(e => toast(e.message, I.warn));
+    }
+  },
+  async panel(p) {
+    const st = await this.load().catch(() => ({ list: [] }));
+    const es = S.settings.emulator || {};
+    p.append(h('h2', {}, 'Amiibo'), h('p', { class: 'note' }, 'When a game asks you to scan an amiibo, NEXUS shows this library and gives the game the one you choose. Import dumps of your own amiibo, or create a NEXUS virtual amiibo for use in NEXUS only. NEXUS includes no amiibo data.'));
+    p.append(rowChoice('When a game scans for an amiibo', [{ v: '', l: 'Show the amiibo library' }, { v: 'off', l: 'Do nothing' }], es.amiiboPrompt || '', v => saveSettings({ emulator: { amiiboPrompt: v } })));
+    p.append(rowButton('Import amiibo dump…', { sub: 'A .bin or .nfc dump of your own figure or card (NTAG215, 532/540/572 bytes). NEXUS copies it; the original is not changed.', onClick: async () => { if (await this.import(S.profile?.id)) rebuildPanel(); } }));
+    p.append(rowButton('Create virtual amiibo…', { sub: 'From the amiibo’s name or ID. Works only in NEXUS; it is not an authenticated amiibo.', onClick: async () => { if (await this.createVirtual(S.profile?.id)) rebuildPanel(); } }));
+    p.append(h('h3', {}, `Library (${st.list.length})`));
+    if (!st.list.length) p.append(h('p', { class: 'note' }, 'No amiibo yet.'));
+    const groups = [[S.profile?.id, `${S.profile?.name || 'You'}`], ['', 'Everyone'], ...S.profiles.filter(x => x.id !== S.profile?.id).map(x => [x.id, x.name])];
+    for (const [id, label] of groups) {
+      const items = st.list.filter(a => (a.owner || '') === (id || '') || (id === '' && a.owner && !S.profiles.some(x => x.id === a.owner)));
+      if (!items.length) continue;
+      p.append(h('h4', { class: 'sub' }, label));
+      for (const a of items) p.append(rowButton(a.name, { sub: [this.KIND[a.kind], a.series].filter(Boolean).join(' · '), value: a.amiiboId || '', onClick: async () => { await this.manage(a); rebuildPanel(); } }));
+    }
+    p.append(h('h3', {}, 'Amiibo keys'));
+    p.append(infoRow('Your amiibo keys (key_retail.bin)', st.keys ? 'Added' : 'Not added', 'Needed only when a game saves data on an imported encrypted dump; reading works without them, and virtual amiibo never need them. NEXUS does not include them.'));
+    p.append(rowButton(st.keys ? 'Replace amiibo keys…' : 'Add amiibo keys…', { onClick: async () => {
+      try { const r = await api('/api/amiibo/keys', { body: {} }); if (!r.cancelled) { toast('Amiibo keys added', I.check); rebuildPanel(); } } catch (e) { alertDlg('The keys were not added', e.message); }
+    } }));
+  },
+  busy: false,
+  // the running game asks for an amiibo
+  async scanning(d) {
+    if ((S.settings.emulator?.amiiboPrompt || '') === 'off' || this.busy) return;
+    this.busy = true;
+    try {
+      const st = await this.load().catch(() => ({ list: [] }));
+      const pid = S.playing?.profileId || S.profile?.id;
+      await suspendGame(); // show NEXUS over the game while choosing
+      const list = [...st.list].sort((a, b) => (b.owner === pid) - (a.owner === pid));
+      const items = [...list.map(a => ({ v: a.id, l: `${a.name}${a.kind === 'virtual' ? ' (virtual)' : ''}${a.owner && a.owner !== pid ? ' · ' + this.ownerName(a.owner) : ''}` })),
+        { v: '+import', l: 'Import an amiibo dump…' }, { v: '+virtual', l: 'Create a virtual amiibo…' }, { v: '', l: 'Not now' }];
+      let v = await listPick(`${d?.title || 'The game'} is looking for an amiibo`, items);
+      if (v === '+import') v = (await this.import(pid))?.id;
+      else if (v === '+virtual') v = (await this.createVirtual(pid))?.id;
+      if (v) {
+        try { await api('/api/amiibo/place', { body: { id: v } }); toast('Amiibo placed', I.check, 2000); }
+        catch (e) { await alertDlg('The amiibo was not given to the game', e.message); }
+      }
+      if (S.playing?.running) await resumeGame();
+    } finally { this.busy = false; }
+  },
+};
+
 const Panels = {
+  amiibo(p) { return AmiiboUI.panel(p); },
   perf(p) { return renderPerfSettings(p); },
   sync(p) { return renderSync(p); },
   appearance(p) {
@@ -2443,7 +2552,7 @@ const Panels = {
     p.append(rowVolume('Game volume', +(S.settings.engine?.['audio.volume'] ?? 100), sendVolume, '0% is silent, 100% is the game’s own level, up to 200% boosts quiet games (a soft limiter prevents harsh clipping). Also adjustable while playing.'));
     p.append(rowChoice('Ask who\u2019s playing', [{ v: 'several', l: 'When there is more than one user' }, { v: 'always', l: 'Always' }, { v: 'never', l: 'Never (the current user plays)' }], es.whoPlays || 'several', v => saveSettings({ emulator: { whoPlays: v } }), 'Before a game starts, NEXUS asks which user is playing. Play time, saves and controller layout belong to that user.'));
     p.append(h('h3', {}, 'NEXUS Home while playing'));
-    p.append(rowButton('Home key', { value: es.homeKey || 'Off', sub: 'Press it in a game to go back to NEXUS Home; the game keeps running. If the key is one of the game\u2019s controls, it stays with the game. With the standard keyboard layout H is the R button, so when you play with the keyboard choose another key (for example F1).', onClick: async () => {
+    p.append(rowButton('Home key', { value: es.homeKey || 'Off', sub: 'Press it in a game to go back to NEXUS Home; the game keeps running. If the key is one of the game\u2019s controls, it stays with the game. When a game\u2019s standard keyboard layout uses the Home key for a button, NEXUS moves that button to a free key for the session and tells you which.', onClick: async () => {
       const k = await captureKey(); if (k === undefined) return;
       saveSettings({ emulator: { homeKey: k } }).then(rebuildPanel);
     } }));
@@ -2451,6 +2560,8 @@ const Panels = {
       'Keep running: the game carries on in the background without sound and ignores your controls until you choose Resume (a green dot shows it is running). Pause: the game stops where it is. Either way one press of Home is one trip to NEXUS Home.'));
     p.append(rowToggle('Controller Home button', es.homeButton !== false, v => saveSettings({ emulator: { homeButton: v } }), 'The Xbox Guide button, the PlayStation button or a controller\u2019s Home button takes you straight to NEXUS Home (the game never sees it). Choose Resume Game to go back. If Steam or Windows uses the button for itself, use the Home key instead.'));
     p.append(h('h3', {}, 'While playing'));
+    p.append(rowChoice('Game window', [{ v: 'inside', l: 'Inside NEXUS' }, { v: 'separate', l: 'Separate window' }], es.gameWindow || 'inside', v => saveSettings({ emulator: { gameWindow: v } }),
+      'Inside NEXUS: the game is drawn in the NEXUS window, and the fullscreen key switches that window between full screen and its previous size. Separate window: the game opens in a window of its own (use this if a game shows a black picture inside NEXUS). Applies from the next game.'));
     p.append(rowButton('Fullscreen / window key', { value: es.fullscreenKey || 'Off', sub: 'Switches the game between full screen and a window without stopping it. If the key is one of the game\u2019s controls, it stays with the game.', onClick: async () => {
       const k = await captureKey(); if (k === undefined) return;
       saveSettings({ emulator: { fullscreenKey: k } }).then(rebuildPanel);
@@ -3099,6 +3210,10 @@ function connectEvents() {
         const was = S.playing?.suspended;
         if (st.running) {
           S.playing = st;
+          if (st.keyboardMoves && S._movesShown !== st.started) { // once per session
+            S._movesShown = st.started;
+            toast(`Keyboard: ${st.keyboardMoves.replace(/(\w+) (\S+) -> (\S+)/g, (_, b, f, t) => `${b} moved from ${f} to ${t}`)}, so ${S.settings.emulator?.homeKey || 'H'} opens NEXUS Home.`, I.info || I.check, 6000);
+          }
           if (Launch.el) { Launch.update(st); if (st.phase !== 'playing') break; }
           if (was && !st.suspended && S.screen === 'home') showPlaying(true); // resumed (e.g. with the Home button)
           else if (S.screen === 'playing') showPlaying(true);
@@ -3124,6 +3239,7 @@ function connectEvents() {
         break;
       case 'recording.failed': RecUI.stop(); Sound.play('error'); alertDlg('The recording could not be made', m.data.error || 'Unknown error.'); break;
       case 'saves.import': SaveImportUI.update(m.data); break;
+      case 'amiibo.scanning': AmiiboUI.scanning(m.data); break;
       case 'platform.device': S.platform = await api('/api/platform').catch(() => S.platform); if (S.screen === 'settings' && curCat === 'system') rebuildPanel(); break;
       case 'platform.thermal': if (S.platform) S.platform.device = { ...(S.platform.device || {}), thermalStatus: m.data.status };
         if (m.data.hot) toast(`Your device is very warm (${m.data.name}). Games slow down until it cools; take a break or remove a case.`, I.warn, 6000); break;

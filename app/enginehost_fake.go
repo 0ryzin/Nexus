@@ -82,7 +82,6 @@ func (f *fakeEngine) run(req EngineRequest) {
 		}
 		f.set(func(s *EngineStatus) { s.LoadStage, s.LoadDone, s.LoadTotal = "", 0, 0 })
 	}
-	fakeLast = f
 	if strings.Contains(req.Game, "exception") || os.Getenv("NEXUS_FAKE_FAIL") == "exception" {
 		f.set(func(s *EngineStatus) {
 			*s = EngineStatus{State: "error", Code: "exception", Message: "Legacy emulator data or an unfinished import was found. Open the Lichii GUI to import it or explicitly start fresh before using eden-cli. No configuration was created."}
@@ -219,6 +218,43 @@ func (f *fakeEngine) Background(on bool) bool {
 }
 
 func (f *fakeEngine) Screenshot() bool { return f.PressScreenshot() == nil }
+
+// Amiibo: the stand-in game scans for an amiibo while NEXUS_FAKE_AMIIBO=1 (tests set
+// st.Amiibo = "scanning"); a placed dump is checked like the engine does (size).
+func (f *fakeEngine) Amiibo(path string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.st.State != "running" {
+		return -1
+	}
+	if path == "" {
+		if f.st.Amiibo == "placed" {
+			f.st.Amiibo = "scanning"
+		}
+		return 0
+	}
+	if f.st.Amiibo != "scanning" {
+		return 1
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		return 2
+	}
+	switch fi.Size() {
+	case 532, 540, 572, 1024:
+	default:
+		return 3
+	}
+	f.st.Amiibo = "placed"
+	return 0
+}
+
+// Scan makes the stand-in game ask for an amiibo (tests).
+func (f *fakeEngine) Scan() {
+	f.mu.Lock()
+	f.st.Amiibo = "scanning"
+	f.mu.Unlock()
+}
 
 func (f *fakeEngine) Window() uintptr {
 	f.mu.Lock()

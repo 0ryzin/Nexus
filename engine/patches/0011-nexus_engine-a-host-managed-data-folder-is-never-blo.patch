@@ -1,7 +1,7 @@
 From c0270408d9959374e980a6efe559ee67c587c827 Mon Sep 17 00:00:00 2001
 From: NEXUS <nexus@users.noreply.github.com>
 Date: Wed, 11 Nov 2026 17:57:11 +0000
-Subject: [PATCH 11/15] nexus_engine: a host-managed data folder is never
+Subject: [PATCH 11/16] nexus_engine: a host-managed data folder is never
  blocked by other emulators' data
 
 Lichii build-150 (#1253) refuses to create a configuration while data of

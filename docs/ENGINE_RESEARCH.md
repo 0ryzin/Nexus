@@ -116,6 +116,35 @@ Frame pacing. **Checked; nothing to add.**
 **NEXUS already has this.** NEXUS 0.3.0 added per-game updates and mods that are checked by
 content and need no NAND installation. Eden 0.2.0 added a similar feature.
 
+### 8. Amiibo
+
+- **Findings.**
+  - Ryujinx and Ryubing emulate the NFP service at a high level from a list of amiibo IDs taken
+    from AmiiboAPI, an open (MIT-licensed) database of amiibo names and IDs; the game sees a
+    tag with that ID.
+  - yuzu-family engines (and so the NEXUS engine) read amiibo dump files instead
+    (`InputCommon::VirtualAmiibo`). Encrypted dumps load read-only without the user's amiibo
+    keys; writing needs `key_retail.bin`. A decrypted ("plain") layout that passes the
+    engine's structure check (`IsAmiiboValid`) is used without keys.
+  - emuiibo (homebrew) generates virtual amiibo from AmiiboAPI data in its own format.
+- **Decisions.**
+  - NEXUS keeps its own library (`UserData\Amiibo`). It imports the user's dumps after checking
+    size, serial-number checksums and capability container, and reads the amiibo ID.
+  - A NEXUS virtual amiibo is a plain, unsigned NTAG215 image built by NEXUS's own code from the
+    amiibo ID, with a random serial number. It contains no Nintendo data or signature, works only
+    in NEXUS and is labelled as such. NEXUS does not create authenticated or encrypted tags.
+  - Names come from AmiiboAPI when the user searches (text only; no images or data downloaded).
+  - The engine change is a new NEXUS export (`nexus_engine_amiibo`) calling the existing
+    `VirtualAmiibo` interface. No code was taken from the other projects.
+
+### 9. The Home key and the default keyboard layout
+
+- **Finding.** The engine's standard keyboard layout (from its command-line frontend) binds H to
+  the R button. NEXUS gave a game key priority over the Home key, so H went to the game for
+  keyboard players.
+- **Decision.** NEXUS shortcuts win over *default* bindings only: those move to a free key, and
+  the user is told which. Bindings the user chose still win over the shortcut.
+
 ## Rejected or deferred
 
 - **Copying upstream fixes into NEXUS code.** Not done, by policy. Engine fixes come through the

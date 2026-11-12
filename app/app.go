@@ -141,6 +141,7 @@ type App struct {
 	Link             *DeviceLink // experimental Device Linking; nil unless the feature is on
 	Compat           *CompatStore
 	Saves            *SaveOrganizer
+	Amiibo           *AmiiboStore
 	Media            *MediaLibrary
 	Recorder         *Recorder
 	Controllers      *ControllerStore
@@ -179,6 +180,7 @@ func NewAppWithPaths(p *Paths) (*App, error) {
 	a.Compat = NewCompatStore(p.Settings)
 	a.Compat.SetEngine(func() string { return a.Emu.Builds.ActiveVersionLabel() })
 	a.Saves = NewSaveOrganizer(a)
+	a.Amiibo = NewAmiiboStore(a, filepath.Join(p.UserData, "Amiibo"))
 	a.Media = NewMediaLibrary(a)
 	a.Recorder = NewRecorder(a)
 	a.Controllers = NewControllerStore(a)

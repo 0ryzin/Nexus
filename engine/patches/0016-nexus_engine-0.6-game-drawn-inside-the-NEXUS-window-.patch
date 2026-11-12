@@ -1,0 +1,392 @@
+From 2fbb0cef8cb4ec60b0d7bcc3a45367a5a31a862c Mon Sep 17 00:00:00 2001
+From: NEXUS <nexus@localhost>
+Date: Thu, 12 Nov 2026 16:28:40 +0000
+Subject: [PATCH 16/16] nexus_engine 0.6: game drawn inside the NEXUS window,
+ shortcut keys freed from the default keyboard layout, amiibo
+
+- embed: the game window becomes a child of the NEXUS window when it is revealed and follows
+  its size; F11 is reported to NEXUS (fullscreenPresses), which makes its window full screen.
+- NEXUS shortcuts (Home H, F11, F12, Alt+F12) take priority over the default keyboard layout:
+  a default binding on one of those keys moves to a free key (keyboardMoves in the status).
+- nexus_engine_amiibo(path): places or removes an amiibo dump on the virtual NFC reader;
+  status amiibo: none | scanning | placed.
+---
+ src/nexus_engine/include/nexus_engine.h |   7 +
+ src/nexus_engine/nexus_engine.cpp       | 238 ++++++++++++++++++++++--
+ 2 files changed, 233 insertions(+), 12 deletions(-)
+
+diff --git a/src/nexus_engine/include/nexus_engine.h b/src/nexus_engine/include/nexus_engine.h
+index f326684a8..f56aed0f4 100644
+--- a/src/nexus_engine/include/nexus_engine.h
++++ b/src/nexus_engine/include/nexus_engine.h
+@@ -84,6 +84,13 @@ NEXUS_API void nexus_engine_screenshot(void);
+ /// The game window's native handle (HWND on Windows), or NULL when no game window exists.
+ NEXUS_API void* nexus_engine_window(void);
+ 
++/// Engine 0.6 (optional exports):
++/// Places an amiibo (a 532/540/572-byte NTAG215 dump, or a 1 KB MIFARE dump) on the virtual NFC
++/// reader while the game is scanning; an empty path or NULL removes it. Returns 0 on success,
++/// 1 if the game is not scanning, 2 if the file cannot be read, 3 if it is not an amiibo,
++/// -1 without a running game.
++NEXUS_API int32_t nexus_engine_amiibo(const char* path);
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/src/nexus_engine/nexus_engine.cpp b/src/nexus_engine/nexus_engine.cpp
+index 3d5be0ea1..e69d24d7a 100644
+--- a/src/nexus_engine/nexus_engine.cpp
++++ b/src/nexus_engine/nexus_engine.cpp
+@@ -51,6 +51,7 @@
+ #include "core/hle/service/filesystem/filesystem.h"
+ #include "core/loader/loader.h"
+ #include "input_common/main.h"
++#include "input_common/drivers/virtual_amiibo.h"
+ #include "network/network.h"
+ #include "nexus_engine.h"
+ #include "video_core/gpu.h"
+@@ -127,6 +128,9 @@ struct Request {
+     bool reveal_on_request{false};
+     int reveal_timeout_ms{1500};
+     int fade_in_ms{0}; // fade the game window in (0 = no fade)
++    // NEXUS 0.6: the game is drawn inside the NEXUS window (owner_window) as a child window
++    // instead of a window of its own; NEXUS handles full screen (F11 is reported to it)
++    bool embed{false};
+ };
+ 
+ struct Engine {
+@@ -155,6 +159,10 @@ struct Engine {
+     std::atomic<bool> ready{false}; // the first frame was drawn (window may still wait for reveal)
+     std::atomic<bool> reveal{false};
+     std::atomic<bool> fullscreen_now{false};
++    std::atomic<bool> embedded{false};                  // drawn inside the NEXUS window
++    std::atomic<std::uint64_t> fullscreen_presses{0};   // F11 while embedded (NEXUS toggles)
++    std::atomic<int> amiibo_state{0};                   // 0 none, 1 game scanning, 2 amiibo placed
++    std::string keyboard_moves; // shortcut keys freed from the default keyboard layout (mutex)
+     std::atomic<std::uint64_t> screenshots{0};
+     std::atomic<std::uint64_t> screenshot_failures{0};
+     std::string last_screenshot; // guarded by mutex
+@@ -249,6 +257,107 @@ void AttachToOwner(SDL_Window* window, std::uintptr_t owner) {
+ #endif
+ }
+ 
++#ifdef _WIN32
++/// NEXUS 0.6: makes the game window a child of the NEXUS window, filling its client area, so the
++/// game is part of the one NEXUS window (moving, resizing, minimising and full screen are the
++/// NEXUS window's). Done when the game is revealed, after loading, from the engine thread, which
++/// pumps its messages every few milliseconds from then on.
++HWND GameHwnd(SDL_Window* window) {
++    return window ? static_cast<HWND>(SDL_GetPointerProperty(SDL_GetWindowProperties(window),
++                                                             SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr))
++                  : nullptr;
++}
++
++bool EmbedInHost(SDL_Window* window, std::uintptr_t owner) {
++    HWND hwnd = GameHwnd(window);
++    HWND host = reinterpret_cast<HWND>(owner);
++    if (hwnd == nullptr || host == nullptr || !IsWindow(host)) {
++        return false;
++    }
++    if ((SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0) {
++        SDL_SetWindowFullscreen(window, false);
++        SDL_SyncWindow(window);
++    }
++    LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
++    style &= ~static_cast<LONG_PTR>(WS_POPUP | WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX |
++                                    WS_MAXIMIZEBOX | WS_BORDER | WS_DLGFRAME);
++    style |= WS_CHILD | WS_CLIPSIBLINGS | WS_CLIPCHILDREN;
++    LONG_PTR ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
++    ex &= ~static_cast<LONG_PTR>(WS_EX_APPWINDOW | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_DLGMODALFRAME |
++                                 WS_EX_TOPMOST | WS_EX_LAYERED);
++    SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT, 0);
++    SetWindowLongPtrW(hwnd, GWL_STYLE, style);
++    SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex);
++    SetParent(hwnd, host);
++    RECT rc{};
++    GetClientRect(host, &rc);
++    SetWindowPos(hwnd, HWND_TOP, 0, 0, rc.right - rc.left, rc.bottom - rc.top, SWP_FRAMECHANGED | SWP_NOACTIVATE);
++    return true;
++}
++
++/// Shows the embedded game in front of the NEXUS interface and gives it the keyboard.
++void ShowEmbedded(SDL_Window* window) {
++    HWND hwnd = GameHwnd(window);
++    if (hwnd == nullptr) {
++        return;
++    }
++    SDL_ShowWindow(window);
++    SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
++    SetFocus(hwnd);
++}
++
++/// Keeps the embedded game the size of the NEXUS window's client area.
++void SyncEmbeddedSize(SDL_Window* window) {
++    HWND hwnd = GameHwnd(window);
++    HWND host = hwnd ? GetParent(hwnd) : nullptr;
++    if (host == nullptr || IsIconic(host)) {
++        return;
++    }
++    RECT want{}, have{};
++    GetClientRect(host, &want);
++    GetClientRect(hwnd, &have);
++    const int w = want.right - want.left, h = want.bottom - want.top;
++    if (w > 0 && h > 0 && (w != have.right - have.left || h != have.bottom - have.top)) {
++        SetWindowPos(hwnd, nullptr, 0, 0, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
++    }
++}
++#endif
++
++/// NEXUS shortcuts (Home, full screen, recording, screenshots) take priority over the *default*
++/// keyboard layout: a game button that the default layout puts on one of those keys (H is the R
++/// button there) moves to a free key, so the shortcut works for keyboard players too. Bindings
++/// the user chose themselves are never changed.
++bool KeyUsedByGameControls(SDL_Scancode key);
++
++std::string FreeShortcutKeys(const std::vector<SDL_Scancode>& reserved) {
++    auto& player = Settings::values.players.GetValue()[0];
++    static constexpr std::array<SDL_Scancode, 10> spare{SDL_SCANCODE_E, SDL_SCANCODE_R, SDL_SCANCODE_Y, SDL_SCANCODE_U,
++                                                        SDL_SCANCODE_O, SDL_SCANCODE_P, SDL_SCANCODE_C, SDL_SCANCODE_V,
++                                                        SDL_SCANCODE_K, SDL_SCANCODE_L};
++    const auto is_reserved = [&](int code) {
++        return std::find(reserved.begin(), reserved.end(), static_cast<SDL_Scancode>(code)) != reserved.end();
++    };
++    std::string moves;
++    for (std::size_t i = 0; i < player.buttons.size() && i < SdlConfig::default_buttons.size(); ++i) {
++        const int def = SdlConfig::default_buttons[i];
++        if (!is_reserved(def) || player.buttons[i] != InputCommon::GenerateKeyboardParam(def)) {
++            continue;
++        }
++        for (const SDL_Scancode alt : spare) {
++            if (is_reserved(alt) || KeyUsedByGameControls(alt)) {
++                continue;
++            }
++            player.buttons[i] = InputCommon::GenerateKeyboardParam(alt);
++            const std::string what = fmt::format("{} {} -> {}", Settings::NativeButton::mapping[i],
++                                                 SDL_GetScancodeName(static_cast<SDL_Scancode>(def)), SDL_GetScancodeName(alt));
++            LOG_INFO(Frontend, "NEXUS Engine: keyboard layout: {} (the key is a NEXUS shortcut)", what);
++            moves += (moves.empty() ? "" : "; ") + what;
++            break;
++        }
++    }
++    return moves;
++}
++
+ // Same as the upstream frontends' "auto-map": bind player 1 to the first game controller the
+ // input subsystem reports, using the driver's default mapping for that device. Only used when
+ // the NEXUS user has not chosen a saved controller profile.
+@@ -668,6 +777,12 @@ void RunSession(Request req) {
+     e.ready = false;
+     e.reveal = false;
+     e.fullscreen_now = false;
++    e.embedded = false;
++    e.amiibo_state = 0;
++    {
++        std::scoped_lock lk{e.mutex};
++        e.keyboard_moves.clear();
++    }
+ 
+     // All engine data lives in the folder NEXUS chose (keys, firmware, NAND, saves, caches).
+     Common::FS::SetAppDirectory(req.data_dir);
+@@ -697,7 +812,7 @@ void RunSession(Request req) {
+ 
+         // hidden until the first frame: the NEXUS loading screen stays in front meanwhile
+         NexusStartHidden() = true;
+-        std::unique_ptr<EmuWindow_SDL3> window = MakeWindow(input, system, req.fullscreen);
++        std::unique_ptr<EmuWindow_SDL3> window = MakeWindow(input, system, req.fullscreen && !req.embed);
+ #ifdef _WIN32
+         Common::Windows::SetCurrentTimerResolutionToMaximum();
+         system.CoreTiming().SetTimerResolutionNs(Common::Windows::GetCurrentTimerResolution());
+@@ -713,6 +828,22 @@ void RunSession(Request req) {
+             AutoMapController(input, system, req.button_map, req.controller_type, req.controllers);
+         }
+         ReserveSystemButtons(system, req.home_button, req.capture_button);
++        {
++            // NEXUS shortcuts before the default keyboard layout (H, F11, F12 …)
++            std::vector<SDL_Scancode> reserved;
++            for (const std::string& k : {req.home_key, req.fullscreen_key, req.record_key, req.screenshot_key}) {
++                const Shortcut sc = ParseShortcut(k);
++                if (sc.key != SDL_SCANCODE_UNKNOWN && sc.mods == SDL_KMOD_NONE) {
++                    reserved.push_back(sc.key);
++                }
++            }
++            const std::string moves = FreeShortcutKeys(reserved);
++            if (!moves.empty()) {
++                system.HIDCore().ReloadInputDevices();
++            }
++            std::scoped_lock lk{e.mutex};
++            e.keyboard_moves = moves;
++        }
+         FileSys::NexusSaveFolders() = req.save_folders;
+         system.GetUserChannel().clear();
+ 
+@@ -820,7 +951,11 @@ void RunSession(Request req) {
+                     }
+                     if (key && fullscreen_key != SDL_SCANCODE_UNKNOWN && event.key.scancode == fullscreen_key) {
+                         if (key_down && e.shown && !e.suspended) {
+-                            ToggleFullscreen(*window);
++                            if (e.embedded) {
++                                ++e.fullscreen_presses; // the NEXUS window goes full screen
++                            } else {
++                                ToggleFullscreen(*window);
++                            }
+                         }
+                         continue;
+                     }
+@@ -854,15 +989,28 @@ void RunSession(Request req) {
+                                   now - first_frame_at > std::chrono::milliseconds(req.reveal_timeout_ms);
+             if (!e.shown && ((e.ready && revealed) || now - running_since > std::chrono::seconds(20))) {
+                 SDL_Window* sdl_window = window->GetSDLWindow();
++#ifdef _WIN32
++                if (req.embed && !e.embedded) {
++                    e.embedded = EmbedInHost(sdl_window, req.owner_window);
++                    LOG_INFO(Frontend, "NEXUS Engine: game drawn {}", e.embedded ? "inside the NEXUS window" : "in its own window");
++                }
++#endif
+                 if (!e.suspended) {
+-                    fading = req.fade_in_ms > 0 && SDL_SetWindowOpacity(sdl_window, 0.0f);
+-                    SDL_ShowWindow(sdl_window);
+-                    if (req.fullscreen) {
+-                        window->ApplyFullscreen();
++#ifdef _WIN32
++                    if (e.embedded) {
++                        ShowEmbedded(sdl_window);
++                    } else
++#endif
++                    {
++                        fading = req.fade_in_ms > 0 && SDL_SetWindowOpacity(sdl_window, 0.0f);
++                        SDL_ShowWindow(sdl_window);
++                        if (req.fullscreen) {
++                            window->ApplyFullscreen();
++                        }
++                        e.fullscreen_now = (SDL_GetWindowFlags(sdl_window) & SDL_WINDOW_FULLSCREEN) != 0;
++                        SDL_RaiseWindow(sdl_window);
++                        fade_start = now;
+                     }
+-                    e.fullscreen_now = (SDL_GetWindowFlags(sdl_window) & SDL_WINDOW_FULLSCREEN) != 0;
+-                    SDL_RaiseWindow(sdl_window);
+-                    fade_start = now;
+                 }
+                 e.shown = true;
+             }
+@@ -877,6 +1025,17 @@ void RunSession(Request req) {
+                 }
+             }
+             window->ApplyPendingTitle();
++#ifdef _WIN32
++            if (e.embedded) {
++                SyncEmbeddedSize(window->GetSDLWindow());
++            }
++#endif
++            if (auto* amiibo = input.GetVirtualAmiibo()) {
++                const auto st = amiibo->GetCurrentState();
++                e.amiibo_state = st == InputCommon::VirtualAmiibo::State::TagNearby          ? 2
++                                 : st == InputCommon::VirtualAmiibo::State::WaitingForAmiibo ? 1
++                                                                                             : 0;
++            }
+             if (e.screenshot_request.exchange(false) && e.shown) {
+                 TakeScreenshot(system, req); // asked by NEXUS (also while the game is in the background)
+             }
+@@ -899,10 +1058,19 @@ void RunSession(Request req) {
+                     SDL_SetEventFilter(nullptr, nullptr);
+                     e.background = false;
+                 } else if (req_s == 0 && e.suspended) {
+-                    if (e.shown) {
+-                        SDL_ShowWindow(sdl_window);
++#ifdef _WIN32
++                    if (e.embedded) {
++                        if (e.shown) {
++                            ShowEmbedded(sdl_window);
++                        }
++                    } else
++#endif
++                    {
++                        if (e.shown) {
++                            SDL_ShowWindow(sdl_window);
++                        }
++                        SDL_RaiseWindow(sdl_window);
+                     }
+-                    SDL_RaiseWindow(sdl_window);
+                     if (e.background) {
+                         SDL_SetEventFilter(nullptr, nullptr);
+                         e.background = false;
+@@ -931,6 +1099,17 @@ void RunSession(Request req) {
+         e.window_handle = nullptr;
+         SDL_SetEventFilter(nullptr, nullptr);
+         e.background = false;
++        e.amiibo_state = 0;
++#ifdef _WIN32
++        if (e.embedded) {
++            // leave the NEXUS window before the game window is destroyed
++            if (HWND hwnd = GameHwnd(window->GetSDLWindow())) {
++                ShowWindow(hwnd, SW_HIDE);
++                SetParent(hwnd, nullptr);
++            }
++            e.embedded = false;
++        }
++#endif
+         window.reset();
+         FileSys::NexusSaveFolders().clear();
+     }
+@@ -1029,6 +1208,7 @@ NEXUS_API int32_t nexus_engine_start(const char* request_json) {
+         req.reveal_on_request = j.value("revealOnRequest", false);
+         req.reveal_timeout_ms = std::clamp(j.value("revealTimeoutMs", 1500), 0, 10000);
+         req.fade_in_ms = std::clamp(j.value("fadeInMs", 0), 0, 2000);
++        req.embed = j.value("embed", false);
+         if (const auto it = j.find("saveFolders"); it != j.end() && it->is_object()) {
+             for (const auto& [k, v] : it->items()) {
+                 const u64 id = std::strtoull(k.c_str(), nullptr, 16);
+@@ -1106,6 +1286,9 @@ NEXUS_API int32_t nexus_engine_status(char* buf, int32_t buf_len) {
+     j["homeKeyConflict"] = e.home_key_conflict.load();
+     j["ready"] = e.ready.load();
+     j["fullscreen"] = e.fullscreen_now.load();
++    j["embedded"] = e.embedded.load();
++    j["fullscreenPresses"] = e.fullscreen_presses.load();
++    j["amiibo"] = e.amiibo_state.load() == 2 ? "placed" : e.amiibo_state.load() == 1 ? "scanning" : "none";
+     j["screenshots"] = e.screenshots.load();
+     j["screenshotFailures"] = e.screenshot_failures.load();
+     if (const int st = e.load_stage.load(); st != 0) {
+@@ -1125,6 +1308,9 @@ NEXUS_API int32_t nexus_engine_status(char* buf, int32_t buf_len) {
+         if (!e.last_screenshot.empty()) {
+             j["lastScreenshot"] = e.last_screenshot;
+         }
++        if (!e.keyboard_moves.empty()) {
++            j["keyboardMoves"] = e.keyboard_moves;
++        }
+     }
+     const std::string text = j.dump();
+     if (buf != nullptr && buf_len > 0) {
+@@ -1161,6 +1347,34 @@ NEXUS_API void* nexus_engine_window(void) {
+     return E().window_handle.load();
+ }
+ 
++NEXUS_API int32_t nexus_engine_amiibo(const char* path) {
++    Engine& e = E();
++    if (e.state.load() != State::Running || !e.input) {
++        return -1;
++    }
++    auto* amiibo = e.input->GetVirtualAmiibo();
++    if (amiibo == nullptr) {
++        return -1;
++    }
++    if (path == nullptr || *path == '\0') {
++        void(amiibo->CloseAmiibo());
++        return 0;
++    }
++    switch (amiibo->LoadAmiibo(std::string{path})) {
++    case InputCommon::VirtualAmiibo::Info::Success:
++        LOG_INFO(Frontend, "NEXUS Engine: amiibo placed");
++        return 0;
++    case InputCommon::VirtualAmiibo::Info::WrongDeviceState:
++        return 1;
++    case InputCommon::VirtualAmiibo::Info::UnableToLoad:
++        return 2;
++    case InputCommon::VirtualAmiibo::Info::NotAnAmiibo:
++        return 3;
++    default:
++        return 2;
++    }
++}
++
+ NEXUS_API void nexus_engine_suspend(int32_t suspend) {
+     E().suspend_request = suspend != 0 ? 1 : 0;
+ }
