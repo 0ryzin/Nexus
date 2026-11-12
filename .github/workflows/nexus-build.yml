@@ -392,3 +392,23 @@ jobs:
             echo "::error::the published download did not check out; $tag was set back to draft"; exit 1
           fi
           echo "$tag: $name is downloadable and matches the build"
+
+      # Earlier release pages follow their notes in docs/releases (corrections there reach the
+      # published page). The current version's page is generated above and left alone.
+      - name: Update earlier release pages from docs/releases
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          for f in docs/releases/v*.md; do
+            tag=$(basename "$f" .md)
+            [[ "$tag" == "v$NEXUS_VERSION" ]] && continue
+            id=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" -q .id 2>/dev/null) || continue
+            cur=$(gh api "repos/$GITHUB_REPOSITORY/releases/$id" -q .body)
+            if [[ "$(printf '%s' "$cur" | sed -e 's/[[:space:]]*$//')" != "$(sed -e 's/[[:space:]]*$//' "$f")" ]]; then
+              python -c "import json,sys;print(json.dumps({'body':open(sys.argv[1],encoding='utf-8').read()}))" "$f" > body.json
+              gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" --input body.json > /dev/null && echo "$tag: page updated" || echo "::warning::$tag: page not updated"
+            fi
+          done

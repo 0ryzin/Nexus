@@ -97,6 +97,7 @@ def main():
     out.append("")
     out.append("---")
     out.append("")
+    out.append("<!-- nexus:notes -->")  # NEXUS's update dialog shows what follows this marker
     out.append(notes)
     out.append("")
     hist = sorted({os.path.basename(p)[1:-3] for p in glob.glob(os.path.join(os.path.dirname(a.notes), "v*.md"))},

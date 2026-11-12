@@ -181,6 +181,11 @@ func (u *Updater) Check() UpdateInfo {
 	}
 	ver := strings.TrimPrefix(rel.Tag, "v")
 	info.Latest, info.Name, info.Notes, info.Published, info.Page = ver, rel.Name, rel.Body, rel.Published, rel.HTMLURL
+	// release pages start with the download table and install steps; the update dialog shows
+	// only the notes after the marker (release_body.py)
+	if i := strings.Index(info.Notes, "<!-- nexus:notes -->"); i >= 0 {
+		info.Notes = strings.TrimSpace(info.Notes[i+len("<!-- nexus:notes -->"):])
+	}
 	want := "NEXUS-" + ver + "-Windows-x64.zip"
 	for _, a := range rel.Assets {
 		switch a.Name {
