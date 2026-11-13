@@ -39,8 +39,13 @@ async def main():
         await enter(pg)
         for name, js in [("home", "goHome()"), ("home+pad", "(window.__connectPad(), goHome())"),
                          ("library+pad", "showLibrary()"), ("settings+pad", "showSettings('appearance')"),
-                         ("home (pad removed)", "(window.__disconnectPad(), goHome())")]:
+                         ("home (pad removed)", "(window.__disconnectPad(), goHome())"),
+                         ("game in front", "launchGame(S.games.find(isPlayable).key, true)")]:
             await pg.evaluate("() => { void (" + js + ") }"); await pg.wait_for_timeout(2500)
+            if name == "game in front":  # the interface stays behind a running game (Windows)
+                await pg.wait_for_function("S.screen === 'playing'", timeout=30000); await pg.wait_for_timeout(1500)
+                print("animations running behind the game:", await pg.evaluate(
+                    "document.getAnimations().filter(a => a.playState === 'running').map(a => (a.effect?.target?.id || a.effect?.target?.className || '?') + ' ' + (a.animationName || a.transitionProperty || ''))"), file=sys.stderr)
             m0 = {x['name']: x['value'] for x in (await cdp.send("Performance.getMetrics"))['metrics']}
             c0 = cpu_ticks(p.pid); t0 = time.perf_counter()
             await pg.wait_for_timeout(SECS * 1000)

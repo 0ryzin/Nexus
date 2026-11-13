@@ -62,13 +62,21 @@ with Playwright, NEXUS with the stand-in engine, 10 s of doing nothing per scree
 **not** your Windows PC or WebView2; use it to compare builds, not as Windows figures. The
 "before" build is 4b4daa7 (before this work), "after" is the 0.8.0 development build.
 
-| Screen | Page main thread (% of a core) | Style recalculations / s | Script ms / s |
-|---|---|---|---|
-| Home, no controller | 0.27 → 0.29 | 1.0 → 1.0 | 0.65 → 0.71 |
-| Home, controller connected | **2.11 → 0.80** | **59.9 → 1.5** | 4.50 → 4.43 |
-| All Software, controller connected | **1.51 → 0.84** | **26.1 → 0.0** | 2.44 → 3.67 |
-| Settings, controller connected | **2.06 → 0.51** | 0.0 → 0.0 | 6.70 → 3.34 |
-| Home, controller removed | 0.34 → 0.39 | 1.0 → 1.5 | 0.71 → 0.66 |
+Second run, same script for both builds (10 s per screen):
+
+| Screen | Page main thread (% of a core) | Style recalcs / s | Script ms / s | Server CPU % | Server RSS MB |
+|---|---|---|---|---|---|
+| Home, no controller | 0.31 → 0.19 | 1.0 → 0.0 | 0.77 → 0.70 | 0.0 → 0.0 | 19.2 → 19.2 |
+| Home, controller connected | **4.47 → 0.70** | **60.0 → 0.5** | 7.19 → 4.26 | 0.0 → 0.0 | 19.2 → 19.2 |
+| All Software, controller connected | **1.60 → 0.87** | **17.9 → 0.0** | 2.44 → 4.10 | 0.0 → 0.0 | 19.2 → 19.2 |
+| Settings, controller connected | **1.83 → 0.50** | 0.0 → 0.0 | 5.97 → 3.34 | 0.0 → 0.0 | 19.3 → 19.2 |
+| Home, controller removed | 0.45 → 0.34 | 1.1 → 0.7 | 0.77 → 0.69 | 0.0 → 0.0 | 19.3 → 19.2 |
+| A game in front (stand-in engine) | 0.19 → 0.09 | 0.1 → 0.0 | 0.78 → 0.59 | 0.3 → 0.4 | 19.6 → 19.6 |
+
+Run-to-run variance is large for small values: in the first run "Home, controller connected"
+was 2.11 → 0.80 % with 59.9 → 1.5 recalculations a second. The consistent result is the
+recalculation rate with a controller connected (about 60 a second, one per display frame,
+before; about 0-2 after).
 
 - NEXUS server (Go) while idle: 0.0-0.1 % CPU, 19-20 MB resident, both builds.
 - Server ready after start: 8-15 ms warm (the first, cold start of the "before" run took 987 ms:
@@ -79,6 +87,9 @@ with Playwright, NEXUS with the stand-in engine, 10 s of doing nothing per scree
   last 1.5 s) and 30 times a second otherwise (first press within ~33 ms).
 - The performance bar's refresh timer no longer runs while no game is running (Windows only;
   not measurable here).
+- The clock is written only when the minute changes (it caused the one recalculation a second
+  on Home). While a game is in front, animations behind it are paused (the running light's
+  pulse kept running there) and the 15-second system poll waits.
 - Not measured yet: Windows/WebView2 idle CPU and GPU, memory after a long session, resource use
   while a game runs or prepares shaders. These need your PC.
 

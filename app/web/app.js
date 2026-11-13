@@ -821,10 +821,15 @@ function homeTransition(fromGame) {
 }
 // Android: the app shows the game surface instead of this interface while a game is in front
 // (MainActivity.kt). On Windows the game has its own window and this does nothing.
+// A game in front covers NEXUS: its animations pause (game-front) and periodic refreshes wait,
+// so the hidden interface does not keep compositing next to the game.
+function gameInFront() { const st = S.playing; return !!(st?.running && st.phase === 'playing' && !st.suspended); }
 function syncGameInFront() {
+  const front = gameInFront();
+  document.body.classList.toggle('game-front', front);
+  if (!front) { tickClock(); }
   if (!window.NexusAndroid) return;
-  const st = S.playing;
-  try { NexusAndroid.gameVisible(!!(st?.running && st.phase === 'playing' && !st.suspended)); } catch { }
+  try { NexusAndroid.gameVisible(front); } catch { }
 }
 async function suspendGame() {
   try { await api('/api/emulator/suspend', { body: { on: true } }); } catch (e) { toast(e.message, I.warn); }
@@ -1418,10 +1423,14 @@ async function switchProfile(id) {
   toast(`Welcome back, ${S.profile.name}`, I.person);
 }
 
+// the clock is written only when the minute changes (it used to be rewritten every second)
 function tickClock() {
-  const c = $('#tb-clock'); if (c) c.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const c = $('#tb-clock'); if (!c) return;
+  const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (c.textContent !== t) c.textContent = t;
 }
 async function pollSystem() {
+  if (gameInFront()) return; // refreshed when NEXUS shows again (syncGameInFront)
   try { S.system = await api('/api/system'); renderTopbar(); if (S.screen === 'home') markTopFocus(); } catch { }
 }
 function markTopFocus() { if (Nav.cur && Nav.cur.closest('#tb-profiles')) { const p = Nav.cur._profile; const b = $$('#tb-profiles button').find(x => x._profile?.id === p?.id); if (b) Nav.setFocus(b, { silent: true }); } }

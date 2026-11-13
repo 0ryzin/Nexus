@@ -820,3 +820,6 @@ input.am-filter:focus,input.am-filter.focus{border-color:var(--accent)}
 @keyframes tile-launch{0%{transform:scale(1)}18%{transform:scale(.94)}45%{transform:scale(1.1);box-shadow:0 0 0 4px var(--accent),0 0 48px 6px color-mix(in srgb,var(--accent) 60%,transparent)}100%{transform:scale(1.22);opacity:0;filter:brightness(1.6)}}
 .launchfx.from-tile{transition:opacity .35s ease}
 .launchfx.from-tile .lx-art{animation:none}
+
+/* a game is in front of NEXUS: nothing animates behind it (syncGameInFront) */
+body.game-front *, body.game-front *::before, body.game-front *::after { animation-play-state: paused !important; }
