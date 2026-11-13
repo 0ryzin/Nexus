@@ -28,11 +28,13 @@ GitHub release pages themselves could not be read from this environment.
 | Technique | Status in NEXUS | Note |
 |---|---|---|
 | EXP61 empty submits | in NEXUS (via Lichii #1329) | |
-| Texture-cache ceiling, EXP58 render-target GC | candidate | reduces VRAM on 8-16 GB devices (Steam Deck: 16 GB shared). Needs measurement on a handheld before adopting |
+| Texture-cache ceiling | **NEXUS-native equivalent (0.8.0, patch 0020)** | Fritchii caps the cache at a fixed 7680 MiB. Lichii 177 already caps it by the device budget and, on Windows, by the host's commit room (`host_memory_limit.h`); on Linux that cap was off because `GetSystemCommitRoom` returned nothing. NEXUS reports Linux's room (MemAvailable + SwapFree, or CommitLimit - Committed_AS in strict mode), which is what matters on a 16 GB shared-memory handheld. Written for NEXUS; no Fritchii code. Unit-tested, not measured on a handheld |
+| EXP58 render-target GC | not taken | Lichii 177's collector follows the driver's budget and a retention limit; superseded render targets age out there. No measured problem in NEXUS to fix |
 | EXP49 async read-back, EXP48 write-protect skip, EXP63 translation cache | candidates | measured gains upstream are OoT-specific; regressions were reverted there (EXP47). Port only with a before/after measurement |
 | JIT warm-up, IR verification skip | candidates | load time and stutter |
 | #1168 time services during loading | not needed | NEXUS applies settings only before boot |
 | Tuned defaults (Low accuracy, async) | same as NEXUS's seeds | |
 | OoT high refresh / FPS mods | not taken | game-specific; NEXUS uses the Lichii built-ins |
 
-No Fritchii code was added to NEXUS in this update.
+No Fritchii code was added to NEXUS. Where an idea was used, the NEXUS change says so in its
+comment and commit message.

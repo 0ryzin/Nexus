@@ -1,7 +1,7 @@
 From 405b988756161e29f4422b24a78ea71f26674556 Mon Sep 17 00:00:00 2001
 From: NEXUS <nexus@users.noreply.github.com>
 Date: Fri, 13 Nov 2026 17:28:45 +0000
-Subject: [PATCH 18/19] NEXUS engine: keep the yuzu Emulator Project copyright
+Subject: [PATCH 18/20] NEXUS engine: keep the yuzu Emulator Project copyright
  notices
 
 Lichii #1544 (9b50adb7b) removed the 'SPDX-FileCopyrightText: ... yuzu Emulator Project' lines

@@ -1,7 +1,7 @@
 From 8a38324b67d07b4fc825bf9dcf577335d5ce4967 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Tue, 10 Nov 2026 23:33:55 +0000
-Subject: [PATCH 02/19] nexus_engine: report whether the loaded program is a
+Subject: [PATCH 02/20] nexus_engine: report whether the loaded program is a
  Switch 1 or Switch 2 (NPDM) program
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

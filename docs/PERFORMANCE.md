@@ -55,6 +55,21 @@ This matters most while a game runs in the background behind NEXUS Home.
 3. **The running-game dot and the recording indicator** pulsed with `box-shadow`. They now use `opacity`.
 4. **The loading bar** moved with `left`, which forces a layout on every frame while a game is loading, exactly when the CPU is busy compiling shaders. It now moves with `transform`.
 
+## 0.8.0 (engine on Lichii build 177): changes, not measurements
+
+None of these has a before/after measurement yet; they are listed so a measurement can be made
+with the method below.
+- **Texture-cache host-memory cap on Linux** (engine patch 0020). The cap Lichii applies on
+  Windows (cache ≤ device use + commit room − 2 GiB, never under 3 GiB) now also works on Linux,
+  where it reads `/proc/meminfo`. Expected effect: on a 16 GB shared-memory device a Switch 2
+  game's cache collects before RAM and swap run out instead of the session being killed. Steam
+  Deck and ROG Ally X are **not tested**; NEXUS has no Linux release.
+- **Optimiser limits for Switch 2 games**: reactive flushing on, conservative video memory,
+  resolution scale at most 1x, matching the configuration the engine is tested with. This
+  favours stability and memory headroom over sharpness on large GPUs.
+- **Engine changes inherited from build 177** (listed in `research/LICHII.md`): x86-64 code
+  generation, GPU split and buffer-cache work, memory reuse, Windows commit-limit handling.
+
 ## Not changed (checked)
 
 - **No per-frame work in the server.** It has three timers: the engine status (4/s, only while a game runs), the stand-in engine (tests only) and the event-stream keep-alive (every 20 s).

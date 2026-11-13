@@ -1,0 +1,236 @@
+From e86bf7b54261040d94a9738274985ccd999cf01a Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 13 Nov 2026 18:06:34 +0000
+Subject: [PATCH 20/20] NEXUS engine: host-memory cap for the texture cache on
+ Linux
+
+Common::GetSystemCommitRoom returned no value outside Windows, so the
+texture cache's host-memory cap (HostCriticalMemory) was off on Linux.
+On a 16 GB shared-memory handheld a Switch 2 game's 12 GiB of guest
+memory and the texture cache then compete for the same RAM and the OOM
+killer ends the session instead of the cache collecting.
+
+Linux now reports MemAvailable + SwapFree (heuristic overcommit, the
+default and SteamOS's mode) or CommitLimit - Committed_AS (strict
+overcommit, matching Windows' commit semantics). Parsing is a small
+header so it is unit-tested on every platform.
+
+Idea credited to Fritchii's fixed texture-cache ceiling; this feeds the
+host's real room into the cap Lichii already has instead of a constant.
+Not measured on a handheld.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
+---
+ src/common/CMakeLists.txt          |  1 +
+ src/common/linux_commit_room.h     | 86 ++++++++++++++++++++++++++++++
+ src/common/memory_detect.cpp       | 13 +++++
+ src/common/memory_detect.h         |  3 +-
+ src/tests/common/memory_detect.cpp | 38 +++++++++++++
+ 5 files changed, 140 insertions(+), 1 deletion(-)
+ create mode 100644 src/common/linux_commit_room.h
+
+diff --git a/src/common/CMakeLists.txt b/src/common/CMakeLists.txt
+index cd87d553f..a2b0de61f 100644
+--- a/src/common/CMakeLists.txt
++++ b/src/common/CMakeLists.txt
+@@ -90,6 +90,7 @@ add_library(
+     lz4_compression.cpp
+     lz4_compression.h
+     math_util.h
++    linux_commit_room.h
+     memory_detect.cpp
+     memory_detect.h
+     multi_level_page_table.cpp
+diff --git a/src/common/linux_commit_room.h b/src/common/linux_commit_room.h
+new file mode 100644
+index 000000000..ebbcfa3f5
+--- /dev/null
++++ b/src/common/linux_commit_room.h
+@@ -0,0 +1,86 @@
++// SPDX-FileCopyrightText: 2026 NEXUS project
++// SPDX-License-Identifier: GPL-3.0-or-later
++
++// The Linux side of Common::GetSystemCommitRoom (memory_detect.h). The texture cache uses that
++// room to cap how much device memory it holds before collecting (HostCriticalMemory in
++// video_core/texture_cache/host_memory_limit.h). Until NEXUS added this, Linux reported no
++// room at all and the cap was off there: on a handheld with 16 GB of memory shared by the CPU
++// and the GPU (Steam Deck, ROG Ally X under Linux) a Switch 2 game's 12 GiB of guest memory and
++// the texture cache compete for the same RAM, and the kernel's out-of-memory killer ends the
++// session instead of the driver refusing an allocation.
++//
++// Idea credited to Fritchii's texture-cache ceiling (a fixed 7680 MiB cap, see NEXUS
++// docs/research/FRITCHII.md); NEXUS instead feeds the host's real room into the cap Lichii
++// already has, so it follows other programs' use and is not a fixed number.
++
++#pragma once
++
++#include <charconv>
++#include <optional>
++#include <string_view>
++
++#include "common/common_types.h"
++
++namespace Common {
++
++/// The fields of /proc/meminfo that decide how much more memory the kernel will hand out.
++struct LinuxMeminfo {
++    std::optional<u64> mem_available; ///< MemAvailable (bytes)
++    std::optional<u64> swap_free;     ///< SwapFree (bytes)
++    std::optional<u64> commit_limit;  ///< CommitLimit (bytes)
++    std::optional<u64> committed_as;  ///< Committed_AS (bytes)
++};
++
++/// Parses the text of /proc/meminfo ("Name:   12345 kB" lines). Unknown lines are skipped.
++[[nodiscard]] inline LinuxMeminfo ParseLinuxMeminfo(std::string_view text) {
++    LinuxMeminfo info;
++    while (!text.empty()) {
++        const size_t end = text.find('\n');
++        std::string_view line = text.substr(0, end);
++        text = end == std::string_view::npos ? std::string_view{} : text.substr(end + 1);
++        const size_t colon = line.find(':');
++        if (colon == std::string_view::npos) {
++            continue;
++        }
++        const std::string_view name = line.substr(0, colon);
++        std::optional<u64>* field = name == "MemAvailable"   ? &info.mem_available
++                                    : name == "SwapFree"     ? &info.swap_free
++                                    : name == "CommitLimit"  ? &info.commit_limit
++                                    : name == "Committed_AS" ? &info.committed_as
++                                                             : nullptr;
++        if (field == nullptr) {
++            continue;
++        }
++        std::string_view value = line.substr(colon + 1);
++        while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
++            value.remove_prefix(1);
++        }
++        u64 kib = 0;
++        const auto [ptr, ec] = std::from_chars(value.data(), value.data() + value.size(), kib);
++        if (ec != std::errc{} || kib > (~u64{0} >> 10)) {
++            continue;
++        }
++        *field = kib << 10;
++    }
++    return info;
++}
++
++/// The memory the kernel can still hand out, in bytes, the way Windows' commit room is used.
++/// strict_overcommit: vm.overcommit_memory is 2, so the kernel refuses allocations past
++/// CommitLimit just like Windows; the room is CommitLimit - Committed_AS. Otherwise (the default
++/// heuristic mode, SteamOS included) allocations succeed until RAM and swap run out and then the
++/// OOM killer picks a process, so the room is what is still available: MemAvailable + SwapFree.
++/// No value when /proc/meminfo lacks the fields (very old kernels).
++[[nodiscard]] inline std::optional<u64> LinuxCommitRoom(const LinuxMeminfo& info,
++                                                        bool strict_overcommit) {
++    if (strict_overcommit && info.commit_limit && info.committed_as) {
++        return *info.committed_as < *info.commit_limit ? *info.commit_limit - *info.committed_as
++                                                       : u64{0};
++    }
++    if (!info.mem_available) {
++        return std::nullopt;
++    }
++    return *info.mem_available + info.swap_free.value_or(0);
++}
++
++} // namespace Common
+diff --git a/src/common/memory_detect.cpp b/src/common/memory_detect.cpp
+index cfc836206..35d53349b 100644
+--- a/src/common/memory_detect.cpp
++++ b/src/common/memory_detect.cpp
+@@ -23,7 +23,9 @@
+ #include <cstdlib>
+ #include <fstream>
+ #include <string>
++#include <iterator>
+ #include <string_view>
++#include "common/linux_commit_room.h"
+ #endif
+ 
+ #include <atomic>
+@@ -146,6 +148,17 @@ std::optional<u64> GetSystemCommitRoom() {
+         const u64 committed = performance.CommitTotal;
+         return (committed < limit ? limit - committed : 0) * performance.PageSize;
+     }
++#elif defined(__linux__)
++    std::ifstream meminfo("/proc/meminfo");
++    if (!meminfo) {
++        return std::nullopt;
++    }
++    const std::string text{std::istreambuf_iterator<char>(meminfo), {}};
++    int overcommit = 0;
++    if (std::ifstream mode("/proc/sys/vm/overcommit_memory"); mode) {
++        mode >> overcommit;
++    }
++    return LinuxCommitRoom(ParseLinuxMeminfo(text), overcommit == 2);
+ #endif
+     return std::nullopt;
+ }
+diff --git a/src/common/memory_detect.h b/src/common/memory_detect.h
+index cba1f7b33..dbcc70f5e 100644
+--- a/src/common/memory_detect.h
++++ b/src/common/memory_detect.h
+@@ -47,7 +47,8 @@ struct ProcessMemoryUsage {
+ [[nodiscard]] ProcessMemoryUsage GetProcessMemoryUsage();
+ 
+ /// Commit the system can still hand out, in bytes: its commit limit (RAM plus the page files)
+-/// minus what is committed. No value where the host reports no such limit (anything but Windows).
++/// minus what is committed. On Linux, what the kernel can still hand out (linux_commit_room.h).
++/// No value elsewhere.
+ [[nodiscard]] std::optional<u64> GetSystemCommitRoom();
+ 
+ /// Physical memory the host can hand out now without paging anything out (0 when unknown).
+diff --git a/src/tests/common/memory_detect.cpp b/src/tests/common/memory_detect.cpp
+index 4a57ab224..cb2892ed5 100644
+--- a/src/tests/common/memory_detect.cpp
++++ b/src/tests/common/memory_detect.cpp
+@@ -3,7 +3,9 @@
+ 
+ #include <catch2/catch_test_macros.hpp>
+ #include "common/literals.h"
++#include "common/linux_commit_room.h"
+ #include "common/memory_detect.h"
++#include "video_core/texture_cache/host_memory_limit.h"
+ 
+ using namespace Common::Literals;
+ using Common::HostRam;
+@@ -40,3 +42,39 @@ TEST_CASE("Switch 2 RAM minimum: unknown RAM gives no warning", "[common]") {
+     CHECK_FALSE(IsBelowSwitch2RamMinimum(HostRam{0, true}));
+     CHECK_FALSE(IsBelowSwitch2RamMinimum(HostRam{0, false}));
+ }
++
++TEST_CASE("Linux commit room: default overcommit uses available RAM and free swap", "[common]") {
++    // Steam Deck-like: 16 GB shared memory, zram swap.
++    const auto info = Common::ParseLinuxMeminfo("MemTotal:       15950000 kB\n"
++                                                "MemFree:         1000000 kB\n"
++                                                "MemAvailable:    4194304 kB\n"
++                                                "SwapTotal:       8388608 kB\n"
++                                                "SwapFree:        2097152 kB\n"
++                                                "CommitLimit:    16363608 kB\n"
++                                                "Committed_AS:   30000000 kB\n");
++    CHECK(info.mem_available == 4_GiB);
++    CHECK(info.swap_free == 2_GiB);
++    CHECK(Common::LinuxCommitRoom(info, false) == 6_GiB);
++    // Strict mode follows CommitLimit like Windows, and never goes negative.
++    CHECK(Common::LinuxCommitRoom(info, true) == 0);
++}
++
++TEST_CASE("Linux commit room: strict overcommit and missing fields", "[common]") {
++    const auto strict = Common::ParseLinuxMeminfo("CommitLimit: 8388608 kB\nCommitted_AS: 4194304 kB");
++    CHECK(Common::LinuxCommitRoom(strict, true) == 4_GiB);
++    CHECK_FALSE(Common::LinuxCommitRoom(strict, false).has_value()); // no MemAvailable
++    CHECK_FALSE(Common::LinuxCommitRoom(Common::ParseLinuxMeminfo(""), false).has_value());
++    const auto no_swap = Common::ParseLinuxMeminfo("garbage line\nMemAvailable:\t1048576 kB\n");
++    CHECK(Common::LinuxCommitRoom(no_swap, false) == 1_GiB);
++    CHECK_FALSE(Common::ParseLinuxMeminfo("MemAvailable: x kB\n").mem_available.has_value());
++}
++
++TEST_CASE("Host cap on the texture cache: Switch 2 game on a 16 GB handheld", "[common]") {
++    // With 3 GiB of device memory in use and 4 GiB of RAM+swap still available, the cache may
++    // hold 5 GiB (2 GiB stays for the rest of the system), never less than the 3 GiB a scene needs.
++    const auto room = Common::LinuxCommitRoom(
++        Common::ParseLinuxMeminfo("MemAvailable: 3145728 kB\nSwapFree: 1048576 kB\n"), false);
++    REQUIRE(room.has_value());
++    CHECK(VideoCommon::HostCriticalMemory(3_GiB, *room) == 5_GiB);
++    CHECK(VideoCommon::HostCriticalMemory(1_GiB, 0) == VideoCommon::MinHostCriticalMemory);
++}
