@@ -5,6 +5,29 @@ Newest first.
 
 ## 0.8.0 (in development)
 
+### NEXUS started without a window (audio played, nothing on screen)
+- **Problem (13 Nov):** sometimes NEXUS.exe started, the boot sound played, but no window
+  appeared; starting it a second time sometimes made it appear.
+- **Cause (from the code):** when NEXUS started in full screen (saved whenever F11 is pressed on
+  Home, which is why it was intermittent), `applyFullscreen` wrote `WS_POPUP|WS_VISIBLE` into the
+  style of a window that had never been shown and then called `SetWindowPos(SWP_SHOWWINDOW)`.
+  Windows treats a window with the WS_VISIBLE bit as already shown, so nothing was shown. WebView2
+  still loaded the interface, so the boot sound played. The second NEXUS.exe's `SW_RESTORE`
+  sometimes forced it on screen. A second click while the first NEXUS was still starting (no
+  window yet) found nothing and exited silently.
+- **Fix:** the window is created hidden, laid out (full screen or not) while hidden and shown
+  once with `ShowWindow`; the style's WS_VISIBLE bit is never written by hand
+  (`windowStyleFor`). After the interface loads, the window is checked and brought back if it is
+  hidden or off every monitor. A second NEXUS.exe waits up to 20 s for the window, lets the
+  running NEXUS take the foreground and asks it to show itself (it restores its own full screen);
+  if there is no window it says so. A panic shows a message instead of vanishing.
+- **Files:** `app/app_windows.go`, `app/window_windows.go`, `app/main.go`.
+- **Test:** `window_windows_test.go` (runs on the Windows CI runner with real windows):
+  full screen before first show leaves the window hidden until shown, then visible; hidden,
+  off-screen and minimised windows are recovered; a second instance finds the window.
+- **Recognise:** `nexus.log` now has `startup:` lines (core ready, window created, window shown
+  with its state, WebView2 ready, interface loaded, and any recovery).
+
 ### Ocarina of Time: black screen after loading a save (open)
 - **Problem (13 Nov):** Play → load a save → black screen that keeps loading.
 - **Diagnosis so far:** source comparison only; the game cannot be run here. The engine moved

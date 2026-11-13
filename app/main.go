@@ -7,7 +7,17 @@ import (
 	"time"
 )
 
+// startupBegan is when this NEXUS.exe started; startup log lines are timed from it.
+var startupBegan = time.Now()
+
 func main() {
+	defer func() {
+		// a panic in a GUI program has no console to print to: say so instead of vanishing
+		if r := recover(); r != nil {
+			fatalBox(fmt.Sprintf("NEXUS stopped while starting or running: %v\n\nThe log is nexus.log in the Logs folder of the NEXUS data folder.", r))
+			panic(r)
+		}
+	}()
 	if len(os.Args) >= 2 && os.Args[1] == "--apply-update" {
 		os.Exit(applyUpdate(os.Args[2:])) // the new NEXUS.exe installing itself (updater.go)
 	}
@@ -27,6 +37,7 @@ func main() {
 	}
 	defer core.Close()
 	app, url := core.App, core.URL
+	app.Log.Printf("startup: core ready after %v (pid %d)", time.Since(startupBegan).Round(time.Millisecond), os.Getpid())
 	runUI(app, url)
 	// make sure a running game isn't orphaned silently
 	if st := app.Emu.State(); st.Running {

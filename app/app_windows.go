@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/jchv/go-webview2/pkg/edge"
@@ -181,11 +182,13 @@ func (u *winUI) applyFullscreen(on bool) {
 		mon, _, _ := procMonitorFromWindow.Call(u.hwnd, 2 /*MONITOR_DEFAULTTONEAREST*/)
 		mi := monitorInfo{CbSize: uint32(unsafe.Sizeof(monitorInfo{}))}
 		procGetMonitorInfoW.Call(mon, uintptr(unsafe.Pointer(&mi)))
-		procSetWindowLongPtrW.Call(u.hwnd, gwlStyle, wsPopup|wsVisible)
+		cur, _, _ := procGetWindowLongPtrW.Call(u.hwnd, gwlStyle)
+		procSetWindowLongPtrW.Call(u.hwnd, gwlStyle, windowStyleFor(cur, true))
 		r := mi.RcMonitor
-		procSetWindowPos.Call(u.hwnd, 0, uintptr(r.Left), uintptr(r.Top), uintptr(r.Right-r.Left), uintptr(r.Bottom-r.Top), swpFrameChanged|swpShowWindow)
+		procSetWindowPos.Call(u.hwnd, 0, uintptr(r.Left), uintptr(r.Top), uintptr(r.Right-r.Left), uintptr(r.Bottom-r.Top), swpFrameChanged)
 	} else {
-		procSetWindowLongPtrW.Call(u.hwnd, gwlStyle, wsOverlappedWindow|wsVisible)
+		cur, _, _ := procGetWindowLongPtrW.Call(u.hwnd, gwlStyle)
+		procSetWindowLongPtrW.Call(u.hwnd, gwlStyle, windowStyleFor(cur, false))
 		r := u.saved
 		if r.Right-r.Left < 400 {
 			s := u.app.Settings.Get().Display
@@ -194,8 +197,8 @@ func (u *winUI) applyFullscreen(on bool) {
 			w, h := int32(s.Width), int32(s.Height)
 			r = rect{(int32(cx) - w) / 2, (int32(cy) - h) / 2, (int32(cx)+w)/2 + w%2, (int32(cy)+h)/2 + h%2}
 		}
-		procSetWindowPos.Call(u.hwnd, 0, uintptr(r.Left), uintptr(r.Top), uintptr(r.Right-r.Left), uintptr(r.Bottom-r.Top), swpFrameChanged|swpShowWindow)
-		if u.savedMax {
+		procSetWindowPos.Call(u.hwnd, 0, uintptr(r.Left), uintptr(r.Top), uintptr(r.Right-r.Left), uintptr(r.Bottom-r.Top), swpFrameChanged)
+		if u.savedMax && u.shown {
 			procShowWindow.Call(u.hwnd, 3 /*SW_MAXIMIZE*/)
 		}
 	}
@@ -345,6 +348,12 @@ func wndProc(hwnd, m, wp, lp uintptr) uintptr {
 	case 0x0002: // WM_DESTROY
 		procPostQuitMessage.Call(0)
 		return 0
+	case wmNexusActivate:
+		u.ensureWindowVisible("NEXUS.exe was started again", true)
+		if u.fullscreen {
+			u.applyFullscreen(true)
+		}
+		return 0
 	case wmApp + 1:
 		u.mu.Lock()
 		q := u.queue
@@ -375,10 +384,9 @@ func singleInstance(root string) bool {
 	name, _ := windows.UTF16PtrFromString("Local\\NEXUS-" + hex.EncodeToString(h[:8]))
 	_, err := windows.CreateMutex(nil, false, name)
 	if err == windows.ERROR_ALREADY_EXISTS {
-		cn, _ := windows.UTF16PtrFromString(className)
-		if w, _, _ := procFindWindowW.Call(uintptr(unsafe.Pointer(cn)), 0); w != 0 {
-			procShowWindow.Call(w, 9)
-			procSetForegroundWindow.Call(w)
+		// the running NEXUS may still be starting: wait for its window rather than exit silently
+		if !activateRunningInstance(20 * time.Second) {
+			fatalBox("NEXUS is already starting or running, but its window could not be found. If nothing appears, end NEXUS.exe in Task Manager and start it again.")
 		}
 		return false
 	}
@@ -426,18 +434,26 @@ func runUI(a *App, url string) {
 		return
 	}
 	a.UI = u
+	a.Log.Printf("startup: window created after %v", time.Since(startupBegan).Round(time.Millisecond))
 	if settings.Display.Fullscreen {
 		u.fsWant = true
-		u.applyFullscreen(true)
-	} else {
-		procShowWindow.Call(u.hwnd, 5 /*SW_SHOW*/)
+		u.applyFullscreen(true) // laid out while hidden, shown below
 	}
+	u.showMainWindow()
 	procUpdateWindow.Call(u.hwnd)
 
 	chromium := edge.NewChromium()
 	chromium.DataPath = a.Paths.WebView
 	chromium.MessageCallback = func(string) {}
-	chromium.NavigationCompletedCallback = func(*edge.ICoreWebView2, *edge.ICoreWebView2NavigationCompletedEventArgs) {}
+	navigated := false
+	chromium.NavigationCompletedCallback = func(*edge.ICoreWebView2, *edge.ICoreWebView2NavigationCompletedEventArgs) {
+		if navigated {
+			return
+		}
+		navigated = true
+		a.Log.Printf("startup: interface loaded after %v", time.Since(startupBegan).Round(time.Millisecond))
+		u.ensureWindowVisible("after the interface loaded", false)
+	}
 	chromium.SetPermission(edge.CoreWebView2PermissionKindClipboardRead, edge.CoreWebView2PermissionStateAllow)
 	chromium.AcceleratorKeyCallback = func(vk uint) bool {
 		if vk == 0x7A { // F11
@@ -451,6 +467,7 @@ func runUI(a *App, url string) {
 		}
 		return false
 	}
+	embedStart := time.Now()
 	if !chromium.Embed(u.hwnd) {
 		a.Log.Printf("WebView2 unavailable; falling back to Edge app mode")
 		procDestroyWindow.Call(u.hwnd)
@@ -459,6 +476,7 @@ func runUI(a *App, url string) {
 		return
 	}
 	u.chromium = chromium
+	a.Log.Printf("startup: WebView2 ready in %v", time.Since(embedStart).Round(time.Millisecond))
 	if s, err := chromium.GetSettings(); err == nil {
 		dev := os.Getenv("NEXUS_DEVTOOLS") == "1"
 		_ = s.PutAreDefaultContextMenusEnabled(dev)
