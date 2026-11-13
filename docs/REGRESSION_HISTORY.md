@@ -3,6 +3,27 @@
 Each entry: problem · diagnosis · cause · files · fix · test · how to recognise it again.
 Newest first.
 
+## 0.8.0 (in development)
+
+### Ocarina of Time: black screen after loading a save (open)
+- **Problem (13 Nov):** Play → load a save → black screen that keeps loading.
+- **Diagnosis so far:** source comparison only; the game cannot be run here. The engine moved
+  to Lichii build 177, which fixes an update's ExeFS being applied over a NUP program (#1504)
+  and several GPU-service waits that could not end (#1413, #1512, #1590). NEXUS's optimiser also
+  turned reactive flushing off for most profiles, unlike the engine's tested default.
+- **Files:** `engine.lock` (build 177), `app/optimize.go` (`switch2Limits`), `app/engine.go`
+  (`switch2SessionSummary`).
+- **Test:** `TestSwitch2OptimiserLimits`, `TestSwitch2SessionSummary`. Not confirmed with the game.
+- **Recognise:** the NEXUS log line `engine: Switch 2 session ...` shows the settings and update
+  files; the engine log shows `ExeFS: Ignoring installed update` when #1504 applies.
+
+### Switch 2 low-RAM warning test passed only on PCs with less than 16 GB
+- **Problem:** `TestSwitch2LowRAMWarning` failed in the Linux CI job (16 GB runner).
+- **Cause:** the test set the hardware cache directly, but detection replaced it with the real
+  machine's memory; on an 8 GB PC the warning appeared anyway.
+- **Fix:** the test uses the `NEXUS_HARDWARE` override (`useHardware`) and also checks that a
+  32 GB PC gets no warning.
+
 ## 0.7.0 (in development)
 
 ### Home showed a menu instead of the Home screen

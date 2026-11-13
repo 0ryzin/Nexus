@@ -29,8 +29,21 @@ scenes) and the list below.
     once gameplay data is read after the save loads.
   - #1413 (GPU thread waiting on kernel locks for sparse blocks), #1512 (syncpoint waits answered
     before the increments were mirrored), #1590 (vi2 timestamp recorders): waits that never end.
-- **What to check if it still happens:** the engine log (`Engine/log/eden_log.txt`) shows
-  "Skipping ... update ExeFS" for #1504, and the last service calls before the stall.
+- **NEXUS-side changes (0.8.0):**
+  - The optimiser no longer recommends settings for a Switch 2 game that differ from the
+    engine's tested configuration: reactive flushing stays **on** (Lichii's desktop default;
+    NEXUS used to turn it off for most profiles, and games that wait on GPU read-backs while
+    loading are the ones it matters for), video memory stays **conservative**, and resolution
+    scaling stays at **1x**. Not proven to be the cause; it removes a difference from the
+    configuration the engine is tested with. Settings applied by an older NEXUS stay until the
+    optimiser is run again or *Restore* is used.
+  - Every Switch 2 session writes one log line with those settings and the update/DLC file
+    names passed to the engine (`engine: Switch 2 session ...` in the NEXUS log).
+  - A Switch 2 game on a PC with less than about 16 GB of RAM starts with a warning.
+- **What to check if it still happens:** the NEXUS log line above, and in the engine log
+  (`Engine/log/eden_log.txt`) the warning "ExeFS: Ignoring installed update ... the container
+  carries its own program and RomFS" (#1504 working) and the last service calls before the
+  stall.
 
 #### Earlier notes (stuck loading, 12-13 Nov)
 - **Reported:** NEXUS 0.6.0 stops on the game's loading screen; Lichii build 160 continues.

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -292,6 +293,35 @@ func recommend(h Hardware, c DeviceClass, p OptProfile, demand string) (map[stri
 	return v, why
 }
 
+// isSwitch2Title reports whether a title ID belongs to a Switch 2 program (04xxxxxxxxxxxxxx).
+func isSwitch2Title(id string) bool {
+	return len(id) == 16 && strings.HasPrefix(strings.ToUpper(id), "04")
+}
+
+// switch2Limits keeps a recommendation for a Switch 2 game on the configuration the engine
+// (Lichii build 177) ships and tests with. Switch 2 games already render at up to 4K and use
+// 12 GB of emulated memory, and some wait on GPU read-backs while loading: turning reactive
+// flushing off, keeping more textures resident or rendering above 1x trades stability for
+// little gain there. See docs/COMPATIBILITY.md (Ocarina of Time) and docs/PERFORMANCE.md.
+func switch2Limits(v, why map[string]string) {
+	v["adv.reactive_flushing"] = "true"
+	why["adv.reactive_flushing"] = "Switch 2 games can wait on the GPU while loading; reactive flushing is the engine's tested default."
+	v["adv.vram"] = "conservative"
+	why["adv.vram"] = "Switch 2 games use 12 GB of emulated memory; conservative video memory leaves room on 16 GB PCs."
+	if atofSafe(v["graphics.scale"]) > 1 {
+		v["graphics.scale"] = "1"
+		why["graphics.scale"] = "Switch 2 games already render at up to 4K docked, so no extra scaling is applied."
+		if v["adv.filter"] == "area" {
+			v["adv.filter"] = "bilinear"
+			why["adv.filter"] = "No resolution scaling, so a simple filter is enough."
+		}
+		if v["graphics.aa"] == "none" {
+			v["graphics.aa"] = "fxaa"
+			why["graphics.aa"] = "FXAA smooths edges at very little cost."
+		}
+	}
+}
+
 func atofSafe(s string) float64 {
 	var f float64
 	_, err := fmt.Sscanf(s, "%g", &f)
@@ -326,6 +356,10 @@ func (e *Emulator) Plan(p OptProfile, gameKey string) (OptPlan, error) {
 		}
 	}
 	vals, why := recommend(h, c, p, plan.Demand)
+	if game != nil && isSwitch2Title(game.TitleID) {
+		switch2Limits(vals, why)
+		plan.Notes = append(plan.Notes, game.Title+" is a Switch 2 game, so NEXUS keeps the settings the engine is tested with: reactive flushing on, conservative video memory and no resolution scaling above 1x.")
+	}
 	caps := EngineCaps()
 	global := e.GlobalNexusSettings()
 	engineNow := e.EngineValues()

@@ -280,6 +280,29 @@ func (e *Emulator) writeSessionConfig(g *Game, pr *Profile) (string, error) {
 	return e.SessionPath(), ini.Save(e.SessionPath())
 }
 
+// switch2SessionSummary is one log line with what a Switch 2 session was started with: the
+// renderer settings that most affect loading (docs/COMPATIBILITY.md, Ocarina of Time) and
+// the update/DLC files passed to the engine. Nothing personal is logged: file names only.
+func switch2SessionSummary(g *Game, cfg string, contents []string) string {
+	ini, _ := LoadIni(cfg)
+	get := func(k string) string {
+		if ini == nil {
+			return "?"
+		}
+		if v, ok := ini.GetSetting("Renderer", k); ok {
+			return v
+		}
+		return "default"
+	}
+	names := make([]string, 0, len(contents))
+	for _, c := range contents {
+		names = append(names, filepath.Base(c))
+	}
+	return fmt.Sprintf("engine: Switch 2 session %s: gpu_accuracy=%s reactive_flushing=%s vram=%s resolution=%s async_shaders=%s; %d add-on file(s) %v",
+		g.TitleID, get("gpu_accuracy"), get("use_reactive_flushing"), get("vram_usage_mode"),
+		get("resolution_setup"), get("use_asynchronous_shaders"), len(names), names)
+}
+
 // extraContents lists update and DLC files in the library that belong to g.
 func (e *Emulator) extraContents(g *Game) []string {
 	base, err := strconv.ParseUint(g.TitleID, 16, 64)
@@ -393,6 +416,9 @@ func (e *Emulator) Launch(g *Game, profileID string) error {
 		RecordKey:     recordKey(s),
 		ScreenshotDir: e.app.Media.ScreenshotsDir(), ScreenshotName: captureName(g),
 		RevealOnRequest: true, RevealTimeoutMs: 1500, Controllers: e.app.Controllers.ForSession(pr)}
+	if isSwitch2Title(g.TitleID) {
+		e.app.Log.Print(switch2SessionSummary(g, cfg, req.Contents))
+	}
 	// one NEXUS window: the game is drawn inside it (Settings › Game sessions › Game window)
 	req.Embed = s.Emulator.GameWindow != "separate" && e.app.UI.Native() && req.OwnerWindow != 0
 	if req.Embed {
@@ -872,7 +898,7 @@ func (e *Emulator) checkMemoryLayout(g *Game, s GlobalSettings) error {
 	gb, _ := strconv.Atoi(layout)
 	// Switch 2 programs always get the 12 GB layout from the engine. Like Lichii (#1478), warn on
 	// PCs with less than 16 GB of RAM - the game may run out of memory - but let it start.
-	if g != nil && strings.HasPrefix(strings.ToUpper(g.TitleID), "04") {
+	if g != nil && isSwitch2Title(g.TitleID) {
 		if total := e.app.DetectHardware(false).Memory.TotalMB; total > 0 && total < 16*1024-768 {
 			e.app.Log.Printf("engine: Switch 2 game on a PC with %d MB of RAM", total)
 			e.app.Events.Emit("launch.warning", map[string]any{"message": fmt.Sprintf(
