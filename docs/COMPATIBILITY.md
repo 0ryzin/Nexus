@@ -27,6 +27,11 @@ scenes) and the list below.
     the NUP's own (other version's) data. NEXUS passes updates found in the game folders to the
     engine, so an OoT update next to the NUP triggers exactly this; code and data then disagree
     once gameplay data is read after the save loads.
+    Checked in the build-177 source: the update lookup goes through the system's content
+    provider union, which includes the slot NEXUS registers game-folder updates in
+    (`nexus_engine.cpp`, FrontendManual), and the NUP loader builds its RomFS from the NUP's own
+    packages, so the fix covers NEXUS's path too. It only applies when the game file is a NUP;
+    for an NSP/XCI with an update the mismatch could not happen this way.
   - #1413 (GPU thread waiting on kernel locks for sparse blocks), #1512 (syncpoint waits answered
     before the increments were mirrored), #1590 (vi2 timestamp recorders): waits that never end.
 - **NEXUS-side changes (0.8.0):**
