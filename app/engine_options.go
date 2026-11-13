@@ -37,6 +37,8 @@ var EmuOptions = []EmuOption{
 		Choices: []EmuChoice{{"1", "Vulkan"}, {"0", "OpenGL (GLSL)"}, {"3", "OpenGL (GLASM)"}, {"4", "OpenGL (SPIR-V)"}}},
 	{ID: "Renderer/resolution_setup", Label: "Resolution scaling", Group: "Graphics", Kind: "enum", PerGame: true,
 		Choices: []EmuChoice{{"1", "0.5× (360p/540p)"}, {"2", "0.75×"}, {"3", "1× native (720p/1080p)"}, {"4", "1.25×"}, {"5", "1.5×"}, {"6", "2× (1440p/2160p)"}, {"7", "3×"}, {"8", "4×"}}},
+	{ID: "Renderer/hdr_mode", Label: "HDR output", Group: "Graphics", Kind: "enum", PerGame: true,
+		Choices: []EmuChoice{{"0", "Off"}, {"1", "On"}, {"2", "Auto"}}},
 	{ID: "Renderer/use_vsync", Label: "V-Sync", Group: "Graphics", Kind: "enum", PerGame: true,
 		Choices: []EmuChoice{{"2", "On (FIFO)"}, {"3", "Relaxed (FIFO relaxed)"}, {"1", "Mailbox"}, {"0", "Off (immediate)"}}},
 	{ID: "Renderer/fullscreen_mode", Label: "Fullscreen mode", Group: "Graphics", Kind: "enum", PerGame: true,

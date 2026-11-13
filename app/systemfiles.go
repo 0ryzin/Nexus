@@ -278,6 +278,7 @@ func countKeyLines(p string) int {
 // InstallKeys validates and installs prod.keys (and an optional title.keys).
 // An existing file is archived, never overwritten in place.
 func (s *SystemFiles) InstallKeys(prod, title string) (KeysInfo, error) {
+	defer func() { go s.app.Emu.SyncSystemVault() }()
 	ki := s.ValidateKeys(prod)
 	if !ki.Valid {
 		return ki, errors.New(strings.Join(ki.Errors, " "))
@@ -603,7 +604,12 @@ var ncaFileName = regexp.MustCompile(`(?i)^[0-9a-f]{32}(\.cnmt)?\.nca$`)
 // InstallFirmware validates a firmware folder/zip and installs it into NEXUS's
 // system files, then into every engine. The previous firmware is archived only
 // after the new one has been fully validated.
-func (s *SystemFiles) InstallFirmware(src string) error {
+func (s *SystemFiles) InstallFirmware(src string) (err error) {
+	defer func() {
+		if err == nil {
+			go s.app.Emu.SaveFirmwareToVault()
+		}
+	}()
 	if s.busy() {
 		return errors.New("Another system file operation is still running.")
 	}

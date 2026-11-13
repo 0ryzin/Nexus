@@ -59,3 +59,20 @@ This matters most while a game runs in the background behind NEXUS Home.
 
 - **No per-frame work in the server.** It has three timers: the engine status (4/s, only while a game runs), the stand-in engine (tests only) and the event-stream keep-alive (every 20 s).
 - **Animated wallpapers** already pause while a game runs, while NEXUS is in the background or minimised, and on screens where they are not visible (0.2.0).
+
+## Benchmarking method (0.7.0)
+
+Report a change only with numbers from this method:
+1. Same PC, power plan and driver; NEXUS performance monitor on; game and scene fixed (OoT:
+   Kokiri Forest standing still, then panning; Castle Town market; a Switch 1 game's first
+   area).
+2. Warm the shader cache once; then three 60-second runs before and three after the change.
+3. Record average fps, 1 % low (from frame times), CPU %, GPU %, RAM and VRAM from the monitor.
+4. Write the result in this file with the commit, hardware and settings.
+
+## Handheld plan (Steam Deck, ROG Ally X)
+- Steam Deck needs the Linux build first (engine host for Linux exists as `enginehost_dl.go`;
+  packaging, Steam Input and SteamOS game mode are not done). No handheld has been measured.
+- Candidates once measured: texture-cache ceiling and render-target collection (shared memory),
+  resolution 0.75× with FSR, Mailbox or a 40 fps limit on 40 Hz displays, shader cache on
+  internal storage.

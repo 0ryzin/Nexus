@@ -31,6 +31,9 @@ import (
 func newTestApp(t *testing.T, nlib string) (*App, string) {
 	t.Setenv("NEXUS_FAKE_ENGINE", "1")
 	root := t.TempDir()
+	if os.Getenv("NEXUS_SYSTEM_FILES") == "" { // never the real per-user vault in tests
+		t.Setenv("NEXUS_SYSTEM_FILES", filepath.Join(root, "vault"))
+	}
 	keys := filepath.Join(root, "System", "Engine", "keys")
 	os.MkdirAll(keys, 0o755)
 	k := testKeys{header: bytes.Repeat([]byte{0x11, 0x22}, 16), kak: bytes.Repeat([]byte{0x33}, 16), kek: bytes.Repeat([]byte{0x44}, 16)}

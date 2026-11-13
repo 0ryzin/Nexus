@@ -4,6 +4,14 @@ All notable NEXUS changes will be recorded here.
 
 The project is in preview. Releases are numbered from **0.0.0**; the first intended stable release is **1.0.0**. Every release, with its notes and download, is on the [Releases page](https://github.com/0ryzin/Nexus/releases).
 
+## 0.7.0 — in development (not released)
+
+- **Home goes straight to the Home screen.** The game keeps running in the background (or paused, as chosen); choosing it on Home resumes it at once. The "playing" screen no longer appears over Home when the NEXUS window gets focus.
+- **Keys and firmware stay installed across versions.** They are kept in a per-user vault (`%LOCALAPPDATA%\NEXUS\SystemFiles`; Linux `~/.local/share/NEXUS-SystemFiles`) and restored into any copy of NEXUS at start, portable or not; an earlier portable copy next to the new one is found once. Newer files are never replaced by older ones; nothing is deleted or uploaded.
+- **HDR output** setting (*Emulation settings › Graphics*): Off, Auto, On, using the engine's native HDR10 output (Lichii #1326, already in the engine); falls back to SDR when the display offers no HDR format. Not tested on an HDR display.
+- Ocarina of Time stuck loading: investigated (see docs/COMPATIBILITY.md); not reproduced, not yet fixed.
+- Knowledge base: CLAUDE.md, docs/DEVELOPMENT_NOTES.md, COMPATIBILITY.md, REGRESSION_HISTORY.md, research/LICHII.md, research/FRITCHII.md, benchmark method in PERFORMANCE.md.
+
 ## 0.6.0 — test build (pre-release)
 
 0.5.0 was never released; its changes below ship in 0.6.0 together with:

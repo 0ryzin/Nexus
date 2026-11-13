@@ -2040,12 +2040,7 @@ async function launchGame(key, force = false) {
   if (!isPlayable(g)) { alertDlg('Not a game', 'This file is an update or DLC. Keep it in one of your game folders: NEXUS applies it automatically when you start the base game.'); return; }
   if (!S.profile) { showWho(); return; }
   if (S.playing?.suspended) {
-    if (S.playing.gameKey === key) {
-      const v = await dialog({ title: g.title, text: 'This game is running in the background. Resume it where you left off, or close it (unsaved progress is lost).', buttons: [{ label: 'Cancel', value: null }, { label: 'Close Game', value: 'close', danger: true }, { label: 'Resume Game', value: 'resume', primary: true }], cancelValue: null });
-      if (v === 'resume') resumeGame();
-      if (v === 'close' && await confirmDlg(`Close ${g.title}?`, 'Unsaved progress will be lost.', 'Close Game', true)) api('/api/emulator/stop', { body: {} }).catch(e => toast(e.message, I.warn));
-      return;
-    }
+    if (S.playing.gameKey === key) { resumeGame(); return; } // the running game: straight back into it (Close game is on the Home banner)
     const v = await dialog({ title: `${S.playing.title} is still running`, text: `Close it to start ${g.title}? Unsaved progress in ${S.playing.title} will be lost.`, buttons: [{ label: 'Cancel', value: false }, { label: `Resume ${S.playing.title}`, value: 'resume' }, { label: 'Close it', value: 'close', danger: true }], cancelValue: false });
     if (v === 'resume') resumeGame();
     if (v === 'close') api('/api/emulator/stop', { body: {} }).catch(e => toast(e.message, I.warn));
@@ -3828,7 +3823,7 @@ Approve only if this is your own device and you started the link.`, buttons: [{ 
         break;
       }
       case 'app.fullscreen': S.system.fullscreen = m.data; break;
-      case 'app.focus': if (m.data && S.playing && S.screen !== 'playing') showPlaying(); break;
+      case 'app.focus': if (m.data && S.playing && !S.playing.suspended && S.screen !== 'playing') showPlaying(); break; // never over Home while the game waits there
       case 'profiles.changed': break;
       case 'avatars.state': if (m.data.state !== 'working' && Picker.reopen) Picker.reopen(); if (m.data.state === 'ready' && m.data.count) toast(`Profile icons ready (${m.data.count})`, I.person); break;
     }
