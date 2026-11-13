@@ -1,7 +1,7 @@
 # Game compatibility
 
-NEXUS runs games with the NEXUS Engine = Lichii build 160 + NEXUS's host patches. Game fixes in
-Lichii up to build 160 are therefore already in NEXUS; differences in behaviour come from the
+NEXUS runs games with the NEXUS Engine = Lichii build 177 (since 0.8 development; build 160 before)
++ NEXUS's host patches. Game fixes in Lichii up to build 177 are therefore in NEXUS; differences in behaviour come from the
 NEXUS host (window embedding, hidden start, input, save folder per user) or from settings.
 
 ## Switch 1 and Switch 2
@@ -19,7 +19,20 @@ scenes) and the list below.
 
 ## Known issues
 
-### The Legend of Zelda: Ocarina of Time (Switch 2 edition, 0400486024DEC000) - stuck loading
+### The Legend of Zelda: Ocarina of Time (Switch 2 edition, 0400486024DEC000) - black screen after loading a save
+- **Exact report (13 Nov):** the title screen and save selection work; after a save is loaded the
+  screen stays black, loading, and gameplay never starts.
+- **Leads fixed by moving the engine to Lichii build 177 (not yet confirmed with the game):**
+  - #1504: an update's ExeFS was applied over the NUP program, running one version's code against
+    the NUP's own (other version's) data. NEXUS passes updates found in the game folders to the
+    engine, so an OoT update next to the NUP triggers exactly this; code and data then disagree
+    once gameplay data is read after the save loads.
+  - #1413 (GPU thread waiting on kernel locks for sparse blocks), #1512 (syncpoint waits answered
+    before the increments were mirrored), #1590 (vi2 timestamp recorders): waits that never end.
+- **What to check if it still happens:** the engine log (`Engine/log/eden_log.txt`) shows
+  "Skipping ... update ExeFS" for #1504, and the last service calls before the stall.
+
+#### Earlier notes (stuck loading, 12-13 Nov)
 - **Reported:** NEXUS 0.6.0 stops on the game's loading screen; Lichii build 160 continues.
 - **Ruled out by source comparison:**
   - The built-in patches (Max Resolution, Texture Pool x2, Dynamic FPS/FPS Unlock) are in the

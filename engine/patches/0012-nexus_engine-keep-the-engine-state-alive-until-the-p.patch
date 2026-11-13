@@ -1,7 +1,7 @@
-From 1271a9b045a21ce4eeec22da6537134e8cbfa57a Mon Sep 17 00:00:00 2001
+From 55e161862042fdd6b94dec3d54721f94254ecceb Mon Sep 17 00:00:00 2001
 From: NEXUS <nexus@users.noreply.github.com>
 Date: Wed, 11 Nov 2026 19:01:04 +0000
-Subject: [PATCH 12/17] nexus_engine: keep the engine state alive until the
+Subject: [PATCH 12/19] nexus_engine: keep the engine state alive until the
  process ends
 
 After a session the engine thread has finished but is joined only when the

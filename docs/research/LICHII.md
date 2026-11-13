@@ -1,14 +1,34 @@
 # Lichii research (reference project)
 
 **Project:** Lichii, https://github.com/zortos293/Lichii (an Eden/yuzu fork with Switch 2 work).
-**Licence:** GPL-3.0-or-later (source files keep their Eden/yuzu/citra SPDX notices). The NEXUS
-Engine is a fork of Lichii build 160 (commit `2eb5f081c`), so every Lichii change up to build 160
-is already in NEXUS, under the same licence and notices. Nothing here describes a NEXUS change
+**Licence:** GPL-3.0-or-later. Since NEXUS 0.8 (development) the NEXUS Engine is based on Lichii
+**build 177** (commit `87d84d513`); before that on build 160 (`2eb5f081c`). Every Lichii change
+up to build 177 is in the NEXUS Engine. Lichii #1544 removed the yuzu Emulator Project's SPDX
+copyright lines from 2,512 files; the NEXUS Engine restores them (engine patch 0018), because
+the GPL requires keeping copyright notices. Nothing here describes a NEXUS change
 unless it says so.
 
 Sources examined: the engine fork's local history (tags `build-65` … `build-160`), in particular
 the 30 commits `build-150..build-160` and the OoT-related commits `build-130..build-150`, read
 from their commit messages and diffs.
+
+## Build 160 → 177 (87 commits) - now in the NEXUS Engine
+
+Read from the commit messages and diffs (`git log build-160..build-177`). Grouped by area; the
+number is Lichii's pull request.
+
+| Area | Changes | Why it matters to NEXUS |
+|---|---|---|
+| **Loader / file system** | #1504: an installed update's ExeFS is no longer applied over a NUP or tree `.nx` program (they carry their own RomFS, so one version's code ran against another version's data); LayeredFS mods are logged. #1456 Switch 1 `.nx` detected as Switch 1. #1503 missing-key messages; keys derivable from the key file are derived. #1500 AoI storage reads throttled (boot hang). | **Prime suspect for OoT stopping after a save loads** when an OoT update is in the game folder: NEXUS passes updates from the game folders to the engine. |
+| **Switch 2 GPU services (nx2_gsv)** | #1512 guest syncpoint increments mirrored before answering waits; #1590 vi2 command 53 timestamp recorders answered (Unreal sees its frames shown); #1413 the GPU thread never waits on kernel locks for sparse blocks; #1458 every device range in a released span released. | Waits that never end look exactly like an endless black loading screen. |
+| **Core / kernel** | #1450 guest threads suspended before power-off (no PANIC when stopping); #1574 a process is registered only after its program loaded; #1576 teardown that still makes progress is waited for; #1451/#1580 zero-page trim pass no longer kills the emulator when Windows runs out of commit, reads less, backs off; #1581/#1532/#1528 SMMU and device memory blocks reused and returned. | Stopping games, memory on 16 GB PCs. |
+| **CPU (dynarmic)** | #1531/#1570 x86-64 code generation from #831 (host call/ret, live flags, address folding, cold code); #1517 register allocator bitmasks (JIT compile time). | Faster code and JIT compilation. |
+| **GPU / Vulkan** | #1516/#1515/#1519/#1520/#1521/#1585/#1586 split front/back optimisations (cheaper reports, fences, fast draws, command-list reuse); #1479 guest reads skip cache locks on untouched pages; #1518 page protection changed after dropping the lock; #1436/#1460/#1459/#1441 buffer-cache correctness; #1505 no cached-pipeline build after a boot that never finished; #1592 a puller torn down mid-wait leaves its waiters. | Fewer GPU-thread waits, correct buffers. |
+| **Shaders** | #1468 fewer SSA phis; #1463/#1577 precache fixes and stale-precache rebuilds; #1511 HSETP2 with constant buffer; #1523 null texture handles; #1485 OoT light-table shadow maps (dark water grid). | Compile time, OoT water. |
+| **Games** | OoT: #1508 DLSS frame generation, #1589 DLSS quality changes render resolution; AoI dynamic FPS (#1513); Star Fox rumble (#1491). | |
+| **Input / audio** | #1497 DualSense HD haptics, #1499 two-motor rumble. | |
+| **Renames** | #1541/#1550/#1551/#1552/#1553 yuzu → Lichii names (`lichii_cmd`, `LICHII_*` options); #1544 yuzu SPDX lines removed (restored in NEXUS). | NEXUS engine patch 0019 follows the new paths. |
+| **Qt / Android only** | game list, recommended settings UI, Android package renames, 16 GB RAM warning dialog. | not used by NEXUS (NEXUS has its own UI) |
 
 ## Build 150 → 160 (30 commits)
 

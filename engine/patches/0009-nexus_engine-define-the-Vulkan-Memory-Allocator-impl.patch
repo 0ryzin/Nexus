@@ -1,7 +1,7 @@
-From 40e2c4b449daca290da83ee89cf3b82dfdc50654 Mon Sep 17 00:00:00 2001
+From 7a6a292d9a23de09dd7d0055cb7a2d7d8386da7a Mon Sep 17 00:00:00 2001
 From: NEXUS <nexus@users.noreply.github.com>
 Date: Wed, 11 Nov 2026 12:39:26 +0000
-Subject: [PATCH 09/17] nexus_engine: define the Vulkan Memory Allocator
+Subject: [PATCH 09/19] nexus_engine: define the Vulkan Memory Allocator
  implementation in the engine library
 
 video_core leaves VMA's implementation to the final binary; nexus_engine.dll

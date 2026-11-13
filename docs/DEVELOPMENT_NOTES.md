@@ -13,7 +13,7 @@
 | `app/account*.go`, `accountd/` | NEXUS Account (GitHub device flow + private Gist; or the self-hosted service) |
 | `app/amiibo.go` | Amiibo library, virtual amiibo, hand-off to the engine |
 | `app/overlay_windows.go`, `perf.go` | In-game HUD (performance strip, REC) |
-| `engine/patches/` | NEXUS changes to the engine, applied by CI on top of Lichii `build-160` |
+| `engine/patches/` | NEXUS changes to the engine, applied by CI on top of Lichii `build-177` |
 | `android/` | Internal Android source (no release) |
 
 ## Where user data lives
@@ -39,7 +39,18 @@ the first frame → Home (`Suspend`: background or pause) → stop. The engine h
 - Windows: CI `nexus-build` builds the engine (about 45-60 min, cached) and NEXUS, runs both test
   suites, packs `NEXUS-<VERSION>-Windows-x64.zip`. A release is published only when
   `docs/releases/v<VERSION>.md` exists (pre-release if it contains `<!-- nexus:prerelease -->`).
-- Engine patches: edit the fork (branch `nexus` on top of `build-160`), then
-  `git format-patch --binary --no-signature -o engine/patches build-160..nexus` and check they
-  apply with `git am` on a clean `build-160` worktree.
+- Engine patches: edit the fork (branch `nexus-177` on top of `build-177`), then
+  `git format-patch --binary --no-signature -o engine/patches build-177..nexus-177` and check they
+  apply with `git am` on a clean `build-177` worktree.
 - Real games cannot be run in CI (no keys, no GPU): anything game-specific needs a test on a PC.
+
+## Moving the engine to a newer Lichii build
+How build 160 → 177 was done (Nov 2026), to repeat for later builds:
+1. `git fetch https://github.com/zortos293/Lichii.git 'refs/tags/*:refs/tags/lichii/*'`.
+2. `git checkout -b nexus-<N> build-<N>` and `git cherry-pick build-<old>..nexus-<old>`; resolve
+   conflicts keeping NEXUS's behaviour (the in-process engine library, volume gain, save folders).
+3. Follow upstream renames in `src/nexus_engine/CMakeLists.txt`, `nexus_engine.cpp` and the CMake
+   options in `.github/workflows/nexus-build.yml`.
+4. Keep upstream copyright notices (revert any commit that removes them).
+5. Regenerate `engine/patches`, test `git am` on a clean worktree, update `app/engine.lock`
+   (`upstreamCommit`, `upstreamBase`, `version`) and let CI build and test on Windows.

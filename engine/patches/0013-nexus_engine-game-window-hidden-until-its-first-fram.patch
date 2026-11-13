@@ -1,7 +1,7 @@
-From ec29b4373c36db5655499012908f130e326526d1 Mon Sep 17 00:00:00 2001
+From d30f0bdead45726320abfc5d0ea9c76138e45c9b Mon Sep 17 00:00:00 2001
 From: NEXUS <nexus@users.noreply.github.com>
 Date: Wed, 11 Nov 2026 19:44:23 +0000
-Subject: [PATCH 13/17] nexus_engine: game window hidden until its first frame,
+Subject: [PATCH 13/19] nexus_engine: game window hidden until its first frame,
  real loading progress, NEXUS Home key
 
 - The game window was created visible before the game loaded. While the engine
@@ -19,10 +19,49 @@ Subject: [PATCH 13/17] nexus_engine: game window hidden until its first frame,
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
 ---
- src/nexus_engine/nexus_engine.cpp         | 124 +++++++++++++++++++++-
- src/yuzu_cmd/emu_window/emu_window_sdl3.h |  19 +++-
+ src/lichii_cmd/emu_window/emu_window_sdl3.h |  19 ++-
+ src/nexus_engine/nexus_engine.cpp           | 124 +++++++++++++++++++-
  2 files changed, 139 insertions(+), 4 deletions(-)
 
+diff --git a/src/lichii_cmd/emu_window/emu_window_sdl3.h b/src/lichii_cmd/emu_window/emu_window_sdl3.h
+index 26348d959..79e536cb4 100644
+--- a/src/lichii_cmd/emu_window/emu_window_sdl3.h
++++ b/src/lichii_cmd/emu_window/emu_window_sdl3.h
+@@ -30,10 +30,20 @@ enum class MouseButton;
+ 
+ // EDEN_NX2_HIDE_WINDOW=1 (anything but 0) creates the render window hidden and without focus, for unattended
+ // test runs that must not cover or interrupt the desktop.
++/// NEXUS: create the game window hidden; the NEXUS engine shows it when the game presents its
++/// first frame, so the NEXUS loading screen stays visible (and no unpainted window appears) while
++/// the game loads.
++inline bool& NexusStartHidden() {
++    static bool hidden = false;
++    return hidden;
++}
++
+ inline SDL_WindowFlags Nx2HiddenWindowFlags() {
+     const char* hide = std::getenv("EDEN_NX2_HIDE_WINDOW");
+-    return hide != nullptr && hide[0] != '0' ? SDL_WINDOW_HIDDEN | SDL_WINDOW_NOT_FOCUSABLE
+-                                                         : SDL_WindowFlags{0};
++    if (hide != nullptr && hide[0] != '0') {
++        return SDL_WINDOW_HIDDEN | SDL_WINDOW_NOT_FOCUSABLE;
++    }
++    return NexusStartHidden() ? SDL_WINDOW_HIDDEN : SDL_WindowFlags{0};
+ }
+ 
+ /// NEXUS: when set, game windows are titled with this text instead of the upstream build name.
+@@ -67,6 +77,11 @@ public:
+     // Sets the window icon from lichii.bmp
+     void SetWindowIcon();
+ 
++    /// NEXUS: apply the fullscreen mode again (after the window was shown).
++    void ApplyFullscreen() {
++        Fullscreen();
++    }
++
+ protected:
+     /// Called by WaitEvent when a key is pressed or released.
+     void OnKeyEvent(int key, u8 state);
 diff --git a/src/nexus_engine/nexus_engine.cpp b/src/nexus_engine/nexus_engine.cpp
 index 5b75b5358..7535468a7 100644
 --- a/src/nexus_engine/nexus_engine.cpp
@@ -238,42 +277,3 @@ index 5b75b5358..7535468a7 100644
      if (const int gen = e.system_gen.load(); gen != 0) {
          j["system"] = gen == 2 ? "switch2" : "switch1";
      }
-diff --git a/src/yuzu_cmd/emu_window/emu_window_sdl3.h b/src/yuzu_cmd/emu_window/emu_window_sdl3.h
-index 35c09cc65..59b673f52 100644
---- a/src/yuzu_cmd/emu_window/emu_window_sdl3.h
-+++ b/src/yuzu_cmd/emu_window/emu_window_sdl3.h
-@@ -30,10 +30,20 @@ enum class MouseButton;
- 
- // EDEN_NX2_HIDE_WINDOW=1 (anything but 0) creates the render window hidden and without focus, for unattended
- // test runs that must not cover or interrupt the desktop.
-+/// NEXUS: create the game window hidden; the NEXUS engine shows it when the game presents its
-+/// first frame, so the NEXUS loading screen stays visible (and no unpainted window appears) while
-+/// the game loads.
-+inline bool& NexusStartHidden() {
-+    static bool hidden = false;
-+    return hidden;
-+}
-+
- inline SDL_WindowFlags Nx2HiddenWindowFlags() {
-     const char* hide = std::getenv("EDEN_NX2_HIDE_WINDOW");
--    return hide != nullptr && hide[0] != '0' ? SDL_WINDOW_HIDDEN | SDL_WINDOW_NOT_FOCUSABLE
--                                                         : SDL_WindowFlags{0};
-+    if (hide != nullptr && hide[0] != '0') {
-+        return SDL_WINDOW_HIDDEN | SDL_WINDOW_NOT_FOCUSABLE;
-+    }
-+    return NexusStartHidden() ? SDL_WINDOW_HIDDEN : SDL_WindowFlags{0};
- }
- 
- /// NEXUS: when set, game windows are titled with this text instead of the upstream build name.
-@@ -67,6 +77,11 @@ public:
-     // Sets the window icon from yuzu.bmp
-     void SetWindowIcon();
- 
-+    /// NEXUS: apply the fullscreen mode again (after the window was shown).
-+    void ApplyFullscreen() {
-+        Fullscreen();
-+    }
-+
- protected:
-     /// Called by WaitEvent when a key is pressed or released.
-     void OnKeyEvent(int key, u8 state);

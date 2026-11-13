@@ -1,7 +1,7 @@
-From 6a1476e688c9d1329fbc4774faebe9b6ec4011f5 Mon Sep 17 00:00:00 2001
+From 821d00f5586305930b5d207270c7841a39ab4c7c Mon Sep 17 00:00:00 2001
 From: NEXUS <nexus@localhost>
 Date: Tue, 10 Nov 2026 23:27:30 +0000
-Subject: [PATCH 01/17] NEXUS engine: in-process engine library, 0-200% gain
+Subject: [PATCH 01/19] NEXUS engine: in-process engine library, 0-200% gain
  with soft limiter, explicit data root, window title/icon, CI and upstream
  sync tooling
 
@@ -15,15 +15,15 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  src/audio_core/sink/nexus_gain.h              |  50 ++
  src/audio_core/sink/sink_stream.cpp           |  19 +-
  src/common/fs/path_util.cpp                   |  21 +-
+ src/lichii_cmd/emu_window/emu_window_sdl3.cpp |   5 +-
+ src/lichii_cmd/emu_window/emu_window_sdl3.h   |  11 +
+ .../emu_window/emu_window_sdl3_gl.cpp         |   3 +
+ .../emu_window/emu_window_sdl3_vk.cpp         |   9 +-
  src/nexus_engine/CMakeLists.txt               |  52 +++
  src/nexus_engine/include/nexus_engine.h       |  62 +++
  src/nexus_engine/nexus_engine.cpp             | 435 ++++++++++++++++++
  src/tests/CMakeLists.txt                      |   1 +
  src/tests/nexus/nexus_gain.cpp                |  38 ++
- src/yuzu_cmd/emu_window/emu_window_sdl3.cpp   |   5 +-
- src/yuzu_cmd/emu_window/emu_window_sdl3.h     |  11 +
- .../emu_window/emu_window_sdl3_gl.cpp         |   3 +
- .../emu_window/emu_window_sdl3_vk.cpp         |   9 +-
  tools/nexus/abi_smoke.py                      |  21 +
  tools/nexus/package_engine.py                 |  24 +
  tools/nexus/upstream-sync.sh                  |  53 +++
@@ -96,16 +96,16 @@ index 000000000..56a1bcac7
 +        with:
 +          files: dist-engine/*
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index c5a5baff0..3a7ef76e2 100644
+index a388417d1..d8f520da0 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -299,6 +299,7 @@ cmake_dependent_option(YUZU_ROOM "Enable dedicated room functionality" ON "NOT A
- cmake_dependent_option(YUZU_ROOM_STANDALONE "Enable standalone room executable" ON "YUZU_ROOM" OFF)
+@@ -300,6 +300,7 @@ cmake_dependent_option(LICHII_ROOM "Enable dedicated room functionality" ON "NOT
+ cmake_dependent_option(LICHII_ROOM_STANDALONE "Enable standalone room executable" ON "LICHII_ROOM" OFF)
  
- cmake_dependent_option(YUZU_CMD "Compile the eden-cli executable" ON "NOT ANDROID" OFF)
+ cmake_dependent_option(LICHII_CMD "Compile the eden-cli executable" ON "NOT ANDROID" OFF)
 +option(NEXUS_ENGINE "Build nexus_engine, the emulation engine library loaded by the NEXUS application" OFF)
  
- cmake_dependent_option(YUZU_CRASH_DUMPS "Compile crash dump (Minidump) support" OFF "WIN32 OR LINUX" OFF)
+ cmake_dependent_option(LICHII_CRASH_DUMPS "Compile crash dump (Minidump) support" OFF "WIN32 OR LINUX" OFF)
  
 diff --git a/dist/nexus.bmp b/dist/nexus.bmp
 new file mode 100644
@@ -216,10 +216,10 @@ literal 0
 HcmV?d00001
 
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index c378b3fa9..8ee4e21d7 100644
+index 603e8216c..af82db461 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
-@@ -307,6 +307,11 @@ add_subdirectory(input_common)
+@@ -306,6 +306,11 @@ add_subdirectory(input_common)
  add_subdirectory(frontend_common)
  add_subdirectory(shader_recompiler)
  
@@ -228,7 +228,7 @@ index c378b3fa9..8ee4e21d7 100644
 +    add_subdirectory(nexus_engine)
 +endif()
 +
- if (YUZU_TESTS)
+ if (LICHII_TESTS)
      add_subdirectory(tests)
  endif()
 diff --git a/src/audio_core/sink/nexus_gain.h b/src/audio_core/sink/nexus_gain.h
@@ -288,10 +288,10 @@ index 000000000..f0506621b
 +
 +} // namespace AudioCore::Nexus
 diff --git a/src/audio_core/sink/sink_stream.cpp b/src/audio_core/sink/sink_stream.cpp
-index ac0ef0dae..e9b40abad 100644
+index 78be66224..99322c6f1 100644
 --- a/src/audio_core/sink/sink_stream.cpp
 +++ b/src/audio_core/sink/sink_stream.cpp
-@@ -20,6 +20,7 @@
+@@ -19,6 +19,7 @@
  #include "common/fixed_point.h"
  #include "common/scope_exit.h"
  #include "common/settings.h"
@@ -299,7 +299,7 @@ index ac0ef0dae..e9b40abad 100644
  #include "core/core.h"
  #include "core/core_timing.h"
  
-@@ -29,13 +30,11 @@ void SinkStream::AppendBuffer(SinkBuffer& buffer, std::span<s16> samples) {
+@@ -28,13 +29,11 @@ void SinkStream::AppendBuffer(SinkBuffer& buffer, std::span<s16> samples) {
      if (type == StreamType::In)
          return;
  
@@ -308,16 +308,16 @@ index ac0ef0dae..e9b40abad 100644
 +    [[maybe_unused]] constexpr s32 min = (std::numeric_limits<s16>::min)();
 +    [[maybe_unused]] constexpr s32 max = (std::numeric_limits<s16>::max)();
  
--    auto yuzu_volume = Settings::Volume();
--    if (yuzu_volume > 1.0f)
--        yuzu_volume = 0.6f + 20.0f * std::log10(yuzu_volume);
--    auto const volume = system_volume * device_volume * yuzu_volume;
+-    auto lichii_volume = Settings::Volume();
+-    if (lichii_volume > 1.0f)
+-        lichii_volume = 0.6f + 20.0f * std::log10(lichii_volume);
+-    auto const volume = system_volume * device_volume * lichii_volume;
 +    // NEXUS: linear 0-200 % master volume with a soft limiter above 100 % (nexus_gain.h).
 +    auto const volume = system_volume * device_volume * Settings::Volume();
      std::size_t pushed{};
      const auto device_samples = samples.size() / system_channels * device_channels;
  
-@@ -58,8 +57,8 @@ void SinkStream::AppendBuffer(SinkBuffer& buffer, std::span<s16> samples) {
+@@ -57,8 +56,8 @@ void SinkStream::AppendBuffer(SinkBuffer& buffer, std::span<s16> samples) {
              const f32 left  = rcoeff[0] * tcoeff[0] + rcoeff[2] * tcoeff[1] + rcoeff[3] * tcoeff[2] + rcoeff[1] * tcoeff[3];
              const f32 right = rcoeff[5] * tcoeff[0] + rcoeff[2] * tcoeff[1] + rcoeff[3] * tcoeff[2] + rcoeff[4] * tcoeff[3];
  
@@ -328,7 +328,7 @@ index ac0ef0dae..e9b40abad 100644
          }
  
          pushed = samples_buffer.Push(samples.subspan(0, device_samples));
-@@ -67,13 +66,13 @@ void SinkStream::AppendBuffer(SinkBuffer& buffer, std::span<s16> samples) {
+@@ -66,13 +65,13 @@ void SinkStream::AppendBuffer(SinkBuffer& buffer, std::span<s16> samples) {
          std::vector<s16> new_samples(samples.size() / system_channels * device_channels);
          for (u32 r_offs = 0, w_offs = 0; r_offs < samples.size(); r_offs += system_channels, w_offs += device_channels)
              for (u32 channel = 0; channel < system_channels; ++channel)
@@ -345,10 +345,10 @@ index ac0ef0dae..e9b40abad 100644
  
          pushed = samples_buffer.Push(samples);
 diff --git a/src/common/fs/path_util.cpp b/src/common/fs/path_util.cpp
-index 55a8ccb4b..765ba3c36 100644
+index 9c2decca9..7614e9210 100644
 --- a/src/common/fs/path_util.cpp
 +++ b/src/common/fs/path_util.cpp
-@@ -115,12 +115,17 @@ public:
+@@ -114,12 +114,17 @@ public:
      void Reinitialize(fs::path eden_path = {}) {
          fs::path eden_path_cache;
          fs::path eden_path_config;
@@ -370,7 +370,7 @@ index 55a8ccb4b..765ba3c36 100644
          }
          eden_path_cache = eden_path / CACHE_DIR;
          eden_path_config = eden_path / CONFIG_DIR;
-@@ -139,9 +144,11 @@ public:
+@@ -138,9 +143,11 @@ public:
          eden_path_cache = eden_path / CACHE_DIR;
          eden_path_config = eden_path / CONFIG_DIR;
  #else
@@ -385,6 +385,85 @@ index 55a8ccb4b..765ba3c36 100644
              eden_path = GetDataDirectory("XDG_DATA_HOME") / EDEN_DIR;
              eden_path_cache = GetDataDirectory("XDG_CACHE_HOME") / EDEN_DIR;
              eden_path_config = GetDataDirectory("XDG_CONFIG_HOME") / EDEN_DIR;
+diff --git a/src/lichii_cmd/emu_window/emu_window_sdl3.cpp b/src/lichii_cmd/emu_window/emu_window_sdl3.cpp
+index e04d24603..3895bec35 100644
+--- a/src/lichii_cmd/emu_window/emu_window_sdl3.cpp
++++ b/src/lichii_cmd/emu_window/emu_window_sdl3.cpp
+@@ -39,7 +39,10 @@ EmuWindow_SDL3::EmuWindow_SDL3(InputCommon::InputSubsystem* input_subsystem_, Co
+     titlebar_timer = SDL_AddTimer(2000, [](void *userdata, SDL_TimerID, Uint32) -> Uint32 {
+         auto* this_ = (EmuWindow_SDL3*)userdata;
+         auto const results = this_->system.GetAndResetPerfStats();
+-        auto* const title = new std::string(fmt::format("{} | {}-{} | FPS: {:.0f} ({:.0f}%)", Common::g_build_fullname, Common::g_scm_branch, Common::g_scm_desc, results.average_game_fps, results.emulation_speed * 100.0f));
++        auto* const title = new std::string(
++            WindowTitleOverride().empty()
++                ? fmt::format("{} | {}-{} | FPS: {:.0f} ({:.0f}%)", Common::g_build_fullname, Common::g_scm_branch, Common::g_scm_desc, results.average_game_fps, results.emulation_speed * 100.0f)
++                : fmt::format("{} | FPS: {:.0f} ({:.0f}%)", WindowTitleOverride(), results.average_game_fps, results.emulation_speed * 100.0f));
+         // Timers run on their own thread and AppKit throws when a title is set off the main
+         // thread: ApplyPendingTitle sets it from the main loop.
+         delete this_->pending_title.exchange(title);
+diff --git a/src/lichii_cmd/emu_window/emu_window_sdl3.h b/src/lichii_cmd/emu_window/emu_window_sdl3.h
+index 39fbe954a..26348d959 100644
+--- a/src/lichii_cmd/emu_window/emu_window_sdl3.h
++++ b/src/lichii_cmd/emu_window/emu_window_sdl3.h
+@@ -36,6 +36,12 @@ inline SDL_WindowFlags Nx2HiddenWindowFlags() {
+                                                          : SDL_WindowFlags{0};
+ }
+ 
++/// NEXUS: when set, game windows are titled with this text instead of the upstream build name.
++inline std::string& WindowTitleOverride() {
++    static std::string title;
++    return title;
++}
++
+ class EmuWindow_SDL3 : public Core::Frontend::EmuWindow {
+ public:
+     explicit EmuWindow_SDL3(InputCommon::InputSubsystem* input_subsystem_, Core::System& system_);
+@@ -44,6 +50,11 @@ public:
+     /// Whether the window is still open, and a close request hasn't yet been sent
+     bool IsOpen() const;
+ 
++    /// NEXUS: the SDL window, so the engine host can attach it to the NEXUS window.
++    SDL_Window* GetSDLWindow() const {
++        return render_window;
++    }
++
+     /// Sets the title the titlebar timer prepared; call from the main thread.
+     void ApplyPendingTitle();
+ 
+diff --git a/src/lichii_cmd/emu_window/emu_window_sdl3_gl.cpp b/src/lichii_cmd/emu_window/emu_window_sdl3_gl.cpp
+index e2b50d17b..ceaaf83e5 100644
+--- a/src/lichii_cmd/emu_window/emu_window_sdl3_gl.cpp
++++ b/src/lichii_cmd/emu_window/emu_window_sdl3_gl.cpp
+@@ -96,6 +96,9 @@ EmuWindow_SDL3_GL::EmuWindow_SDL3_GL(InputCommon::InputSubsystem* input_subsyste
+ 
+     std::string window_title = fmt::format("{} | {}-{}", Common::g_build_fullname,
+                                            Common::g_scm_branch, Common::g_scm_desc);
++    if (!WindowTitleOverride().empty()) {
++        window_title = WindowTitleOverride();
++    }
+     render_window =
+         SDL_CreateWindow(window_title.c_str(), Layout::ScreenUndocked::Width,
+                          Layout::ScreenUndocked::Height,
+diff --git a/src/lichii_cmd/emu_window/emu_window_sdl3_vk.cpp b/src/lichii_cmd/emu_window/emu_window_sdl3_vk.cpp
+index 5b4ebed0a..b1c7e1be9 100644
+--- a/src/lichii_cmd/emu_window/emu_window_sdl3_vk.cpp
++++ b/src/lichii_cmd/emu_window/emu_window_sdl3_vk.cpp
+@@ -21,10 +21,11 @@
+ EmuWindow_SDL3_VK::EmuWindow_SDL3_VK(InputCommon::InputSubsystem* input_subsystem_,
+                                      Core::System& system_, bool fullscreen)
+     : EmuWindow_SDL3{input_subsystem_, system_} {
+-    const std::string window_title = fmt::format("Eden {} | {}-{} (Vulkan)",
+-                                                 Common::g_build_name,
+-                                                 Common::g_scm_branch,
+-                                                 Common::g_scm_desc);
++    const std::string window_title =
++        WindowTitleOverride().empty()
++            ? fmt::format("Eden {} | {}-{} (Vulkan)", Common::g_build_name, Common::g_scm_branch,
++                          Common::g_scm_desc)
++            : WindowTitleOverride();
+     render_window =
+         SDL_CreateWindow(window_title.c_str(), Layout::ScreenUndocked::Width,
+                          Layout::ScreenUndocked::Height,
 diff --git a/src/nexus_engine/CMakeLists.txt b/src/nexus_engine/CMakeLists.txt
 new file mode 100644
 index 000000000..e0134426b
@@ -953,10 +1032,10 @@ index 000000000..9d420e8d7
 +
 +} // extern "C"
 diff --git a/src/tests/CMakeLists.txt b/src/tests/CMakeLists.txt
-index 8f787ee8b..c9f73cace 100644
+index 853568b14..639ba9a5b 100644
 --- a/src/tests/CMakeLists.txt
 +++ b/src/tests/CMakeLists.txt
-@@ -5,6 +5,7 @@
+@@ -4,6 +4,7 @@
  # SPDX-License-Identifier: GPL-2.0-or-later
  
  add_executable(tests
@@ -1008,85 +1087,6 @@ index 000000000..623954df5
 +    REQUIRE(ApplyGain(32767.0f, 2.0f) < 32767 + 1);
 +    REQUIRE(ApplyGain(30000.0f, 2.0f) > ApplyGain(20000.0f, 2.0f));
 +}
-diff --git a/src/yuzu_cmd/emu_window/emu_window_sdl3.cpp b/src/yuzu_cmd/emu_window/emu_window_sdl3.cpp
-index a640cf9f1..44dd98826 100644
---- a/src/yuzu_cmd/emu_window/emu_window_sdl3.cpp
-+++ b/src/yuzu_cmd/emu_window/emu_window_sdl3.cpp
-@@ -39,7 +39,10 @@ EmuWindow_SDL3::EmuWindow_SDL3(InputCommon::InputSubsystem* input_subsystem_, Co
-     titlebar_timer = SDL_AddTimer(2000, [](void *userdata, SDL_TimerID, Uint32) -> Uint32 {
-         auto* this_ = (EmuWindow_SDL3*)userdata;
-         auto const results = this_->system.GetAndResetPerfStats();
--        auto* const title = new std::string(fmt::format("{} | {}-{} | FPS: {:.0f} ({:.0f}%)", Common::g_build_fullname, Common::g_scm_branch, Common::g_scm_desc, results.average_game_fps, results.emulation_speed * 100.0f));
-+        auto* const title = new std::string(
-+            WindowTitleOverride().empty()
-+                ? fmt::format("{} | {}-{} | FPS: {:.0f} ({:.0f}%)", Common::g_build_fullname, Common::g_scm_branch, Common::g_scm_desc, results.average_game_fps, results.emulation_speed * 100.0f)
-+                : fmt::format("{} | FPS: {:.0f} ({:.0f}%)", WindowTitleOverride(), results.average_game_fps, results.emulation_speed * 100.0f));
-         // Timers run on their own thread and AppKit throws when a title is set off the main
-         // thread: ApplyPendingTitle sets it from the main loop.
-         delete this_->pending_title.exchange(title);
-diff --git a/src/yuzu_cmd/emu_window/emu_window_sdl3.h b/src/yuzu_cmd/emu_window/emu_window_sdl3.h
-index 6e315d407..35c09cc65 100644
---- a/src/yuzu_cmd/emu_window/emu_window_sdl3.h
-+++ b/src/yuzu_cmd/emu_window/emu_window_sdl3.h
-@@ -36,6 +36,12 @@ inline SDL_WindowFlags Nx2HiddenWindowFlags() {
-                                                          : SDL_WindowFlags{0};
- }
- 
-+/// NEXUS: when set, game windows are titled with this text instead of the upstream build name.
-+inline std::string& WindowTitleOverride() {
-+    static std::string title;
-+    return title;
-+}
-+
- class EmuWindow_SDL3 : public Core::Frontend::EmuWindow {
- public:
-     explicit EmuWindow_SDL3(InputCommon::InputSubsystem* input_subsystem_, Core::System& system_);
-@@ -44,6 +50,11 @@ public:
-     /// Whether the window is still open, and a close request hasn't yet been sent
-     bool IsOpen() const;
- 
-+    /// NEXUS: the SDL window, so the engine host can attach it to the NEXUS window.
-+    SDL_Window* GetSDLWindow() const {
-+        return render_window;
-+    }
-+
-     /// Sets the title the titlebar timer prepared; call from the main thread.
-     void ApplyPendingTitle();
- 
-diff --git a/src/yuzu_cmd/emu_window/emu_window_sdl3_gl.cpp b/src/yuzu_cmd/emu_window/emu_window_sdl3_gl.cpp
-index 98be7788f..d1af96c3b 100644
---- a/src/yuzu_cmd/emu_window/emu_window_sdl3_gl.cpp
-+++ b/src/yuzu_cmd/emu_window/emu_window_sdl3_gl.cpp
-@@ -97,6 +97,9 @@ EmuWindow_SDL3_GL::EmuWindow_SDL3_GL(InputCommon::InputSubsystem* input_subsyste
- 
-     std::string window_title = fmt::format("{} | {}-{}", Common::g_build_fullname,
-                                            Common::g_scm_branch, Common::g_scm_desc);
-+    if (!WindowTitleOverride().empty()) {
-+        window_title = WindowTitleOverride();
-+    }
-     render_window =
-         SDL_CreateWindow(window_title.c_str(), Layout::ScreenUndocked::Width,
-                          Layout::ScreenUndocked::Height,
-diff --git a/src/yuzu_cmd/emu_window/emu_window_sdl3_vk.cpp b/src/yuzu_cmd/emu_window/emu_window_sdl3_vk.cpp
-index 247d189bd..bde19fa27 100644
---- a/src/yuzu_cmd/emu_window/emu_window_sdl3_vk.cpp
-+++ b/src/yuzu_cmd/emu_window/emu_window_sdl3_vk.cpp
-@@ -22,10 +22,11 @@
- EmuWindow_SDL3_VK::EmuWindow_SDL3_VK(InputCommon::InputSubsystem* input_subsystem_,
-                                      Core::System& system_, bool fullscreen)
-     : EmuWindow_SDL3{input_subsystem_, system_} {
--    const std::string window_title = fmt::format("Eden {} | {}-{} (Vulkan)",
--                                                 Common::g_build_name,
--                                                 Common::g_scm_branch,
--                                                 Common::g_scm_desc);
-+    const std::string window_title =
-+        WindowTitleOverride().empty()
-+            ? fmt::format("Eden {} | {}-{} (Vulkan)", Common::g_build_name, Common::g_scm_branch,
-+                          Common::g_scm_desc)
-+            : WindowTitleOverride();
-     render_window =
-         SDL_CreateWindow(window_title.c_str(), Layout::ScreenUndocked::Width,
-                          Layout::ScreenUndocked::Height,
 diff --git a/tools/nexus/abi_smoke.py b/tools/nexus/abi_smoke.py
 new file mode 100644
 index 000000000..dc175e420

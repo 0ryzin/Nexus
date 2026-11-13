@@ -1,7 +1,7 @@
 # NEXUS: instructions for development sessions
 
 NEXUS is a Nintendo Switch / Switch 2 emulator front end (Go + WebView2 UI, `app/`) around the
-NEXUS Engine (a GPL-3.0 fork of Lichii build 160, itself based on Eden/yuzu; built from
+NEXUS Engine (a GPL-3.0 fork of Lichii build 177, itself based on Eden/yuzu; built from
 `engine/patches` by CI). Read this file first, then the documents it points to.
 
 ## Before changing anything

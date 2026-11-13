@@ -12,6 +12,15 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
 - Ocarina of Time stuck loading: investigated (see docs/COMPATIBILITY.md); not reproduced, not yet fixed.
 - Knowledge base: CLAUDE.md, docs/DEVELOPMENT_NOTES.md, COMPATIBILITY.md, REGRESSION_HISTORY.md, research/LICHII.md, research/FRITCHII.md, benchmark method in PERFORMANCE.md.
 
+## 0.8.0 — in development (not released)
+
+- **NEXUS Engine 0.8.0 on Lichii build 177** (was build 160): 87 upstream engine changes, among
+  them updates no longer applied over NUP programs (a likely cause of Ocarina of Time staying
+  black after a save loads), Switch 2 GPU-service waits that could never end, faster x86-64 code
+  generation, GPU split and buffer-cache work, memory reuse and Windows commit-limit handling.
+  The NEXUS host patches were re-applied on top; the yuzu project's copyright notices that
+  Lichii removed are kept. Not yet tested with games.
+
 ## 0.6.0 — test build (pre-release)
 
 0.5.0 was never released; its changes below ship in 0.6.0 together with:

@@ -1,7 +1,7 @@
-From c0270408d9959374e980a6efe559ee67c587c827 Mon Sep 17 00:00:00 2001
+From f5870cf38f7b016e55aa143faabfa27c7909061f Mon Sep 17 00:00:00 2001
 From: NEXUS <nexus@users.noreply.github.com>
 Date: Wed, 11 Nov 2026 17:57:11 +0000
-Subject: [PATCH 11/17] nexus_engine: a host-managed data folder is never
+Subject: [PATCH 11/19] nexus_engine: a host-managed data folder is never
  blocked by other emulators' data
 
 Lichii build-150 (#1253) refuses to create a configuration while data of
@@ -25,10 +25,10 @@ Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
  4 files changed, 47 insertions(+)
 
 diff --git a/src/common/fs/path_util.cpp b/src/common/fs/path_util.cpp
-index 765ba3c36..55ca2428c 100644
+index 7614e9210..9442d2bb5 100644
 --- a/src/common/fs/path_util.cpp
 +++ b/src/common/fs/path_util.cpp
-@@ -93,6 +93,10 @@ public:
+@@ -92,6 +92,10 @@ public:
          return portable;
      }
  
@@ -39,7 +39,7 @@ index 765ba3c36..55ca2428c 100644
      void CreateEdenPaths() {
          std::for_each(eden_paths.begin(), eden_paths.end(), [](auto &path) {
              void(FS::CreateDirs(path.second));
-@@ -118,6 +122,7 @@ public:
+@@ -117,6 +121,7 @@ public:
          // NEXUS: an explicit root (SetAppDirectory) is honoured on every platform, so the
          // NEXUS engine keeps all of its data in the folder the NEXUS application chooses.
          const bool explicit_root = !eden_path.empty();
@@ -47,7 +47,7 @@ index 765ba3c36..55ca2428c 100644
  #ifdef _WIN32
          // User directory takes priority over global %AppData% directory
          if (!explicit_root) {
-@@ -220,6 +225,8 @@ private:
+@@ -219,6 +224,8 @@ private:
      ::Common::unordered_map<EdenPath, fs::path> eden_paths;
      ::Common::unordered_map<EmuPath, fs::path> legacy_paths;
      bool portable{};
@@ -56,7 +56,7 @@ index 765ba3c36..55ca2428c 100644
  };
  
  bool ValidatePath(const fs::path& path) {
-@@ -307,6 +314,10 @@ bool IsPortableMode() {
+@@ -306,6 +313,10 @@ bool IsPortableMode() {
      return PathManagerImpl::GetInstance().IsPortableMode();
  }
  
@@ -68,10 +68,10 @@ index 765ba3c36..55ca2428c 100644
      return PathManagerImpl::GetInstance().GetEdenPathImpl(eden_path);
  }
 diff --git a/src/common/fs/path_util.h b/src/common/fs/path_util.h
-index 40985cb4d..2742b68af 100644
+index b1fc19222..6e4145656 100644
 --- a/src/common/fs/path_util.h
 +++ b/src/common/fs/path_util.h
-@@ -229,6 +229,13 @@ void SetAppDirectory(const std::string& app_directory);
+@@ -228,6 +228,13 @@ void SetAppDirectory(const std::string& app_directory);
  
  [[nodiscard]] bool IsPortableMode();
  

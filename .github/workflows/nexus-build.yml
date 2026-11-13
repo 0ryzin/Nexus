@@ -178,12 +178,12 @@ jobs:
             -DNEXUS_ENGINE=ON \
             -DNEXUS_ENGINE_VERSION=${{ steps.lock.outputs.version }} \
             -DBUILD_TESTING=ON \
-            -DYUZU_TESTS=ON \
+            -DLICHII_TESTS=ON \
             -DENABLE_QT=OFF \
-            -DYUZU_CMD=OFF \
-            -DYUZU_ROOM=OFF \
-            -DYUZU_ROOM_STANDALONE=OFF \
-            -DYUZU_USE_BUNDLED_SDL3=ON \
+            -DLICHII_CMD=OFF \
+            -DLICHII_ROOM=OFF \
+            -DLICHII_ROOM_STANDALONE=OFF \
+            -DLICHII_USE_BUNDLED_SDL3=ON \
             -DENABLE_UPDATE_CHECKER=OFF \
             -DENABLE_WEB_SERVICE=OFF \
             -DUSE_DISCORD_PRESENCE=OFF \

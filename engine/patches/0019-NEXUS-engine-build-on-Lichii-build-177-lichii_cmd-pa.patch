@@ -1,0 +1,114 @@
+From 7a9c78896283ec480179ab4b573f85d40eebd6ae Mon Sep 17 00:00:00 2001
+From: NEXUS <nexus@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 17:28:51 +0000
+Subject: [PATCH 19/19] NEXUS engine: build on Lichii build 177 (lichii_cmd
+ paths and LICHII_* options)
+
+Lichii renamed yuzu_cmd to lichii_cmd and the YUZU_* CMake options to LICHII_* (#1541, #1550).
+The engine library takes the window and SDL configuration sources from the new paths and
+generates the window icon header under the new name.
+---
+ .github/workflows/nexus-engine.yml |  4 ++--
+ src/nexus_engine/CMakeLists.txt    | 26 +++++++++++++-------------
+ src/nexus_engine/nexus_engine.cpp  | 12 ++++++------
+ 3 files changed, 21 insertions(+), 21 deletions(-)
+
+diff --git a/.github/workflows/nexus-engine.yml b/.github/workflows/nexus-engine.yml
+index 56a1bcac7..5fb272cd8 100644
+--- a/.github/workflows/nexus-engine.yml
++++ b/.github/workflows/nexus-engine.yml
+@@ -24,8 +24,8 @@ jobs:
+         shell: cmd
+         run: >
+           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+-          -DENABLE_QT=OFF -DYUZU_CMD=OFF -DNEXUS_ENGINE=ON -DYUZU_TESTS=ON
+-          -DENABLE_WEB_SERVICE=OFF -DYUZU_ROOM=OFF -DENABLE_UPDATE_CHECKER=OFF -DENABLE_WERROR=OFF
++          -DENABLE_QT=OFF -DLICHII_CMD=OFF -DNEXUS_ENGINE=ON -DLICHII_TESTS=ON
++          -DENABLE_WEB_SERVICE=OFF -DLICHII_ROOM=OFF -DENABLE_UPDATE_CHECKER=OFF -DENABLE_WERROR=OFF
+           -DNEXUS_ENGINE_VERSION=%GITHUB_REF_NAME%
+       - name: Build
+         shell: cmd
+diff --git a/src/nexus_engine/CMakeLists.txt b/src/nexus_engine/CMakeLists.txt
+index 6235765bf..ca8c2028c 100644
+--- a/src/nexus_engine/CMakeLists.txt
++++ b/src/nexus_engine/CMakeLists.txt
+@@ -8,22 +8,22 @@
+ set(NEXUS_ENGINE_VERSION "0.1.0" CACHE STRING "Version reported by nexus_engine_info")
+ 
+ if (ENABLE_OPENGL)
+-    set(NEXUS_GL_SOURCES ../yuzu_cmd/emu_window/emu_window_sdl3_gl.cpp ../yuzu_cmd/emu_window/emu_window_sdl3_gl.h)
++    set(NEXUS_GL_SOURCES ../lichii_cmd/emu_window/emu_window_sdl3_gl.cpp ../lichii_cmd/emu_window/emu_window_sdl3_gl.h)
+ endif()
+ 
+ add_library(nexus_engine SHARED
+     include/nexus_engine.h
+     nexus_engine.cpp
+     vma.cpp
+-    ../yuzu_cmd/emu_window/emu_window_sdl3.cpp
+-    ../yuzu_cmd/emu_window/emu_window_sdl3.h
+-    ../yuzu_cmd/emu_window/sdl_window_state.h
+-    ../yuzu_cmd/emu_window/emu_window_sdl3_null.cpp
+-    ../yuzu_cmd/emu_window/emu_window_sdl3_null.h
+-    ../yuzu_cmd/emu_window/emu_window_sdl3_vk.cpp
+-    ../yuzu_cmd/emu_window/emu_window_sdl3_vk.h
+-    ../yuzu_cmd/sdl_config.cpp
+-    ../yuzu_cmd/sdl_config.h
++    ../lichii_cmd/emu_window/emu_window_sdl3.cpp
++    ../lichii_cmd/emu_window/emu_window_sdl3.h
++    ../lichii_cmd/emu_window/sdl_window_state.h
++    ../lichii_cmd/emu_window/emu_window_sdl3_null.cpp
++    ../lichii_cmd/emu_window/emu_window_sdl3_null.h
++    ../lichii_cmd/emu_window/emu_window_sdl3_vk.cpp
++    ../lichii_cmd/emu_window/emu_window_sdl3_vk.h
++    ../lichii_cmd/sdl_config.cpp
++    ../lichii_cmd/sdl_config.h
+     ${NEXUS_GL_SOURCES}
+ )
+ 
+@@ -37,11 +37,11 @@ endif()
+ set_target_properties(nexus_engine PROPERTIES PREFIX "" C_VISIBILITY_PRESET hidden CXX_VISIBILITY_PRESET hidden)
+ 
+ # Window icon: the NEXUS emblem (dist/nexus.bmp) compiled in under the name the upstream window
+-# code includes ("yuzu_cmd/yuzu_icon.h").
++# code includes ("lichii_cmd/lichii_icon.h").
+ file(READ "${PROJECT_SOURCE_DIR}/dist/nexus.bmp" NEXUS_ICON_HEX HEX)
+ string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," NEXUS_ICON_HEX "${NEXUS_ICON_HEX}")
+-file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/gen/yuzu_cmd/yuzu_icon.h"
+-    "const unsigned char yuzu_icon[] = {${NEXUS_ICON_HEX}};\nconst unsigned yuzu_icon_size = sizeof(yuzu_icon);\n")
++file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/gen/lichii_cmd/lichii_icon.h"
++    "const unsigned char lichii_icon[] = {${NEXUS_ICON_HEX}};\nconst unsigned lichii_icon_size = sizeof(lichii_icon);\n")
+ 
+ if (NOT MSVC)
+     target_compile_options(nexus_engine PRIVATE
+diff --git a/src/nexus_engine/nexus_engine.cpp b/src/nexus_engine/nexus_engine.cpp
+index dabf4c6f2..91489d9cd 100644
+--- a/src/nexus_engine/nexus_engine.cpp
++++ b/src/nexus_engine/nexus_engine.cpp
+@@ -2,7 +2,7 @@
+ // SPDX-License-Identifier: GPL-3.0-or-later
+ 
+ // NEXUS Engine session host. The game lifecycle mirrors the upstream command-line frontend
+-// (src/yuzu_cmd/yuzu.cpp: Initialize, ApplySettings, window, content providers, Load, GPU start,
++// (src/lichii_cmd/lichii.cpp: Initialize, ApplySettings, window, content providers, Load, GPU start,
+ // Run, and Pause + ShutdownMainProcess on exit) but runs inside the NEXUS process on an engine
+ // thread, is driven through the C interface in nexus_engine.h and reports its state back to
+ // NEXUS instead of to a console.
+@@ -57,13 +57,13 @@
+ #include "video_core/gpu.h"
+ #include "video_core/rasterizer_interface.h"
+ #include "video_core/renderer_base.h"
+-#include "yuzu_cmd/emu_window/emu_window_sdl3.h"
++#include "lichii_cmd/emu_window/emu_window_sdl3.h"
+ #ifdef HAS_OPENGL
+-#include "yuzu_cmd/emu_window/emu_window_sdl3_gl.h"
++#include "lichii_cmd/emu_window/emu_window_sdl3_gl.h"
+ #endif
+-#include "yuzu_cmd/emu_window/emu_window_sdl3_null.h"
+-#include "yuzu_cmd/emu_window/emu_window_sdl3_vk.h"
+-#include "yuzu_cmd/sdl_config.h"
++#include "lichii_cmd/emu_window/emu_window_sdl3_null.h"
++#include "lichii_cmd/emu_window/emu_window_sdl3_vk.h"
++#include "lichii_cmd/sdl_config.h"
+ 
+ #ifdef _WIN32
+ #include <windows.h>
