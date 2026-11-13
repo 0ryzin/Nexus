@@ -18,10 +18,17 @@ package main
 //   - Drawing: a per-pixel-alpha bitmap (UpdateLayeredWindow): a translucent dark background with
 //     opaque text, in the style of a handheld's performance strip (small coloured labels, large
 //     values, small units), scaled with the picture's height.
+// Ownership is set after the HUD windows exist (GWLP_HWNDPARENT), and Windows only stacks owned
+// windows above their owner when the owner itself is re-stacked. Before 0.8.0 the strip could
+// therefore stay below the game window until F11 re-stacked it (docs/REGRESSION_HISTORY.md), so
+// the HUD now puts itself directly above its owner whenever it is shown, changes owner, or the
+// owner moves, changes size or comes to the front (stack). The refresh timer runs only while a
+// game is running; the emulator.state event starts it.
 // A game in exclusive full screen covers every other window; the HUD needs borderless full screen
 // (the default) or a window.
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"runtime"
@@ -64,6 +71,10 @@ var (
 	procOvTextOut            = ovGdi.NewProc("TextOutW")
 	procOvGetTextExtentPoint = ovGdi.NewProc("GetTextExtentPoint32W")
 	procOvGetCurrentThreadID = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetCurrentThreadId")
+	procOvSetWindowPos       = ovUser.NewProc("SetWindowPos")
+	procOvGetWindow          = ovUser.NewProc("GetWindow")
+	procOvKillTimer          = ovUser.NewProc("KillTimer")
+	procOvPostMessage        = ovUser.NewProc("PostMessageW")
 )
 
 const (
@@ -81,6 +92,8 @@ const (
 	evMinimizeEnd    = 0x0017
 	evForeground     = 0x0003
 	winEventOutOfCtx = 0
+	wmHUDState       = 0x0400 + 1 // WM_USER+1: the emulator's state changed
+	hudTimerMs       = 500
 )
 
 type ovRect = pxRect
@@ -147,9 +160,10 @@ type ovBitmapInfo struct {
 }
 
 type hudWin struct {
-	hwnd  uintptr
-	owner uintptr
-	shown bool
+	hwnd    uintptr
+	owner   uintptr
+	shown   bool
+	restack bool // owner changed or just shown: put it above the owner after drawing
 }
 
 type perfOverlay struct {
@@ -162,6 +176,7 @@ type perfOverlay struct {
 	host    uintptr // the window the game is drawn in, and its top-level window
 	top     uintptr
 	started bool
+	ticking bool // the refresh timer is running (only while a game runs)
 }
 
 var overlay = &perfOverlay{}
@@ -200,7 +215,8 @@ func (o *perfOverlay) loop() {
 	procOvSetWinEventHook.Call(evLocationChange, evLocationChange, 0, cb, pid, 0, winEventOutOfCtx)
 	procOvSetWinEventHook.Call(evMinimizeStart, evMinimizeEnd, 0, cb, pid, 0, winEventOutOfCtx)
 	procOvSetWinEventHook.Call(evForeground, evForeground, 0, cb, 0, 0, winEventOutOfCtx)
-	procOvSetTimer.Call(o.bar.hwnd, 1, 500, 0) // readings twice a second
+	o.armTimer(o.app.Emu.State().Running)
+	go o.followEmulator()
 	var m ovMsg
 	for {
 		r, _, _ := procOvGetMessage.Call(uintptr(unsafe.Pointer(&m)), 0, 0, 0)
@@ -221,20 +237,77 @@ func (o *perfOverlay) winEvent(hook, event, hwnd, idObject, idChild, thread, t u
 	case evLocationChange: // only the game's window matters (not every control inside NEXUS)
 		if (hwnd == o.host || hwnd == o.top) && (o.bar.shown || o.rec.shown) {
 			o.update(false)
+			o.stackAll()
 		}
-	default:
+	default: // minimise/restore, a window came to the front
 		o.update(false)
+		o.stackAll()
 	}
 	return 0
 }
 
+// followEmulator wakes the HUD thread when a game starts, stops, pauses or resumes, so it does
+// not need a timer while NEXUS sits on Home.
+func (o *perfOverlay) followEmulator() {
+	ch := o.app.Events.Subscribe()
+	for m := range ch {
+		if bytes.Contains(m, []byte(`"type":"emulator.state"`)) || bytes.Contains(m, []byte(`"type":"emulator.exit"`)) {
+			procOvPostMessage.Call(o.bar.hwnd, wmHUDState, 0, 0)
+		}
+	}
+}
+
+// armTimer starts the twice-a-second refresh while a game runs and stops it otherwise.
+func (o *perfOverlay) armTimer(running bool) {
+	switch {
+	case running && !o.ticking:
+		procOvSetTimer.Call(o.bar.hwnd, 1, hudTimerMs, 0)
+		o.ticking = true
+	case !running && o.ticking:
+		procOvKillTimer.Call(o.bar.hwnd, 1)
+		o.ticking = false
+	}
+}
+
 func (o *perfOverlay) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
-	if msg == wmTimer {
+	switch msg {
+	case wmTimer:
 		o.update(true)
+		if !o.app.Emu.State().Running {
+			o.armTimer(false)
+		}
+		return 0
+	case wmHUDState:
+		o.armTimer(o.app.Emu.State().Running)
+		o.update(true)
+		o.stackAll()
 		return 0
 	}
 	r, _, _ := procOvDefWindowProc.Call(hwnd, uintptr(msg), wp, lp)
 	return r
+}
+
+// stack puts a shown HUD window directly above its owner in the z-order: just below whatever
+// window is above the owner, so it never covers another program that is in front of the game.
+func (o *perfOverlay) stack(w *hudWin) {
+	if !w.shown || w.owner == 0 {
+		return
+	}
+	above, _, _ := procOvGetWindow.Call(w.owner, 3 /*GW_HWNDPREV*/)
+	for above == o.bar.hwnd || above == o.rec.hwnd { // HUD windows already there
+		if above == w.hwnd {
+			return
+		}
+		above, _, _ = procOvGetWindow.Call(above, 3)
+	}
+	// above == 0 (HWND_TOP) when the owner is the top window
+	procOvSetWindowPos.Call(w.hwnd, above, 0, 0, 0, 0,
+		0x0001|0x0002|0x0010 /*SWP_NOSIZE|SWP_NOMOVE|SWP_NOACTIVATE*/)
+}
+
+func (o *perfOverlay) stackAll() {
+	o.stack(&o.bar)
+	o.stack(&o.rec)
 }
 
 func (o *perfOverlay) hide(w *hudWin) {
@@ -249,6 +322,7 @@ func (o *perfOverlay) own(w *hudWin, owner uintptr) {
 	if w.owner != owner {
 		procOvSetWindowLongPtr.Call(w.hwnd, gwlpHwndParent, owner)
 		w.owner = owner
+		w.restack = true
 	}
 }
 
@@ -459,9 +533,16 @@ func (o *perfOverlay) draw(win *hudWin, x, y, w, h int32, bgAlpha byte, segs []P
 	blend := uint32(0x01FF0000) // AC_SRC_OVER, 0, 255, AC_SRC_ALPHA
 	procOvUpdateLayered.Call(win.hwnd, 0, uintptr(unsafe.Pointer(&pt[0])), uintptr(unsafe.Pointer(&size[0])), dc,
 		uintptr(unsafe.Pointer(&src[0])), 0, uintptr(unsafe.Pointer(&blend)), ulwAlpha)
-	if !win.shown {
+	// Windows hides owned windows with their owner (minimise) and shows them again itself, so
+	// whether it is on screen is asked, not remembered
+	if vis, _, _ := procOvIsWindowVisible.Call(win.hwnd); vis == 0 || !win.shown {
 		procOvShowWindow.Call(win.hwnd, swShowNoActivate)
 		win.shown = true
+		win.restack = true
+	}
+	if win.restack {
+		win.restack = false
+		o.stack(win)
 	}
 }
 

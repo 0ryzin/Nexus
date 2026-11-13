@@ -111,3 +111,39 @@ func TestWindowStyleFor(t *testing.T) {
 		t.Fatal("visible window lost WS_VISIBLE")
 	}
 }
+
+// TestHUDStacksAboveItsOwner is the regression test for "the performance bar only appeared after
+// F11": a HUD window whose owner is set after creation is put directly above the owner, and not
+// above another window that is in front of the owner.
+func TestHUDStacksAboveItsOwner(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	app, _ := newTestApp(t, "")
+	owner := testWindow(t, "NEXUSWindowTest3")
+	other := testWindow(t, "NEXUSWindowTest4")
+	hud := testWindow(t, "NEXUSWindowTest5")
+	for _, w := range []uintptr{hud, owner, other} { // hud first: it starts below the owner
+		procShowWindow.Call(w, swShowNoActivate)
+	}
+	procSetWindowPos.Call(other, 0, 0, 0, 0, 0, 0x0001|0x0002|0x0010)
+	procSetWindowPos.Call(hud, 1 /*HWND_BOTTOM*/, 0, 0, 0, 0, 0x0001|0x0002|0x0010)
+	prev := func(w uintptr) uintptr { p, _, _ := procOvGetWindow.Call(w, 3); return p }
+	if prev(owner) == hud {
+		t.Fatal("test setup: hud already above the owner")
+	}
+
+	o := &perfOverlay{app: app}
+	o.bar = hudWin{hwnd: hud, shown: true}
+	o.own(&o.bar, owner)
+	o.stack(&o.bar)
+	if prev(owner) != hud {
+		t.Fatalf("HUD not directly above its owner (window above the owner: %#x, hud %#x)", prev(owner), hud)
+	}
+	// the other window was in front of the owner and stays in front of the HUD too
+	for w := hud; w != 0; w = prev(w) {
+		if w == other {
+			return
+		}
+	}
+	t.Fatal("HUD was put above a window that was in front of the game")
+}

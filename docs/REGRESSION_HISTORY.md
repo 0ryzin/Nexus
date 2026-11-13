@@ -5,6 +5,24 @@ Newest first.
 
 ## 0.8.0 (in development)
 
+### Performance bar only appeared after pressing F11 twice
+- **Problem (13 Nov):** at game start the performance bar was often missing; leaving and
+  re-entering full screen (F11) made it appear.
+- **Cause (from the code):** the bar is a separate layered window *owned* by the window the game is
+  drawn in. Its owner is set after it is created (`GWLP_HWNDPARENT`), and Windows only re-stacks
+  owned windows above their owner when the owner itself is re-stacked. Until that happened the
+  bar could sit below the game window, drawn but covered. F11's `SetWindowPos` on the NEXUS
+  window re-stacked it, which is why F11 "fixed" it.
+- **Fix:** the bar puts itself directly above its owner (just below whatever window is in front of
+  the owner, so it never covers another program) whenever it is shown, changes owner, or the
+  owner moves, resizes, is restored or comes to the front. Whether it is on screen is asked from
+  Windows instead of remembered (Windows hides and re-shows owned windows on minimise). No
+  periodic redraw was added. The refresh timer now runs only while a game is running (it used to
+  wake the HUD thread twice a second on Home too).
+- **Files:** `app/overlay_windows.go`.
+- **Test:** `TestHUDStacksAboveItsOwner` (Windows CI, real windows). The full in-game check needs
+  your PC: start a game in full screen and in a window, minimise/restore, change resolution.
+
 ### NEXUS started without a window (audio played, nothing on screen)
 - **Problem (13 Nov):** sometimes NEXUS.exe started, the boot sound played, but no window
   appeared; starting it a second time sometimes made it appear.
