@@ -153,7 +153,7 @@ func StartCore(o CoreOptions) (*Core, error) {
 		}
 	}
 	go app.Account.Run() // background synchronisation; idle unless signed in with sync on
-	go func() {           // keys and firmware kept per computer user, whichever copy of NEXUS runs
+	go func() {          // keys and firmware kept per computer user, whichever copy of NEXUS runs
 		to, from, other := app.Emu.SyncSystemVault()
 		if to+from > 0 || other != "" {
 			app.Log.Printf("system files: %d saved to %s, %d restored from it%s", to, systemVaultDir(), from, map[bool]string{true: " (found in " + other + ")", false: ""}[other != ""])

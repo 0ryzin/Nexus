@@ -53,4 +53,3 @@ func TestSystemVaultFindsEarlierCopy(t *testing.T) {
 		t.Fatalf("not found (%q)", found)
 	}
 }
-
