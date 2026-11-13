@@ -5,6 +5,39 @@ Newest first.
 
 ## 0.8.0 (in development)
 
+### Home with a running game: the controller could not reach Close game
+- **Problem (13 Nov):** from NEXUS Home with a game running in the background, a controller
+  could not get to the Close game button.
+- **Cause (found with the controller UI test):** two faults in the same path. (1) Pressing Home
+  shortly after a game appeared (within the loading screen's ~2-3 s fade) left the loading
+  screen's `launch` layer on the navigation stack, so the controller's focus stayed on that
+  invisible layer; its timers then switched the interface to the in-game "playing" screen behind
+  the backgrounded game, whose only control is "Return to game". (2) `goHome` closes every dialog
+  layer with `layer.close()`, and the loading screen's layer had no `close`, so it threw and
+  stopped half-way. Also, Close game existed only on the Home banner, reachable only through
+  spatial navigation.
+- **Fix:** going Home closes the loading screen, its timers no longer leave Home once the game is
+  set aside, and its layer has a `close`. Close game is now in three places, all with one
+  confirmation that opens with Cancel focused: the running game's Options menu (Y/X on its
+  tile: Resume, Close Game), the Power menu (Start: Resume / Close <game>), and the Home banner,
+  which Up from the tiles now always reaches. If the banner disappears while focused, focus
+  returns to a tile. Controller disconnection is announced and clears held-button state.
+- **Files:** `app/web/app.js`.
+- **Test:** `tools/uitest/controller_close.py` (Linux CI job): the real interface in Chrome
+  with a scripted controller through the Gamepad API, all three ways, checking Cancel is focused
+  first, the session ends, the running light goes and focus stays on a tile. Against the old
+  build it fails with `left Home after Home was pressed: screen 'playing'`.
+
+### Loading screen waited forever when a game started quickly
+- **Problem (found by the same test):** a second launch in a row never left the loading screen,
+  although the engine reported the game running.
+- **Cause:** `launchGame` sends the launch, plays the tile animation (up to ~0.9 s), then opens
+  the loading screen with the launch reply. State updates that arrived during the animation,
+  including "playing", were overwritten by that older reply, and the loading screen waited for a
+  "playing" it had already missed. Any start faster than the animation hit it.
+- **Fix:** the newest state of the same session (`S.emuLatest`) wins over the launch reply.
+- **Test:** the second and third launches in `controller_close.py`.
+
 ### Performance bar only appeared after pressing F11 twice
 - **Problem (13 Nov):** at game start the performance bar was often missing; leaving and
   re-entering full screen (F11) made it appear.

@@ -55,6 +55,33 @@ This matters most while a game runs in the background behind NEXUS Home.
 3. **The running-game dot and the recording indicator** pulsed with `box-shadow`. They now use `opacity`.
 4. **The loading bar** moved with `left`, which forces a layout on every frame while a game is loading, exactly when the CPU is busy compiling shaders. It now moves with `transform`.
 
+## 0.8.0: idle interface, measured (Linux, headless Chrome, stand-in engine)
+
+Measured with `tools/perf/idle_baseline.py` on the development machine (Linux, headless Chrome
+with Playwright, NEXUS with the stand-in engine, 10 s of doing nothing per screen). This is
+**not** your Windows PC or WebView2; use it to compare builds, not as Windows figures. The
+"before" build is 4b4daa7 (before this work), "after" is the 0.8.0 development build.
+
+| Screen | Page main thread (% of a core) | Style recalculations / s | Script ms / s |
+|---|---|---|---|
+| Home, no controller | 0.27 → 0.29 | 1.0 → 1.0 | 0.65 → 0.71 |
+| Home, controller connected | **2.11 → 0.80** | **59.9 → 1.5** | 4.50 → 4.43 |
+| All Software, controller connected | **1.51 → 0.84** | **26.1 → 0.0** | 2.44 → 3.67 |
+| Settings, controller connected | **2.06 → 0.51** | 0.0 → 0.0 | 6.70 → 3.34 |
+| Home, controller removed | 0.34 → 0.39 | 1.0 → 1.5 | 0.71 → 0.66 |
+
+- NEXUS server (Go) while idle: 0.0-0.1 % CPU, 19-20 MB resident, both builds.
+- Server ready after start: 8-15 ms warm (the first, cold start of the "before" run took 987 ms:
+  disk cache); interface loaded with its games: 180-430 ms before, 200-250 ms after.
+- **What changed:** with a controller connected the interface polled it on every display frame
+  (requestAnimationFrame), which made the page produce a frame on every refresh even when
+  nothing moved. It now polls every frame only while the controller is in use (input in the
+  last 1.5 s) and 30 times a second otherwise (first press within ~33 ms).
+- The performance bar's refresh timer no longer runs while no game is running (Windows only;
+  not measurable here).
+- Not measured yet: Windows/WebView2 idle CPU and GPU, memory after a long session, resource use
+  while a game runs or prepares shaders. These need your PC.
+
 ## 0.8.0 (engine on Lichii build 177): changes, not measurements
 
 None of these has a before/after measurement yet; they are listed so a measurement can be made

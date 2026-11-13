@@ -310,6 +310,7 @@ const Pad = {
       S.pads = pads.map(p => ({ index: p.index, id: p.id, mapping: p.mapping }));
       renderTopbar(); renderHints(); Controllers.refreshList();
       if (pads.length > before && !document.body.classList.contains('booting')) { Sound.play('connect'); toast(`Controller connected`, I.pad); }
+      if (pads.length < before && !document.body.classList.contains('booting')) { toast(pads.length ? 'A controller was disconnected' : 'Controller disconnected', I.pad); this.prev = {}; this.repeatAt = {}; }
     }
     const pref = S.profile?.controls?.preferredPad;
     const active = pads.filter(p => !pref || p.id === pref);
@@ -334,7 +335,7 @@ const Pad = {
         this.prev[key] = { ...state, ...raw }; Controllers.liveUpdate(p); continue;
       }
       const any = Object.values(state).some(Boolean);
-      if (any) setInputMode('gamepad');
+      if (any) { setInputMode('gamepad'); this.activeUntil = now + 1500; }
       if (document.body.classList.contains('booting')) { if (any && !Object.values(prev).some(Boolean)) Boot.skip(); this.prev[key] = state; continue; }
       for (const d of ['up', 'down', 'left', 'right']) {
         if (state[d] && !prev[d]) { this.repeatAt[key + d] = now + 380; this.dir(d); }
@@ -354,12 +355,16 @@ const Pad = {
     }
     this.schedule(pads.length > 0);
   },
-  // every frame while a controller is connected; four times a second otherwise (connecting a
-  // controller is also announced by the browser), so an idle NEXUS without controllers does no
-  // per-frame work
-  schedule(fast) {
+  // While a controller is in use (input in the last 1.5 s): every frame, for smooth repeat and
+  // navigation. Connected but idle: 30 times a second on a timer, which keeps the first press
+  // within ~33 ms but does not make the page produce a frame on every refresh (measured with a
+  // connected controller on Home: 60 style recalculations a second before, see PERFORMANCE.md).
+  // No controller: four times a second (connecting one is also announced by the browser).
+  activeUntil: 0,
+  schedule(connected) {
     clearTimeout(this.t); cancelAnimationFrame(this.r);
-    if (fast) this.r = requestAnimationFrame(() => this.poll()); else this.t = setTimeout(() => this.poll(), 250);
+    if (connected && performance.now() < this.activeUntil) this.r = requestAnimationFrame(() => this.poll());
+    else this.t = setTimeout(() => this.poll(), connected ? 33 : 250);
   },
   dir(d) { if ((d === 'left' || d === 'right') && adjust(d === 'left' ? -1 : 1)) return; Nav.move(d); },
   rumble(ms = 120, strong = .4) {
@@ -369,7 +374,7 @@ const Pad = {
     }
   },
 };
-window.addEventListener('gamepadconnected', () => { });
+window.addEventListener('gamepaddisconnected', () => Pad.schedule(true));
 
 // ------------------------------------------------------------------ layers (dialogs, sheets, toasts)
 function openLayer(content, { onBack, onOptions, onTab, sheet = false, name = '', initial } = {}) {
@@ -1483,6 +1488,7 @@ function renderHome() {
     t.addEventListener('click', () => launchGame(g.key));
     t.addEventListener('navfocus', () => updateSelLabel(g));
     t.addEventListener('navblur', () => updateSelLabel(null));
+    t._navMove = homeTileUp;
     row.append(t);
   });
   if (S.games.length) {
@@ -1516,8 +1522,31 @@ function renderHome() {
   renderBanner();
 }
 
+// Up from a Home tile goes to the banner's buttons when it has any (Resume / Close game while a
+// game runs in the background), so a controller always reaches them; otherwise normal movement.
+function homeTileUp(dir) {
+  if (dir !== 'up') return false;
+  const b = $('#home-banner');
+  if (b.hidden) return false;
+  const btns = Nav.items(b);
+  if (!btns.length) return false;
+  Nav.setFocus(btns.find(x => x.classList.contains('primary')) || btns[0]);
+  return true;
+}
+
 function renderBanner() {
-  const b = $('#home-banner'); b.innerHTML = '';
+  const b = $('#home-banner');
+  const hadFocus = Nav.cur && b.contains(Nav.cur);
+  renderBannerContent(b);
+  // the banner changed under the focus (the game closed, or resumed elsewhere): keep focus on Home
+  if (hadFocus && !(Nav.cur && b.contains(Nav.cur) && Nav.cur.isConnected)) {
+    const t = $$('#tiles .tile').find(t => t._game?.key === S.playing?.gameKey) || $('#tiles .tile');
+    if (t && !Nav.top()?.dialog) Nav.setFocus(t, { silent: true });
+  }
+}
+
+function renderBannerContent(b) {
+  b.innerHTML = '';
   const en = S.engine || {};
   let msg = null, action = null, label = '';
   if (S.playing?.suspended) {
@@ -1528,7 +1557,7 @@ function renderBanner() {
     const resume = h('button', { class: 'btn primary', 'data-nav': true }, 'Resume');
     const close = h('button', { class: 'btn', 'data-nav': true }, 'Close game');
     resume.addEventListener('click', () => resumeGame());
-    close.addEventListener('click', async () => { if (await confirmDlg(`Close ${S.playing.title}?`, 'Unsaved progress will be lost.', 'Close', true)) api('/api/emulator/stop', { body: {} }).catch(e => toast(e.message, I.warn)); });
+    close.addEventListener('click', () => closeRunningGame());
     b.append(ic, h('span', { class: 'grow' }, h('b', {}, bg ? `${S.playing.title} is running in the background. ` : `${S.playing.title} is paused. `), bg ? 'It is muted and ignores controls until you resume it.' : 'It keeps its place until you resume it.'), resume, close);
     return;
   }
@@ -1560,18 +1589,36 @@ Screens.home = {
   onOptions: cur => { if (cur?._game) gameMenu(cur._game.key); else if (cur?._profile) editProfile(cur._profile.id); },
 };
 
+// ---------- closing the running game (Home banner, the game's Options menu, the Power menu)
+// One flow for every place, mouse or controller. Cancel is focused first, so a stray A press
+// does not close the game. The engine ends the session (sound, graphics, emulation); the tile's
+// running light and the banner follow the emulator.state event.
+async function closeRunningGame() {
+  const p = S.playing; if (!p?.running) return false;
+  const ok = await confirmDlg(`Close ${p.title}?`, 'Unsaved progress will be lost. The game stops completely; NEXUS stays on Home.', 'Close game', true);
+  if (!ok || !S.playing?.running) return false;
+  try { await api('/api/emulator/stop', { body: {} }); }
+  catch (e) { toast(e.message, I.warn); return false; }
+  toast(`Closing ${p.title}…`, I.power);
+  return true;
+}
+
 // ---------- power menu
 async function openPower() {
   if (Nav.top()?.name === 'power') { Nav.top().close(); return; }
   const fs = S.system.fullscreen ?? S.settings.display?.fullscreen;
   const items = [
+    S.playing?.running ? { v: 'resume', l: `Resume ${S.playing.title}` } : null,
+    S.playing?.running ? { v: 'close', l: `Close ${S.playing.title}` } : null,
     { v: 'users', l: 'Switch user' },
     { v: 'fs', l: fs ? 'Switch to windowed mode' : 'Switch to full screen' },
     { v: 'min', l: 'Minimise NEXUS' },
     { v: 'replay', l: 'Replay startup animation' },
     { v: 'quit', l: 'Exit NEXUS' },
-  ];
+  ].filter(Boolean);
   const v = await listPick('Power options', items);
+  if (v === 'resume') resumeGame();
+  if (v === 'close') closeRunningGame();
   if (v === 'users') showWho();
   if (v === 'fs') { const r = await api('/api/app/fullscreen', { body: { on: !fs } }); S.system.fullscreen = r.fullscreen; S.settings.display.fullscreen = !fs; }
   if (v === 'min') api('/api/app/minimize', { body: {} });
@@ -1652,8 +1699,11 @@ async function rescan() { try { await api('/api/library/scan', { body: {} }); to
 function gameMenu(key) {
   const g = gameByKey(key); if (!g) return;
   if (Nav.top()?.name === 'gamemenu') Nav.top().close();
+  const running = S.playing?.running && S.playing.gameKey === key;
   const items = [
-    isPlayable(g) && !g.hidden ? ['play', 'Play', I.play] : null,
+    running ? ['resume', 'Resume', I.play] : null,
+    running ? ['close', 'Close Game', I.power] : null,
+    isPlayable(g) && !g.hidden && !running ? ['play', 'Play', I.play] : null,
     isPlayable(g) ? ['config', 'Configure Game Settings', I.gear] : null,
     ['art', 'Edit Game Artwork', I.palette],
     ['info', 'Game Information', I.info],
@@ -1662,13 +1712,15 @@ function gameMenu(key) {
     g.hidden ? ['restore', 'Restore to Library', I.plus] : ['remove', 'Remove from Library', I.trash],
   ].filter(Boolean);
   const tile = gameTile(g); tile.removeAttribute('data-nav');
-  const btns = items.map(([v, l, ic]) => { const b = h('button', { 'data-nav': true, class: v === 'remove' ? 'danger' : '' }, svg(ic), h('span', {}, l)); b._v = v; return b; });
+  const btns = items.map(([v, l, ic]) => { const b = h('button', { 'data-nav': true, class: v === 'remove' || v === 'close' ? 'danger' : '' }, svg(ic), h('span', {}, l)); b._v = v; return b; });
   const box = h('div', { class: 'dialog game-menu' }, h('div', { class: 'gm-head' }, tile, h('div', {}, h('b', {}, g.title), h('small', {}, [g.titleId, g.format.toUpperCase(), g.perGame ? 'Custom settings' : ''].filter(Boolean).join(' · ')))), h('div', { class: 'gm-list' }, btns));
   const layer = openLayer(box, { name: 'gamemenu', initial: btns[0] });
   btns.forEach(b => b.addEventListener('click', async () => {
     layer.close();
     switch (b._v) {
       case 'play': launchGame(key); break;
+      case 'resume': resumeGame(); break;
+      case 'close': closeRunningGame(); break;
       case 'config': gameConfig(key); break;
       case 'art': artEditor(key); break;
       case 'info': gameInfo(key); break;
@@ -2067,7 +2119,11 @@ async function launchGame(key, force = false) {
     // Stage B: the launch animation plays on the game's own icon on the Home screen; the
     // loading screen appears only when it has finished
     const fromTile = await Launch.tileAnimation(key);
-    const st = await launching;
+    let st = await launching;
+    // state updates for this session that arrived during the tile animation are newer than the
+    // launch reply: a quick start could otherwise be overwritten and the loading screen would
+    // wait for a "playing" it already missed (docs/REGRESSION_HISTORY.md)
+    if (S.emuLatest?.running && S.emuLatest.started === st.started && S.emuLatest.gameKey === st.gameKey) st = S.emuLatest;
     S.playing = st;
     Launch.open(g, st, fromTile);   // Stage C; Stage D when the engine shows the game
   } catch (e) {
@@ -2191,7 +2247,8 @@ const Launch = {
     el.append(cancel);
     document.body.append(el); this.el = el;
     // the loading screen takes the controls while it is up (nothing behind it reacts)
-    this.layer = { root: el, dialog: true, name: 'launch', onBack: () => this.cancel(), initial: cancel };
+    // close: goHome closes every dialog layer, the loading screen included (it had none: goHome threw)
+    this.layer = { root: el, dialog: true, name: 'launch', onBack: () => this.cancel(), initial: cancel, close: () => this.close() };
     Nav.push(this.layer); renderHints();
     requestAnimationFrame(() => el.classList.add('in'));
     // Stage B → C: after the opening animation the loading screen takes over
@@ -2224,7 +2281,8 @@ const Launch = {
       setTimeout(() => {
         if (this.el !== el || this.cancelling) return;
         api('/api/emulator/reveal', { body: {} }).catch(() => { });
-        setTimeout(() => { showPlaying(true); this.close(); }, S.anim === 'off' ? 200 : 900);
+        // the player may already have pressed Home (the game set aside): stay on Home then
+        setTimeout(() => { if (this.el === el && !S.playing?.suspended) showPlaying(true); if (this.el === el) this.close(); }, S.anim === 'off' ? 200 : 900);
       }, S.anim === 'off' ? 0 : 320);
     }, wait);
   },
@@ -3722,6 +3780,7 @@ function connectEvents() {
       case 'library.changed': await loadGames(); if (['home', 'library'].includes(S.screen)) refreshViews(); break;
       case 'emulator.state': {
         const st = m.data;
+        S.emuLatest = st;
         const was = S.playing?.suspended;
         if (st.running) {
           S.playing = st;
@@ -3775,6 +3834,7 @@ function connectEvents() {
       case 'update.done': toast(`NEXUS was updated to ${m.data.version}`, I.check, 5000); break;
       case 'emulator.home': { // the game was paused with Home: show the Home screen
         S.playing = m.data;
+        Launch.close(); // Home pressed while the loading screen was still fading: it must not keep the controls
         Sound.play('home_pop');
         goHome({ fromGame: true });
         Wall.update();

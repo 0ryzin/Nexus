@@ -37,6 +37,19 @@ jobs:
       - run: go test -count=1 ./...
       - name: Race detector (NEXUS and the account service)
         run: go test -race -count=1 ./...
+      # the real interface in Chrome, with a scripted controller (Gamepad API) and the stand-in
+      # engine: closing a game that runs in the background, from Home, without mouse or keyboard
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Interface test with a controller (Chrome, stand-in engine)
+        run: |
+          set -euo pipefail
+          pip install --quiet "playwright>=1.45,<2"
+          go build -o "$RUNNER_TEMP/nexus-ui" .
+          mkdir -p "$RUNNER_TEMP/uifix" && touch "$RUNNER_TEMP/uifix/portable.txt"
+          NEXUS_FIXTURE_ROOT="$RUNNER_TEMP/uifix" go test -count=1 -run 'TestMakeFixtures$' .
+          NEXUS_HARDWARE= python3 tools/uitest/controller_close.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
 
   windows:
     name: Engine + NEXUS (Windows x64)
