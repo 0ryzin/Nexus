@@ -54,3 +54,8 @@ How build 160 → 177 was done (Nov 2026), to repeat for later builds:
 4. Keep upstream copyright notices (revert any commit that removes them).
 5. Regenerate `engine/patches`, test `git am` on a clean worktree, update `app/engine.lock`
    (`upstreamCommit`, `upstreamBase`, `version`) and let CI build and test on Windows.
+
+Build 177 result (13 Nov): 20 patches apply; CI built the engine on Windows and passed
+tests.exe (1375 cases), config_tests, profile_import_tests and the interface smoke test.
+Patch 0020 (`src/common/linux_commit_room.h`) is NEXUS's own: Linux commit room for the
+texture cache's host-memory cap. Parsing is header-only so its tests run on Windows CI too.
