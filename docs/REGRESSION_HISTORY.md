@@ -41,3 +41,15 @@ Newest first.
   `App.Close` waits for the worker, test apps stop sessions (`artwork_online.go`, fixtures).
 
 Earlier fixes: see `CHANGELOG.md` and `docs/SOURCE_AUDIT.md`.
+
+## Home showed a "Now playing" menu instead of the Home screen (0.7.0 development)
+1. **Problem:** pressing Home (or Back/Escape in NEXUS while a game was in front) sometimes showed the
+   "Now playing" screen with Return to game / Close game / Performance monitor instead of Home.
+2. **Diagnosis:** `goHome()` in `web/app.js` showed that screen whenever a game was running and not
+   yet suspended, unless the call came from the Home button itself; Back on that screen resumed the game.
+3. **Fix:** `goHome()` always sets a running game aside first (suspend/background per Settings) and
+   the `emulator.home` event then shows Home; Back on the "Now playing" view goes Home; that view
+   (only visible behind a game in its own window) has no menu any more: the running game's tile
+   resumes it and the Home banner offers Close game.
+4. **Tested:** UI logic only (headless); not yet with a game.
+5. **Recognise it:** a screen with game art and Resume/Close buttons appears where Home was expected.

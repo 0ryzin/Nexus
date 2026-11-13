@@ -793,8 +793,11 @@ function show(name, { initial, anim = true } = {}) {
 }
 // Home: from anywhere in NEXUS, or from a running game (the game is suspended, not closed).
 function goHome(opts = {}) {
+  // NEXUS Home is always the Home screen: a game in front is set aside first (it keeps running
+  // in the background or pauses, per Settings) and its tile resumes it. While it is still
+  // starting, the loading screen stays.
   if (S.playing && !S.playing.suspended) {
-    if (opts.button && S.playing.phase === 'playing') { suspendGame(); return; } // Home while playing: suspend, then show Home
+    if (S.playing.phase === 'playing') { suspendGame(); return; } // emulator.home then shows Home
     showPlaying(); return;
   }
   if (!S.profile) { showWho(); return; }
@@ -2266,7 +2269,10 @@ function showPlaying(justLaunched = false) {
   $('#play-sub').textContent = st.phase === 'playing' ? `Playing as ${S.profile?.name || ''} · NEXUS Engine` : 'Starting the NEXUS engine…';
   const hk = S.settings.emulator?.homeKey;
   $('#play-tip').textContent = (hk && !st.homeKeyConflict ? `Press ${hk} or the controller\u2019s Home button` : 'Press the controller\u2019s Home button') + ' to go back to NEXUS Home; the game keeps running.' + (S.settings.emulator?.fullscreenKey ? ` ${S.settings.emulator.fullscreenKey}: full screen / window.` : '') + (S.settings.emulator?.screenshotKey ? ` ${S.settings.emulator.screenshotKey}: screenshot.` : '') + (st.homeKeyConflict ? ` (${hk} is one of this game\u2019s controls, so it goes to the game. You can choose another Home key in Settings \u203a Game sessions.)` : '') + (S.settings.emulator?.quitCombo ? ' Hold View + Menu (Back + Start) to close the game.' : '');
-  $('#play-close').textContent = 'Close game';
+  // no menu here: Home goes straight to the Home screen, where the game's tile resumes it and
+  // the banner offers Close game; this view is only what stays behind a game in its own window
+  $('#play-close').hidden = true; $('#play-perf').hidden = true; $('#play-volume').hidden = true;
+  $('#play-return').textContent = 'Return to game';
   $('#play-perf').textContent = perfOn(st.gameKey) ? 'Hide performance monitor' : 'Show performance monitor';
   const vh = $('#play-volume'); let sl = vh.firstChild;
   if (!sl) { sl = volumeSlider({ value: st.volume ?? S.emulator?.volume ?? 100, onChange: sendVolume, compact: true, label: 'Game volume' }); vh.append(sl); }
@@ -2274,7 +2280,7 @@ function showPlaying(justLaunched = false) {
   show('playing', { initial: $('#play-return'), anim: !justLaunched });
   syncGameInFront();
 }
-Screens.playing = { onBack: () => resumeGame() };
+Screens.playing = { onBack: () => goHome() };
 $('#play-perf').addEventListener('click', async () => {
   const key = S.playing?.gameKey; if (!key) return;
   const on = !perfOn(key);
