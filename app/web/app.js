@@ -3742,6 +3742,7 @@ function connectEvents() {
         if (!Launch.el) goHome({ button: true });
         break;
       case 'launch.reveal': if (Launch.el) Launch.enter(); break;
+      case 'launch.warning': toast(m.data.message, I.warn, 9000); break;
       case 'media.added':
         toast(`Screenshot saved${m.data.title ? ' · ' + m.data.title : ''}`, I.media, 2200);
         if (S.screen === 'media') { await Media.load(); Media.render(); }

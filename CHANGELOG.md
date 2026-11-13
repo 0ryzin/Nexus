@@ -20,6 +20,7 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
   generation, GPU split and buffer-cache work, memory reuse and Windows commit-limit handling.
   The NEXUS host patches were re-applied on top; the yuzu project's copyright notices that
   Lichii removed are kept. Not yet tested with games.
+- Starting a Switch 2 game on a PC with less than 16 GB of RAM shows a warning (as Lichii #1478 does).
 
 ## 0.6.0 — test build (pre-release)
 

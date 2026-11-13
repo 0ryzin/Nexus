@@ -870,6 +870,16 @@ func (e *Emulator) checkMemoryLayout(g *Game, s GlobalSettings) error {
 		}
 	}
 	gb, _ := strconv.Atoi(layout)
+	// Switch 2 programs always get the 12 GB layout from the engine. Like Lichii (#1478), warn on
+	// PCs with less than 16 GB of RAM - the game may run out of memory - but let it start.
+	if g != nil && strings.HasPrefix(strings.ToUpper(g.TitleID), "04") {
+		if total := e.app.DetectHardware(false).Memory.TotalMB; total > 0 && total < 16*1024-768 {
+			e.app.Log.Printf("engine: Switch 2 game on a PC with %d MB of RAM", total)
+			e.app.Events.Emit("launch.warning", map[string]any{"message": fmt.Sprintf(
+				"%s is a Switch 2 game: it uses 12 GB of emulated memory, and this PC has %.0f GB of RAM. It may stop or close when memory runs out; close other programs first.",
+				g.Title, float64(total)/1024)})
+		}
+	}
 	if gb <= 4 {
 		return nil
 	}
