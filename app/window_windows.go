@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"time"
 	"unsafe"
 
@@ -61,13 +62,18 @@ func readWindowState(hwnd uintptr) windowState {
 // showMainWindow shows the window for the first time. SW_SHOWDEFAULT lets Windows apply how
 // NEXUS was started (a shortcut set to "Minimised" stays minimised, in the taskbar).
 func (u *winUI) showMainWindow() {
+	t0 := time.Now()
 	procShowWindow.Call(u.hwnd, swShowDefault)
 	if v, _, _ := procIsWindowVisible.Call(u.hwnd); v == 0 {
 		procShowWindow.Call(u.hwnd, swShow)
 	}
+	t1 := time.Now()
 	focusWindow(u.hwnd)
 	u.shown = true
-	u.app.Log.Printf("startup: window shown %+v (full screen %v)", readWindowState(u.hwnd), u.fullscreen)
+	// the two steps timed separately: the user's log showed 0.15-1.6 s between "window created"
+	// and "window shown", and which of them takes it decides the fix
+	u.app.markStartup("window shown", fmt.Sprintf("%+v, full screen %v; showing took %v, bringing to the front %v", readWindowState(u.hwnd), u.fullscreen,
+		t1.Sub(t0).Round(time.Millisecond), time.Since(t1).Round(time.Millisecond)))
 }
 
 // ensureWindowVisible brings the window back when it is hidden, minimised or entirely off the

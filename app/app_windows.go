@@ -434,7 +434,7 @@ func runUI(a *App, url string) {
 		return
 	}
 	a.UI = u
-	a.Log.Printf("startup: window created after %v", time.Since(startupBegan).Round(time.Millisecond))
+	a.markStartup("window created", "")
 	if settings.Display.Fullscreen {
 		u.fsWant = true
 		u.applyFullscreen(true) // laid out while hidden, shown below
@@ -452,7 +452,7 @@ func runUI(a *App, url string) {
 				return
 			}
 			navigated = true
-			a.Log.Printf("startup: interface loaded after %v", time.Since(startupBegan).Round(time.Millisecond))
+			a.markStartup("interface loaded", "")
 			u.ensureWindowVisible("after the interface loaded", false)
 		}
 		chromium.SetPermission(edge.CoreWebView2PermissionKindClipboardRead, edge.CoreWebView2PermissionStateAllow)

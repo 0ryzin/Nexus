@@ -212,7 +212,17 @@ func (s *Server) routes() {
 
 	// ----- state & events -----
 	m.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, s.state())
+		st := s.state()
+		// ?boot=1: the interface's first request also carries the game list of the user who is
+		// picked automatically, saving a round trip before Home can show (startup measurements)
+		if r.URL.Query().Get("boot") == "1" {
+			g := a.Settings.Get()
+			if _, ok := a.Profiles.Get(g.LastProfileID); ok && !g.AskProfile {
+				stats := a.Profiles.Stats(g.LastProfileID)
+				st["bootGames"] = map[string]any{"profile": g.LastProfileID, "games": a.Library.Games(), "stats": stats.Games, "recent": stats.Recent(), "status": a.Library.Status()}
+			}
+		}
+		writeJSON(w, st)
 	})
 	m.HandleFunc("GET /api/events", s.events)
 	m.HandleFunc("GET /api/system", func(w http.ResponseWriter, r *http.Request) {
@@ -225,6 +235,18 @@ func (s *Server) routes() {
 			"fullscreen": a.UI.IsFullscreen(),
 			"emulator":   a.Emu.State(),
 		})
+	})
+	m.HandleFunc("GET /api/startup", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, startupMarkList()) })
+	m.HandleFunc("POST /api/startup/mark", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Name, Detail string }
+		_ = readBody(r, &b)
+		if uiStartupMarks[b.Name] {
+			if len(b.Detail) > 80 {
+				b.Detail = b.Detail[:80]
+			}
+			a.markStartup(b.Name, b.Detail)
+		}
+		writeJSON(w, true)
 	})
 	m.HandleFunc("GET /api/storage", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, s.storage())

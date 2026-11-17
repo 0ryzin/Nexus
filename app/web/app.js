@@ -728,6 +728,7 @@ const Boot = {
     const color = st.color || '#e60012';
     logo.style.setProperty('--ink', luminance(color) > .55 ? '#141414' : '#ffffff');
     boot.style.setProperty('--boot', color);
+    if (!st.enabled && !force) { this.finishNow(); return; } // nothing to show: no artwork to wait for
     const el = this.build(logo);
     // make sure the artwork is decoded before the animation starts
     const missing = new Set();
@@ -735,7 +736,6 @@ const Boot = {
     // fallback: if a wordmark image is unavailable, draw the word with the same typeface (Outfit) as live text
     if (missing.has('word-nexus.png')) el.wn.replaceWith(el.wn = h('div', { class: 'bm wn txt' }, 'NEXUS'));
     if (missing.has('word-switch.png')) el.ws.replaceWith(el.ws = h('div', { class: 'bm ws txt' }, 'SWITCH'));
-    if (!st.enabled && !force) { this.finishNow(); return; }
     const short = st.style === 'short';
     const T = short ? .7 : 1;
     const reduced = S.anim === 'off';
@@ -808,8 +808,9 @@ const Boot = {
 };
 
 // ------------------------------------------------------------------ data loading
-async function loadState() {
-  const st = await api('/api/state');
+async function loadState(boot) {
+  const st = await api('/api/state' + (boot ? '?boot=1' : ''));
+  S.bootGames = st.bootGames || null;
   Object.assign(S, { app: st.app, settings: st.settings, profiles: st.profiles || [], emulator: st.emulator, engine: st.engine || {}, formats: st.formats, scanDirs: st.scanDirs, gamesDir: st.gamesDir, avatarColors: st.avatarColors, avatarGlyphs: st.avatarGlyphs, padModels: st.padModels || {}, maxProfiles: st.maxProfiles || 8, library: st.library, features: st.features || {} });
   if (S.profile) S.profile = profileById(S.profile.id) || null;
   api('/api/platform').then(pl => { S.platform = pl; }).catch(() => { });
@@ -4718,18 +4719,37 @@ Object.assign(Panels, {
   updates(p) { return updatesPanel(p); },
 });
 
+// startup milestones: logged by NEXUS once each (startupmarks.go) and kept for measurement
+const startupMarks = {};
+function markStartup(name, detail) {
+  if (startupMarks[name] != null) return;
+  startupMarks[name] = Math.round(performance.now());
+  api('/api/startup/mark', { body: { name, detail: detail || '' } }).catch(() => { });
+}
+
 (async function main() {
   Sound.init();
-  try { await loadState(); }
+  try { await loadState(true); markStartup('interface ready'); }
   catch (e) { document.body.classList.remove('booting'); document.body.innerHTML = `<div style="padding:3em;font-family:sans-serif;color:#fff">NEXUS could not reach its service: ${e.message}</div>`; return; }
   const last = profileById(S.settings.lastProfileId);
   if (last && !S.settings.askProfileOnStart) S.profile = last;
   applyTheme();
   // Optional user stylesheets: Resources/Themes/*.css are loaded after the built-in theme.
   api('/res/themes').then(list => (list || []).forEach(n => document.head.append(h('link', { rel: 'stylesheet', href: '/res/themes/' + encodeURIComponent(n) })))).catch(() => { });
+  // the game list (unless it came with the first answer) is asked first: the browser opens only six connections to
+  // NEXUS at a time, and the fourteen sound files used to queue the game list behind them
+  const bootGames = S.bootGames; S.bootGames = null;
+  if (S.profile && bootGames?.profile === S.profile.id) { // the game list came with the first answer
+    S.games = bootGames.games || []; S.stats = bootGames.stats || {}; S.recent = bootGames.recent || []; S.library = bootGames.status;
+    api('/api/compat').then(c => { S.compat = c || {}; }).catch(() => { });
+  }
+  const gamesLoad = bootGames && S.profile && bootGames.profile === S.profile.id ? Promise.resolve(markStartup('library available', S.games.length + ' games')) : S.profile ? loadGames().then(() => markStartup('library available', (S.games || []).length + ' games')).catch(() => { }) : Promise.resolve();
+  const crashLoad = api('/api/crash/last').catch(() => null);
   const soundLoad = Sound.load(['boot_power', 'boot_whoosh', 'boot_snap', 'boot_draw', 'boot_sparkle', 'boot_chime', 'boot_outro', 'home_pop', 'move', 'select', 'back', 'launch', 'error', 'connect']);
-  await Promise.race([soundLoad, sleep(600)]);
-  const gamesLoad = S.profile ? loadGames().catch(() => { }) : Promise.resolve();
+  // the startup animation's sounds are timed to it, so it waits for them (up to 0.6 s); without
+  // the animation (or its sound) nothing needs to wait: sounds finish loading in the background
+  const bootSt = S.settings.startup || {};
+  if (bootSt.enabled && (bootSt.sound ?? true) && S.anim !== 'off') await Promise.race([soundLoad, sleep(600)]);
   connectEvents();
   pollSystem(); setInterval(pollSystem, 15000);
   tickClock(); setInterval(tickClock, 1000);
@@ -4737,12 +4757,12 @@ Object.assign(Panels, {
   // Prepare the home screen underneath the boot animation
   await Boot.run();
   await gamesLoad;
-  const st = await api('/api/system').catch(() => ({}));
+  const st = { emulator: S.emulator?.state }; // a game already running (from the first answer)
   if (S.app.migrated?.length) toast(S.app.migrated[0], I.check, 6000);
   // the last game session ended with NEXUS closing unexpectedly: say so once, with the report
-  api('/api/crash/last').then(n => { if (n) { Sound.play('error'); launchErrorDlg(n.title, n); } }).catch(() => { });
+  crashLoad.then(n => { if (n) { Sound.play('error'); launchErrorDlg(n.title, n); } });
   if (st.emulator?.running) { S.playing = st.emulator; RecUI.sync(); showPlaying(); return; }
-  if (!S.profile) { showWho(); return; }
+  if (!S.profile) { showWho(); markStartup('profile picker shown'); return; }
   renderHome();
   const home = $('#home');
   if (S.anim !== 'off') home.classList.add('intro');
@@ -4756,6 +4776,7 @@ Object.assign(Panels, {
     }
   }
   if (Nav.cur?._game) updateSelLabel(Nav.cur._game);
+  markStartup('home interactive', S.settings.startup?.enabled ? 'after the startup animation' : '');
 })();
 
 // ------------------------------------------------------------------ screen recording (0.4.0)

@@ -183,7 +183,25 @@ func NewAccount(a *App) *Account {
 	if ac.st.SignedIn {
 		ac.loadTokenLocked()
 	}
+	a.markStartup("account restored", ac.restoredSummary())
 	return ac
+}
+
+// restoredSummary: how the account came back at startup, for the log (no names or tokens).
+func (ac *Account) restoredSummary() string {
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+	switch {
+	case ac.st.SignedIn && ac.token != "" && ac.refresh != "":
+		return ac.st.Provider + ", connected, renewable sign-in"
+	case ac.st.SignedIn && ac.token != "":
+		return ac.st.Provider + ", connected"
+	case ac.st.SignedIn:
+		return ac.st.Provider + ", stored sign-in not readable yet"
+	case ac.st.Ended != "":
+		return "not connected: the previous sign-in ended"
+	}
+	return "not connected"
 }
 
 func (ac *Account) tokenPath() string { return filepath.Join(ac.dir, "session.bin") }
@@ -426,6 +444,13 @@ func (ac *Account) Status() AccountStatus {
 		st.State = "synced"
 	}
 	return st
+}
+
+func syncOutcome(err error) string {
+	if errors.Is(err, errOffline) {
+		return "offline; retried later"
+	}
+	return "failed"
 }
 
 func devicePlatform() string {
@@ -1313,6 +1338,7 @@ func (ac *Account) Run() {
 		lastTry = time.Now()
 		_, err := ac.Sync()
 		last = time.Now().Round(0)
+		ac.app.markStartup("first background sync finished", map[bool]string{true: "ok", false: syncOutcome(err)}[err == nil])
 		if errors.Is(err, errOffline) { // retry with a growing delay while offline
 			timer.Reset(retry)
 			retry = min(retry*2, 10*time.Minute)

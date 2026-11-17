@@ -142,6 +142,7 @@ func StartCore(o CoreOptions) (*Core, error) {
 			if err := app.Library.Scan(); err != nil {
 				app.Log.Printf("initial scan: %v", err)
 			}
+			app.markStartup("library scanned", fmt.Sprintf("%d games", len(app.Library.Games())))
 			app.Saves.TidyAll() // names for games found by the scan
 		}()
 	}
