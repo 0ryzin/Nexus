@@ -65,13 +65,13 @@ func TestEnhancementSettings(t *testing.T) {
 	if en := app.Emu.Enhancements(); !en.DLSS.Ready {
 		t.Fatalf("Streamline present: %+v", en.DLSS)
 	}
-	// Lossless.dll import
+	// Lossless.dll setup (lossless_test.go has the details)
 	src := filepath.Join(t.TempDir(), "Lossless.dll")
-	os.WriteFile(src, []byte("dll"), 0o644)
-	if err := app.Emu.ImportLossless(filepath.Join(t.TempDir(), "other.dll")); err == nil {
-		t.Fatal("a file that is not Lossless.dll must be refused")
+	os.WriteFile(src, goodLossless(1), 0o644)
+	if _, err := app.Emu.SetupLossless(filepath.Join(t.TempDir(), "other.dll"), false); err == nil {
+		t.Fatal("a file that is not there must be refused")
 	}
-	if err := app.Emu.ImportLossless(src); err != nil || !app.Emu.Enhancements().Lossless.Ready {
+	if _, err := app.Emu.SetupLossless(src, false); err != nil || !app.Emu.Enhancements().Lossless.Ready {
 		t.Fatalf("import: %v", err)
 	}
 	if c := app.Emu.hardwareCaps()["enhance.framegen_type"]; len(c.Choices) != 2 {

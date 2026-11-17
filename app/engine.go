@@ -750,6 +750,10 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 		e.app.Account.Kick() // the game closed: play time and changes go to the account now
 	}
 	e.app.Compat.Record(st.GameKey, st.Title, gameSystem, sawGame, crashed, secs, final.Code)
+	if g, ok := e.app.Library.Get(st.GameKey); ok && g.TitleID != "" {
+		// the game's build and which mods applied, for Manage Mods (mods.go)
+		e.app.Content.LearnFromEngineLog(g.TitleID, filepath.Join(e.DataDir(), "log", "eden_log.txt"))
+	}
 	e.app.Log.Printf("engine: session ended state=%s code=%s after %s (played %ds)", final.State, final.Code,
 		time.Since(start).Round(time.Second), secs)
 	result := map[string]any{"gameKey": st.GameKey, "title": st.Title, "seconds": secs, "mode": "game", "emulator": engineID}

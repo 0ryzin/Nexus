@@ -1141,26 +1141,43 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/enhancements", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, a.Emu.Enhancements())
 	})
+	// Lossless Scaling setup (lossless.go): status, then copying from the user's own installation
+	m.HandleFunc("GET /api/enhancements/lossless", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, a.Emu.LosslessStatus(r.URL.Query().Get("folder")))
+	})
 	m.HandleFunc("POST /api/enhancements/lossless", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
-			Path string
-			Pick bool
+			Path       string
+			Pick       bool // choose Lossless.dll itself
+			PickFolder bool // choose the Lossless Scaling, Steam library or Steam folder
+			Locate     bool // with PickFolder: only look, do not copy yet
+			Replace    bool
 		}
 		_ = readBody(r, &b)
-		if b.Pick {
-			p, err := a.UI.PickFile("Choose Lossless.dll from the Lossless Scaling folder", "Lossless.dll|Lossless.dll|")
+		if b.Pick || b.PickFolder {
+			var p string
+			var err error
+			if b.PickFolder {
+				p, err = a.UI.PickFolder("Choose the Lossless Scaling folder, or your Steam folder")
+			} else {
+				p, err = a.UI.PickFile("Choose Lossless.dll from the Lossless Scaling folder", "Lossless.dll|Lossless.dll|")
+			}
 			if err != nil || p == "" {
 				writeJSON(w, map[string]any{"cancelled": true})
 				return
 			}
 			b.Path = p
 		}
-		if err := a.Emu.ImportLossless(b.Path); err != nil {
-			writeErr(w, 400, err)
+		if b.Locate {
+			writeJSON(w, a.Emu.LosslessStatus(b.Path))
 			return
 		}
-		a.Log.Printf("frame generation: Lossless.dll copied into the engine folder")
-		writeJSON(w, a.Emu.Enhancements())
+		st, err := a.Emu.SetupLossless(b.Path, b.Replace)
+		if err != nil {
+			writeJSON(w, map[string]any{"error": err.Error(), "status": st})
+			return
+		}
+		writeJSON(w, map[string]any{"status": st})
 	})
 	// ----- controller layouts for games (controls.go)
 	m.HandleFunc("GET /api/controls/layouts", func(w http.ResponseWriter, r *http.Request) {
@@ -1809,6 +1826,15 @@ func (s *Server) routes() {
 		}
 		writeJSON(w, map[string]any{"added": added})
 	})
+	// Manage Mods: installed and built-in mods with information, compatibility and conflicts (mods.go)
+	m.HandleFunc("GET /api/games/{key}/mods", func(w http.ResponseWriter, r *http.Request) {
+		v, err := a.Content.ModsView(r.PathValue("key"))
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, v)
+	})
 	m.HandleFunc("POST /api/games/{key}/mods/toggle", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
 			Name string
@@ -2363,6 +2389,7 @@ func (s *Server) state() map[string]any {
 		"gamesDir":     a.Paths.Games,
 		"avatarColors": avatarColors,
 		"avatarGlyphs": avatarGlyphs,
+		"padModels":    PadModels(),
 		"maxProfiles":  MaxProfiles,
 		"features":     map[string]bool{"deviceLink": a.Link != nil},
 	}

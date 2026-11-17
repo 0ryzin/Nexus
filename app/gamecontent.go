@@ -49,6 +49,10 @@ type GameMod struct {
 type gameContentDoc struct {
 	Updates      []GameUpdate `json:"updates"`
 	DisabledMods []string     `json:"disabledMods"`
+	// learnt from the engine log of the last session (mods.go)
+	MainBuildID string            `json:"mainBuildId,omitempty"`
+	Applied     map[string]string `json:"applied,omitempty"`
+	LearnedAt   int64             `json:"learnedAt,omitempty"`
 }
 
 type GameContent struct {
@@ -425,6 +429,21 @@ func (c *GameContent) AddMod(key, path string, zipData []byte, zipName string) (
 		if err != nil {
 			return nil, errors.New("That file is not a ZIP archive. Extract other archive types first.")
 		}
+		// the whole archive is checked before anything is written: a mod with one unsafe or
+		// unusual entry is refused, never partly installed
+		var total uint64
+		for _, f := range zr.File {
+			if _, err := cleanZipName(f.Name); err != nil {
+				return nil, fmt.Errorf("This archive is not safe to install (%v).", err)
+			}
+			if f.Mode()&os.ModeType&^os.ModeDir != 0 {
+				return nil, fmt.Errorf("This archive contains a link or special file (%s) and is not installed.", f.Name)
+			}
+			total += f.UncompressedSize64
+		}
+		if total > 16<<30 {
+			return nil, errors.New("This archive would unpack to more than 16 GB and is not installed.")
+		}
 		v, root = newZipVFS(zr), strings.TrimSuffix(zipName, filepath.Ext(zipName))
 	case strings.EqualFold(filepath.Ext(path), ".zip"):
 		data, err := os.ReadFile(path)
@@ -481,7 +500,7 @@ func (c *GameContent) SetModEnabled(key, name string, on bool) error {
 	if err != nil {
 		return err
 	}
-	if !dirExists(filepath.Join(c.modsDir(g.TitleID), filepath.Base(name))) {
+	if !isBuiltinMod(g.TitleID, name) && (name == "" || filepath.Base(name) != name || !dirExists(filepath.Join(c.modsDir(g.TitleID), name))) {
 		return errors.New("That mod is not installed.")
 	}
 	c.mu.Lock()
@@ -508,6 +527,9 @@ func (c *GameContent) RemoveMod(key, name string) error {
 	}
 	if st := c.app.Emu.State(); st.Running && st.GameKey == key {
 		return errors.New("Close the game first.")
+	}
+	if isBuiltinMod(g.TitleID, name) {
+		return errors.New("Built-in mods are part of the NEXUS engine: switch them off instead.")
 	}
 	p := filepath.Join(c.modsDir(g.TitleID), filepath.Base(name))
 	if name == "" || !dirExists(p) {

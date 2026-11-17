@@ -18,8 +18,6 @@ package main
 // Nothing of NVIDIA's, AMD's or Lossless Scaling's is shipped with NEXUS.
 
 import (
-	"errors"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -124,10 +122,7 @@ func (e *Emulator) Enhancements() Enhancements {
 	case !vulkan:
 		out.Lossless.Why = out.FrameGen.Why
 	case !fileExists(ll):
-		out.Lossless.Why = "Needs Lossless.dll from your own copy of Lossless Scaling (Steam). Use “Find Lossless Scaling” or copy it into the folder."
-		if p := findLosslessDLL(); p != "" {
-			out.Lossless.Detail = "Found on this PC: " + p
-		}
+		out.Lossless.Why = "Needs Lossless.dll from your own copy of Lossless Scaling (Steam). Use “Set up Lossless Scaling”."
 	default:
 		out.Lossless.Detail = ll
 	}
@@ -157,53 +152,6 @@ func (e *Emulator) findStreamline() string {
 		}
 	}
 	return ""
-}
-
-var steamLibraryPath = regexp.MustCompile(`"path"\s+"([^"]+)"`)
-
-// findLosslessDLL looks for Lossless Scaling in the Steam libraries of this PC.
-func findLosslessDLL() string {
-	var roots []string
-	for _, env := range []string{"ProgramFiles(x86)", "ProgramFiles"} {
-		if p := os.Getenv(env); p != "" {
-			roots = append(roots, filepath.Join(p, "Steam"))
-		}
-	}
-	libs := append([]string{}, roots...)
-	for _, r := range roots {
-		if data, err := os.ReadFile(filepath.Join(r, "steamapps", "libraryfolders.vdf")); err == nil {
-			for _, m := range steamLibraryPath.FindAllStringSubmatch(string(data), -1) {
-				libs = append(libs, strings.ReplaceAll(m[1], `\\`, `\`))
-			}
-		}
-	}
-	for _, l := range libs {
-		p := filepath.Join(l, "steamapps", "common", "Lossless Scaling", "Lossless.dll")
-		if fileExists(p) {
-			return p
-		}
-	}
-	return ""
-}
-
-// ImportLossless copies the user's Lossless.dll into the engine's folder (from path, or the one
-// found in the Steam libraries). The file stays the user's; NEXUS never distributes it.
-func (e *Emulator) ImportLossless(path string) error {
-	if path == "" {
-		path = findLosslessDLL()
-		if path == "" {
-			return errors.New("Lossless Scaling was not found in your Steam libraries. Choose Lossless.dll yourself (it is in the Lossless Scaling folder).")
-		}
-	}
-	if !strings.EqualFold(filepath.Base(path), "Lossless.dll") || !fileExists(path) {
-		return errors.New("Choose the file Lossless.dll from the Lossless Scaling folder.")
-	}
-	if err := os.MkdirAll(e.losslessDir(), 0o755); err != nil {
-		return err
-	}
-	// a cached translation of an older Lossless.dll must not be reused
-	_ = os.Remove(filepath.Join(e.losslessDir(), "lsfg_spirv.cache"))
-	return copyFileOverwrite(path, filepath.Join(e.losslessDir(), "Lossless.dll"))
 }
 
 // applyHardwareCaps marks the settings this PC cannot use as not available, with the reason.
