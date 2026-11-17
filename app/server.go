@@ -405,6 +405,28 @@ func (s *Server) routes() {
 		g, _ := a.Library.Get(r.PathValue("key"))
 		writeJSON(w, g)
 	})
+	// a game's Cards background or title picture (kind background | logo; DELETE restores none)
+	m.HandleFunc("POST /api/games/{key}/art/{kind}", func(w http.ResponseWriter, r *http.Request) {
+		data, ext, err := readImage(r)
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		if err := a.Library.SetExtraArt(r.PathValue("key"), r.PathValue("kind"), data, ext); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		g, _ := a.Library.Get(r.PathValue("key"))
+		writeJSON(w, g)
+	})
+	m.HandleFunc("DELETE /api/games/{key}/art/{kind}", func(w http.ResponseWriter, r *http.Request) {
+		if err := a.Library.SetExtraArt(r.PathValue("key"), r.PathValue("kind"), nil, ""); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		g, _ := a.Library.Get(r.PathValue("key"))
+		writeJSON(w, g)
+	})
 	m.HandleFunc("POST /api/games/{key}/art-options", func(w http.ResponseWriter, r *http.Request) {
 		var b struct{ Preference, Fit string }
 		_ = readBody(r, &b)

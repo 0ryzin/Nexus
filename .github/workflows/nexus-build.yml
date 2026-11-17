@@ -53,6 +53,7 @@ jobs:
           NEXUS_HARDWARE= python3 tools/uitest/shader_progress.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
           node tools/uitest/eta_test.js
           node tools/uitest/pads_test.js
+          NEXUS_HARDWARE= python3 tools/uitest/home_layouts.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
           # last: it leaves a menu controller and users chosen in the shared test data
           NEXUS_HARDWARE= python3 tools/uitest/controller_prompts.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
 

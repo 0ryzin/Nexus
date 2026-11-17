@@ -34,11 +34,15 @@
         <span id="tb-clock" class="tb-item tb-clock">--:--</span>
       </div>
     </header>
+    <div id="home-gamebg" class="home-gamebg" hidden aria-hidden="true"><img id="home-logo" alt="" hidden></div>
     <div id="home-banner" class="banner" hidden></div>
+    <nav id="home-pages" class="home-pages" aria-label="Pages" hidden></nav>
     <div class="row-wrap">
       <div class="sel-label" id="sel-label"><span class="sel-title"></span><span class="sel-meta"></span></div>
       <div class="tiles" id="tiles" role="list"></div>
     </div>
+    <div id="home-details" class="home-details" hidden></div>
+    <div id="home-widgets" class="home-widgets" hidden></div>
     <nav class="dock" id="dock" aria-label="System"></nav>
     <div class="dock-label" id="dock-label" aria-live="polite"></div>
   </section>
@@ -105,6 +109,7 @@
   <div id="toasts" aria-live="polite"></div>
   <input type="file" id="file-input" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
   <script src="/eta.js"></script>
+  <script src="/home.js"></script>
   <script src="/pads.js"></script>
   <script src="/app.js"></script>
 </body>

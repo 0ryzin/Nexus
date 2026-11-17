@@ -865,3 +865,110 @@ body.game-front *, body.game-front *::before, body.game-front *::after { animati
 .mod-row>.row{flex:1;min-width:0}
 .mod-row>.chip{align-self:center;flex:none}
 .mod-row.warn .rl small{color:var(--warn,#ff9f0a)}
+
+/* ---------- Home layouts (web/home.js, docs/HOME.md) ----------
+   NEXUS's own take on HomeNX's ideas: Cards (large cards over the selected game's picture, a
+   frosted panel with its details) and Grid (all games in a grid with folders and widgets, the
+   shortcuts down the side). Classic is the original row. .fx-flat drops the blur for the
+   lowest graphics-card use. */
+.home-pages{display:flex;gap:calc(var(--u)*.5);justify-content:center;align-items:center;margin-top:calc(var(--u)*.6);flex-wrap:wrap;padding:0 calc(var(--u)*2)}
+.hp-tab{border:none;border-radius:999px;padding:calc(var(--u)*.35) calc(var(--u)*1.1);background:color-mix(in srgb,var(--surface) 60%,transparent);
+  color:var(--muted);font:inherit;font-weight:600;font-size:calc(var(--u)*.8);cursor:pointer}
+.hp-tab.on{background:var(--accent);color:var(--accent-ink)}
+.hp-tab:hover:not(.on){background:var(--hover);color:var(--text)}
+.hp-hint{color:var(--muted);font-size:calc(var(--u)*.7);margin-left:calc(var(--u)*.4)}
+.tile.fav::before{content:"\2605";position:absolute;left:8px;top:6px;z-index:1;color:#ffd60a;font-size:calc(var(--u)*.9);text-shadow:0 1px 3px rgba(0,0,0,.7)}
+/* folders */
+.tile.folder{background:color-mix(in srgb,var(--surface) 88%,transparent);color:var(--text)}
+.tile.folder .art{display:grid;place-items:center}
+.fold-art{display:grid;grid-template-columns:1fr 1fr;gap:6%;width:72%;height:72%;margin-bottom:14%}
+.fold-cell{border-radius:8px;overflow:hidden;background:color-mix(in srgb,var(--text) 10%,transparent)}
+.fold-cell img{width:100%;height:100%;object-fit:cover;display:block}
+.fold-name{position:absolute;left:0;right:0;bottom:7%;text-align:center;font-weight:600;font-size:calc(var(--u)*.78);padding:0 8px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fold-n{position:absolute;right:8px;top:8px;font-size:calc(var(--u)*.7);font-weight:700;background:rgba(0,0,0,.45);color:#fff;border-radius:999px;padding:1px 7px}
+.fold-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:14px;padding:6px 4px 14px}
+.fold-grid .tile{width:100%;height:auto;aspect-ratio:1}
+/* the selected game's panel and widgets (hidden in Classic) */
+.home-details,.home-widgets{display:none}
+#home:not(.hl-classic) .home-details:not([hidden]){display:flex}
+#home:not(.hl-classic) .home-widgets:not([hidden]){display:flex}
+.home-details{align-items:center;gap:calc(var(--u)*1.1);margin:0 auto calc(var(--u)*.6);width:min(88vw,980px);padding:calc(var(--u)*.9) calc(var(--u)*1.2);
+  border-radius:22px;background:color-mix(in srgb,var(--surface) 62%,transparent);backdrop-filter:blur(18px) saturate(1.2);
+  box-shadow:0 12px 34px rgba(0,0,0,.28),inset 0 1px 0 color-mix(in srgb,#fff 8%,transparent)}
+.hd-icon{width:calc(var(--u)*3.6);height:calc(var(--u)*3.6);border-radius:12px;overflow:hidden;flex:none;background:var(--tile-bg)}
+.hd-icon img{width:100%;height:100%;object-fit:cover}
+.hd-text{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.hd-text b{font-size:calc(var(--u)*1.15);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hd-text span{color:var(--muted);font-size:calc(var(--u)*.8)}
+.hd-actions{display:flex;gap:calc(var(--u)*.6);align-items:center}
+.hd-play,.hd-more{border:none;font:inherit;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+.hd-play{padding:calc(var(--u)*.6) calc(var(--u)*1.6);border-radius:999px;background:var(--text);color:var(--bg)}
+.hd-play svg{width:1.1em;height:1.1em;fill:currentColor}
+.hd-more{width:calc(var(--u)*2.6);height:calc(var(--u)*2.6);justify-content:center;border-radius:50%;background:color-mix(in srgb,var(--text) 12%,transparent);color:var(--text)}
+.hd-more svg{width:50%;height:50%;fill:currentColor}
+.hd-play.focus,.hd-more.focus{box-shadow:0 0 0 3px var(--bg),0 0 0 6px var(--accent)}
+.home-widgets{gap:calc(var(--u)*.8);justify-content:center;flex-wrap:wrap;margin:0 auto calc(var(--u)*.6);padding:0 calc(var(--u)*2)}
+.home-widgets{flex-wrap:nowrap!important;overflow:hidden}
+#home:not(.hl-classic){padding-bottom:calc(var(--u)*4.4)}
+.widget{display:flex;flex-direction:column;gap:4px;min-width:calc(var(--u)*9);max-width:calc(var(--u)*14);padding:calc(var(--u)*.55) calc(var(--u)*.8);border-radius:16px;
+  background:color-mix(in srgb,var(--surface) 62%,transparent);backdrop-filter:blur(14px)}
+.widget>small{color:var(--muted);font-weight:600;font-size:calc(var(--u)*.68);text-transform:uppercase;letter-spacing:.06em}
+.widget .w-big{font-size:calc(var(--u)*1.2)}
+.widget .w-none{color:var(--muted);font-size:calc(var(--u)*.78)}
+.w-game{display:flex;align-items:center;gap:8px;border:none;background:none;color:var(--text);font:inherit;font-size:calc(var(--u)*.78);padding:3px;border-radius:8px;cursor:pointer;text-align:left}
+.w-game img{width:28px;height:28px;border-radius:6px;object-fit:cover}
+.w-game span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.w-game.focus{box-shadow:0 0 0 2px var(--accent)}
+.w-game:hover{background:var(--hover)}
+/* the selected game's picture behind the cards */
+.home-gamebg{position:absolute;inset:0;z-index:-1;background-size:cover;background-position:center;transition:background-image .35s}
+.home-gamebg.from-icon{filter:blur(40px) saturate(1.3) brightness(.55);inset:-60px}
+.home-gamebg:not(.from-icon){filter:brightness(.6)}
+.home-gamebg::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 40%,color-mix(in srgb,var(--bg) 75%,transparent))}
+#home-logo{position:absolute;left:50%;top:25vh;translate:-50% 0;max-width:40vw;max-height:15vh;filter:drop-shadow(0 6px 18px rgba(0,0,0,.5))}
+.home-gamebg.from-icon #home-logo{filter:none}
+#home{isolation:isolate}
+body.home-bg-color #wallpaper{background:var(--home-bg)!important}
+#home[style*="--home-bg:#"]{background:var(--home-bg)}
+/* Cards: big cards in a row, the panel under them */
+#home.hl-cards{--tile:clamp(140px,min(21vw,31vh),320px)}
+#home:not(.hl-classic) .row-wrap{min-height:0}
+#home.hl-cards .tiles{align-items:flex-end;padding-top:calc(var(--u)*2)}
+#home.hl-cards .tile{border-radius:22px;width:calc(var(--tile)*.82);height:var(--tile)}
+#home.hl-cards .tile .art img{object-fit:cover}
+#home.hl-cards .tile.focus{transform:translateY(-10px) scale(1.06)}
+#home.hl-cards .tile.focus::after{inset:-8px;border-radius:28px}
+#home.hl-cards .sel-label{display:none}
+#home.hl-cards .row-wrap{justify-content:flex-end}
+/* Grid: every game in a wrapping grid, shortcuts down the left side */
+#home.hl-grid{--tile:clamp(96px,min(10vw,15vh),170px)}
+#home.hl-grid .row-wrap{justify-content:flex-start;overflow:hidden}
+#home.hl-grid .tiles{flex-wrap:wrap;overflow-x:hidden;overflow-y:auto;align-content:flex-start;justify-content:center;max-height:100%;
+  padding:calc(var(--u)*1) calc(var(--u)*2) calc(var(--u)*2) calc(var(--u)*7.5);gap:calc(var(--tile)*.12);scroll-padding:calc(var(--u)*2)}
+#home.hl-grid .tile{border-radius:18px}
+#home.hl-grid .sel-label{padding-left:calc(var(--u)*7.5)}
+#home.hl-grid .home-details,#home.hl-grid .home-widgets{margin-left:calc(var(--u)*7.5)}
+#home:not(.hl-classic) .dock{position:absolute;left:calc(var(--u)*1.2);top:calc(var(--u)*7.5);bottom:calc(var(--u)*4.5);flex-direction:column;width:auto;margin:0;
+  justify-content:flex-start;border-radius:calc(var(--u)*2.2);padding:calc(var(--u)*.7) calc(var(--u)*.55);overflow-y:auto;scrollbar-width:none;height:max-content;max-height:calc(100vh - var(--u)*12)}
+#home:not(.hl-classic) .dock-btn{--d:calc(var(--u)*3.1)}
+#home:not(.hl-classic) .dock-btn .tip{bottom:auto;left:calc(100% + 14px);top:50%;translate:0 -50%}
+#home:not(.hl-classic) .dock-label{display:none}
+#home.hl-cards .tiles{padding-left:calc(var(--u)*7)}
+#home.hl-cards .home-details,#home.hl-cards .home-widgets{margin-left:max(calc(var(--u)*7),calc((100vw - min(88vw,980px))/2))}
+/* flat: no blur (lowest graphics-card use) */
+#home.fx-flat .home-details,#home.fx-flat .widget,#home.fx-flat .dock{backdrop-filter:none;background:var(--surface)}
+#home.fx-flat .home-gamebg.from-icon{filter:brightness(.4);inset:0}
+/* Settings › Home screen: the layout chooser */
+.layout-pick{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:6px 0 14px}
+.lp-item{display:flex;flex-direction:column;gap:6px;text-align:left;padding:12px;border-radius:16px;border:2px solid transparent;background:var(--surface);color:var(--text);font:inherit;cursor:pointer}
+.lp-item small{color:var(--muted);line-height:1.35}
+.lp-item.sel{border-color:var(--accent)}
+.lp-item.focus{box-shadow:0 0 0 3px var(--text)}
+.lp-item:hover:not(.sel){background:var(--hover)}
+.lp-demo{display:grid;gap:5px;height:64px;padding:8px;border-radius:10px;background:color-mix(in srgb,var(--text) 8%,transparent)}
+.lp-demo i{border-radius:5px;background:color-mix(in srgb,var(--text) 30%,transparent)}
+.lp-classic{grid-template-columns:repeat(4,1fr);align-items:center}.lp-classic i{height:60%}
+.lp-cards{grid-template-columns:repeat(4,1fr);align-items:end}.lp-cards i{height:100%}.lp-cards i:nth-child(2){outline:2px solid var(--accent)}
+.lp-grid{grid-template-columns:repeat(4,1fr);grid-template-rows:1fr 1fr}.lp-grid i:first-child{grid-row:span 2}
+@media (max-width:900px){.layout-pick{grid-template-columns:1fr}}

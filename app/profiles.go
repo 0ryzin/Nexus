@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -59,7 +60,34 @@ type Profile struct {
 	CreatedAt int64    `json:"createdAt"`
 	Theme     Theme    `json:"theme"`
 	Controls  Controls `json:"controls"`
-	Sort      string   `json:"sort"` // recent | alpha | playtime
+	Sort      string   `json:"sort"` // recent | alpha | playtime | added | custom
+	// Home: this user's home screen (layouts, organisation, widgets; docs/HOME.md)
+	Home HomePrefs `json:"home"`
+}
+
+// HomePrefs is one user's home screen. Every list holds game keys; a key of a game that is gone
+// is ignored where it is used.
+type HomePrefs struct {
+	Layout     string          `json:"layout"`               // classic | cards | grid
+	Order      []string        `json:"order,omitempty"`      // the custom order (sort "custom")
+	Favorites  []string        `json:"favorites,omitempty"`  // favourite games
+	Hidden     []string        `json:"hidden,omitempty"`     // not on Home (still in All Software)
+	Folders    []HomeGroup     `json:"folders,omitempty"`    // folders on Home (a game in one is shown in it)
+	Pages      []HomeGroup     `json:"pages,omitempty"`      // custom pages (a game can be on several)
+	Dock       []string        `json:"dock,omitempty"`       // order of the shortcut buttons (dock / sidebar)
+	DockHidden []string        `json:"dockHidden,omitempty"` // shortcut buttons not shown
+	Widgets    map[string]bool `json:"widgets,omitempty"`    // recent | playtime | favorites | added | storage | details
+	Effects    string          `json:"effects"`              // glass | flat (glass: frosted panels; flat for the lowest GPU use)
+	GameBg     bool            `json:"gameBackground"`       // Cards: the selected game's picture behind
+	BgColor    string          `json:"bgColor,omitempty"`    // a plain colour instead of the wallpaper
+	Count      int             `json:"count"`                // games on the classic Home row
+}
+
+// HomeGroup is a folder or a custom page.
+type HomeGroup struct {
+	ID    string   `json:"id"`
+	Name  string   `json:"name"`
+	Games []string `json:"games"`
 }
 
 type Avatar struct {
@@ -175,6 +203,7 @@ func (st *ProfileStore) normalise(pr *Profile) {
 	if pr.Theme.HomeTransition == "" {
 		pr.Theme.HomeTransition = "zoom"
 	}
+	normaliseHome(&pr.Home)
 	if pr.Controls.Mapping == nil {
 		pr.Controls.Mapping = dc.Mapping
 	}
@@ -612,3 +641,47 @@ func (s ProfileStats) Recent() []string {
 	sort.Slice(keys, func(i, j int) bool { return s.Games[keys[i]].LastPlayed > s.Games[keys[j]].LastPlayed })
 	return keys
 }
+
+// normaliseHome keeps a user's home preferences valid (unknown values back to the defaults).
+func normaliseHome(h *HomePrefs) {
+	switch h.Layout {
+	case "classic", "cards", "grid":
+	default:
+		h.Layout = "classic"
+	}
+	if h.Effects != "flat" {
+		h.Effects = "glass"
+	}
+	if h.Count < 6 || h.Count > 48 {
+		h.Count = 12
+	}
+	if h.Widgets == nil {
+		h.Widgets = map[string]bool{"recent": true, "details": true}
+	}
+	if h.BgColor != "" && !reHexColor.MatchString(h.BgColor) {
+		h.BgColor = ""
+	}
+	clean := func(gs []HomeGroup, max int) []HomeGroup {
+		out := gs[:0]
+		seen := map[string]bool{}
+		for _, g := range gs {
+			g.Name = strings.TrimSpace(g.Name)
+			if g.ID == "" || seen[g.ID] || g.Name == "" || len(out) >= max {
+				continue
+			}
+			if len(g.Name) > 40 {
+				g.Name = g.Name[:40]
+			}
+			seen[g.ID] = true
+			if g.Games == nil {
+				g.Games = []string{}
+			}
+			out = append(out, g)
+		}
+		return out
+	}
+	h.Folders = clean(h.Folders, 32)
+	h.Pages = clean(h.Pages, 12)
+}
+
+var reHexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)

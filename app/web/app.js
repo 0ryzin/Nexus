@@ -1476,18 +1476,6 @@ async function pollSystem() {
 function markTopFocus() { if (Nav.cur && Nav.cur.closest('#tb-profiles')) { const p = Nav.cur._profile; const b = $$('#tb-profiles button').find(x => x._profile?.id === p?.id); if (b) Nav.setFocus(b, { silent: true }); } }
 
 // ---------- home
-function homeGames() {
-  const sort = S.profile?.sort || 'recent';
-  const playable = S.games.filter(g => isPlayable(g) && !g.hidden);
-  const recentSet = new Set(S.recent);
-  const recent = S.recent.map(gameByKey).filter(g => g && isPlayable(g));
-  let rest = playable.filter(g => !recentSet.has(g.key));
-  if (sort === 'alpha') return [...playable].sort((a, b) => a.title.localeCompare(b.title)).slice(0, 12);
-  if (sort === 'playtime') return [...playable].sort((a, b) => (S.stats[b.key]?.seconds || 0) - (S.stats[a.key]?.seconds || 0)).slice(0, 12);
-  rest = rest.sort((a, b) => a.title.localeCompare(b.title));
-  return [...recent, ...rest].slice(0, 12);
-}
-
 function gameTile(g, extraClass = '') {
   const t = h('button', { class: 'tile ' + extraClass, 'data-nav': true, role: 'listitem', title: g.title });
   const art = h('div', { class: 'art' });
@@ -1515,9 +1503,12 @@ function gameTile(g, extraClass = '') {
 
 function renderHome() {
   renderTopbar();
+  homeLayoutChrome(); // layout, page strip (web/home.js)
+  const layout = homePrefs().layout;
   const row = $('#tiles'); row.innerHTML = '';
-  row.dataset.row = 'strict';
-  const games = homeGames();
+  if (layout === 'grid') delete row.dataset.row; else row.dataset.row = 'strict';
+  const items = homeItems();
+  const games = items.filter(x => x.g).map(x => x.g);
   if (!S.games.length) {
     const scanning = S.library?.scanning;
     const empty = h('div', { class: 'tile empty', 'data-nav': true },
@@ -1532,14 +1523,17 @@ function renderHome() {
     });
     row.append(empty);
   }
-  games.forEach((g, i) => {
-    const t = gameTile(g); t.style.setProperty('--i', i);
+  items.forEach((it, i) => {
+    if (it.folder) { const t = folderTile(it.folder); t.style.setProperty('--i', i); t._navMove = homeTileUp; row.append(t); return; }
+    const g = it.g;
+    const t = gameTile(g, homePrefs().favorites.includes(g.key) ? 'fav' : ''); t.style.setProperty('--i', i);
     t.addEventListener('click', () => launchGame(g.key));
-    t.addEventListener('navfocus', () => updateSelLabel(g));
+    t.addEventListener('navfocus', () => { updateSelLabel(g); homeDetails(g); });
     t.addEventListener('navblur', () => updateSelLabel(null));
     t._navMove = homeTileUp;
     row.append(t);
   });
+  if (S.games.length && !items.length) row.append(h('div', { class: 'tile empty' }, h('h3', {}, 'Nothing on this page'), h('p', {}, HomeState.page === 'all' ? 'Every game is hidden from Home or in a folder.' : 'Add games to it with their Options › Organise.')));
   if (S.games.length) {
     const all = h('button', { class: 'tile all', 'data-nav': true, style: { '--i': games.length } }, svg(I.grid, 'all-ic'), h('span', { class: 'all-n' }, `All Software (${S.games.filter(isPlayable).length})`));
     all.addEventListener('click', () => showLibrary());
@@ -1548,18 +1542,8 @@ function renderHome() {
   }
   // dock
   const dock = $('#dock'); dock.innerHTML = ''; dock.dataset.row = 'strict';
-  const items = [
-    ['Library', I.grid, '#ff4f4f', () => showLibrary()],
-    ['Users', I.person, '#ff9f0a', () => showWho()],
-    ['NEXUS Account', I.cloud, '#0a84ff', () => showSettings('account')],
-    ['Media', I.media, '#ffd60a', () => Media.show()],
-    ['Controllers', I.pad, '#30d158', () => Controllers.show()],
-    ['Themes', I.palette, '#bf5af2', () => showSettings('appearance')],
-    ['System & Emulation', I.chip, '#64d2ff', () => showSettings('sysfiles')],
-    ['System Settings', I.gear, 'var(--muted)', () => showSettings()],
-    ['Power', I.power, 'var(--muted)', () => openPower()],
-  ];
-  items.forEach(([label, icon, col, fn], i) => {
+  const dockItems = homeDockOrder(homeDockItems()).map(x => [x.label, x.icon, x.color, x.run]);
+  dockItems.forEach(([label, icon, col, fn], i) => {
     const b = h('button', { class: 'dock-btn', 'data-nav': true, style: { '--ic': col, '--i': i }, 'aria-label': label }, svg(icon), h('span', { class: 'tip' }, label));
     b.addEventListener('click', fn);
     b.addEventListener('navfocus', () => { $('#dock-label').textContent = label; });
@@ -1569,11 +1553,40 @@ function renderHome() {
     dock.append(b);
   });
   renderBanner();
+  homeWidgets();
+  homeDetails(games.find(g => g.key === S.playing?.gameKey) || games[0] || null);
+}
+
+// The shortcut buttons (dock / sidebar), with ids for the user's order (web/home.js)
+function homeDockItems() {
+  return [
+    { id: 'library', label: 'Library', icon: I.grid, color: '#ff4f4f', run: () => showLibrary() },
+    { id: 'users', label: 'Users', icon: I.person, color: '#ff9f0a', run: () => showWho() },
+    { id: 'account', label: 'NEXUS Account', icon: I.cloud, color: '#0a84ff', run: () => showSettings('account') },
+    { id: 'media', label: 'Media', icon: I.media, color: '#ffd60a', run: () => Media.show() },
+    { id: 'controllers', label: 'Controllers', icon: I.pad, color: '#30d158', run: () => Controllers.show() },
+    { id: 'home', label: 'Home screen', icon: I.palette, color: '#bf5af2', run: () => showSettings('home') },
+    { id: 'themes', label: 'Themes', icon: I.palette, color: '#ff6ac1', run: () => showSettings('appearance') },
+    { id: 'shaders', label: 'Shaders', icon: I.chip, color: '#5e5ce6', run: () => showSettings('emulator') },
+    { id: 'perf', label: 'Performance', icon: I.chip, color: '#ff9f0a', run: () => showSettings('perf') },
+    { id: 'emulation', label: 'System & Emulation', icon: I.chip, color: '#64d2ff', run: () => showSettings('sysfiles') },
+    { id: 'settings', label: 'System Settings', icon: I.gear, color: 'var(--muted)', run: () => showSettings() },
+    { id: 'power', label: 'Power', icon: I.power, color: 'var(--muted)', run: () => openPower() },
+  ];
 }
 
 // Up from a Home tile goes to the banner's buttons when it has any (Resume / Close game while a
 // game runs in the background), so a controller always reaches them; otherwise normal movement.
 function homeTileUp(dir) {
+  // Cards and Grid: Down from the lowest games goes to the selected game's panel (Play), not to
+  // the shortcut bar at the side (web/home.js)
+  if (dir === 'down' && homePrefs().layout !== 'classic') {
+    const cur = Nav.cur, r = cur?.getBoundingClientRect();
+    const below = r && $$('#tiles .tile').some(t => t !== cur && t.getBoundingClientRect().top > r.bottom - 4);
+    const play = $('#home-details .hd-play');
+    if (!below && play && play.offsetParent) { Nav.setFocus(play); return true; }
+    return false;
+  }
   if (dir !== 'up') return false;
   const b = $('#home-banner');
   if (b.hidden) return false;
@@ -1635,6 +1648,7 @@ function updateSelLabel(g) {
 
 Screens.home = {
   onBack: () => openPower(),
+  onTab: d => homeTab(d), // pages (web/home.js)
   onOptions: cur => { if (cur?._game) gameMenu(cur._game.key); else if (cur?._profile) editProfile(cur._profile.id); },
 };
 
@@ -1814,6 +1828,7 @@ function gameMenu(key, view = 'main') {
     ['Game', [
       isPlayable(g) ? ['config', 'Game Settings', I.gear, 'Graphics, controls, updates and per-game options'] : null,
       isPlayable(g) && g.titleId && g.kind !== 'homebrew' ? ['mods', 'Manage Mods', I.puzzle, modsSummary(g)] : null,
+      ['organise', 'Organise', I.grid, homePrefs().favorites.includes(key) ? 'Favourite · folders, pages, order, hide from Home' : 'Favourites, folders, pages, order, hide from Home'],
       ['saves', 'Save Data', I.folder, 'View, back up, import or restore saves'],
       ['info', 'Game Information', I.info],
     ]],
@@ -1845,6 +1860,7 @@ function gameMenu(key, view = 'main') {
       case 'close': closeRunningGame(); break;
       case 'config': gameConfig(key); break;
       case 'mods': ModsUI.open(key); break;
+      case 'organise': homeOrganise(key); break;
       case 'saves': saveDataPage(S.profile?.id); break;
       case 'more': gameMenu(key, 'more'); break;
       case 'back': gameMenu(key); break;
@@ -1972,7 +1988,23 @@ function artEditor(key) {
     if (g.hasCustom) body.append(rowButton('Remove my image', { danger: true, onClick: async () => { const ng = await api(`/api/games/${key}/art`, { method: 'DELETE' }); Object.assign(g, ng); rebuild(); refreshViews(); } }));
     if (g.hasOnline) body.append(rowButton('Remove downloaded artwork', { danger: true, sub: 'NEXUS will not download it again unless you ask.', onClick: async () => { const ng = await api(`/api/games/${key}/online-art`, { method: 'DELETE' }); Object.assign(g, ng); rebuild(); refreshViews(); } }));
     if (g.onlineError && g.onlineError !== 'removed by user') body.append(h('p', { class: 'note' }, 'Last online lookup: ' + g.onlineError));
-    body.append(h('p', { class: 'note' }, 'Artwork is stored in NEXUS data\\GameProfiles\\' + (g.titleId || 'file-…') + '. Game files are never modified.'));
+    // the Cards home layout's background and title pictures (web/home.js)
+    body.append(h('h3', {}, 'Cards layout pictures'));
+    const extra = (kind, label, sub, rev) => {
+      body.append(rowButton(rev ? `Change the ${label}…` : `Choose a ${label}…`, { sub, onClick: async () => {
+        const f = await pickImage(); if (!f) return;
+        try { const ng = await api(`/api/games/${key}/art/${kind}`, { body: f }); Object.assign(g, ng); rebuild(); refreshViews(); toast('Picture saved', I.check); } catch (e) { alertDlg('Could not use that image', e.message); }
+      } }));
+      if (rev) body.append(rowButton(`Remove the ${label}`, { danger: true, onClick: async () => { const ng = await api(`/api/games/${key}/art/${kind}`, { method: 'DELETE' }); Object.assign(g, ng); rebuild(); refreshViews(); } }));
+    };
+    extra('background', 'background picture', 'Shown behind the cards while this game is selected (wide images, 1920 × 1080 ideal).', g.bgRev);
+    extra('logo', 'title picture', 'The game’s logo over its background (a PNG with transparency is best).', g.logoRev);
+    body.append(rowButton('Display name', { value: g.title, sub: 'The name NEXUS shows for this game. Empty: the detected name.', onClick: async () => {
+      const n = await dialog({ title: 'Display name', text: 'Leave empty to use the detected name.', input: { value: g.title, max: 80 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Save', value: true, primary: true }] });
+      if (n === null || n === undefined) return;
+      const ng = await api(`/api/games/${key}/title`, { body: { title: n } }); Object.assign(g, ng); rebuild(); refreshViews();
+    } }));
+    body.append(h('p', { class: 'note' }, 'Artwork and names are stored in NEXUS data\\GameProfiles\\' + (g.titleId || 'file-…') + ' and are the same for every user of this NEXUS. Game files are never modified.'));
   });
 }
 function hostName(u) { try { return new URL(u).host; } catch { return ''; } }
@@ -2556,7 +2588,7 @@ $('#play-close').addEventListener('click', async () => {
 
 // ---------- settings
 const CATS = [
-  ['account', 'NEXUS Account'], ['appearance', 'Appearance'], ['startup', 'Startup'], ['library', 'Game library'], ['controllers', 'Controllers'], ['users', 'Users'], ['savedata', 'Save Data'], ['system', 'System'], ['updates', 'Updates'],
+  ['account', 'NEXUS Account'], ['appearance', 'Appearance'], ['home', 'Home screen'], ['startup', 'Startup'], ['library', 'Game library'], ['controllers', 'Controllers'], ['users', 'Users'], ['savedata', 'Save Data'], ['system', 'System'], ['updates', 'Updates'],
   ['-', 'System & Emulation'], ['engine', 'NEXUS Engine'], ['sysfiles', 'System files'], ['emusettings', 'Emulation settings'], ['emulator', 'Game sessions & saves'], ['amiibo', 'Amiibo'], ['recording', 'Screen recording'], ['perf', 'Performance Monitor'],
 ];
 const NAVCATS = () => catList().filter(c => c[0] !== '-' && c[0] !== 'controllers');
@@ -3239,6 +3271,7 @@ const Panels = {
   amiibo(p) { return AmiiboUI.panel(p); },
   perf(p) { return renderPerfSettings(p); },
   sync(p) { return renderSync(p); },
+  home(p) { homeSettingsPanel(p); },
   appearance(p) {
     const th = S.profile?.theme || {};
     p.append(h('h2', {}, 'Appearance'), h('p', { class: 'note' }, `These settings belong to ${S.profile?.name || 'the current user'}.`));

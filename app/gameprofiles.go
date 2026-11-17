@@ -13,20 +13,23 @@ import (
 // Regional releases have different Title IDs and therefore separate profiles;
 // updates share the base game's Title ID (as in Lichii's own per-game configs).
 type GameProfile struct {
-	TitleID       string            `json:"titleId,omitempty"`
-	LastPath      string            `json:"lastPath,omitempty"`
-	Title         string            `json:"title,omitempty"`         // user's display-name override
-	ArtPreference string            `json:"artPreference,omitempty"` // auto | custom | embedded | online
-	ArtFit        string            `json:"artFit,omitempty"`        // cover | contain
-	CustomIcon    string            `json:"customIcon,omitempty"`    // file name inside the profile folder
-	Hidden        bool              `json:"hidden,omitempty"`        // removed from library (file untouched)
-	Emu           map[string]string `json:"emu,omitempty"`           // per-game Lichii overrides (option id -> value)
-	InputProfile  string            `json:"inputProfile,omitempty"`  // per-game Lichii input profile for player 1
-	EmuApplied    []string          `json:"emuApplied,omitempty"`    // keys NEXUS has written to Lichii's custom config
-	Online        OnlineArt         `json:"online"`
-	Emulator      string            `json:"emulator,omitempty"` // "" = default | lichii | ryujinx
-	Ryu           map[string]string `json:"ryujinx,omitempty"`  // 1.5 per-game Ryujinx overrides (migrated into Settings)
-	Settings      map[string]string `json:"settings,omitempty"` // per-game NEXUS settings (enginesettings.go)
+	TitleID       string `json:"titleId,omitempty"`
+	LastPath      string `json:"lastPath,omitempty"`
+	Title         string `json:"title,omitempty"`         // user's display-name override
+	ArtPreference string `json:"artPreference,omitempty"` // auto | custom | embedded | online
+	ArtFit        string `json:"artFit,omitempty"`        // cover | contain
+	CustomIcon    string `json:"customIcon,omitempty"`    // file name inside the profile folder
+	// the Cards home layout's background and title pictures (custom-background.*, custom-logo.*)
+	CustomBackground string            `json:"customBackground,omitempty"`
+	CustomLogo       string            `json:"customLogo,omitempty"`
+	Hidden           bool              `json:"hidden,omitempty"`       // removed from library (file untouched)
+	Emu              map[string]string `json:"emu,omitempty"`          // per-game Lichii overrides (option id -> value)
+	InputProfile     string            `json:"inputProfile,omitempty"` // per-game Lichii input profile for player 1
+	EmuApplied       []string          `json:"emuApplied,omitempty"`   // keys NEXUS has written to Lichii's custom config
+	Online           OnlineArt         `json:"online"`
+	Emulator         string            `json:"emulator,omitempty"` // "" = default | lichii | ryujinx
+	Ryu              map[string]string `json:"ryujinx,omitempty"`  // 1.5 per-game Ryujinx overrides (migrated into Settings)
+	Settings         map[string]string `json:"settings,omitempty"` // per-game NEXUS settings (enginesettings.go)
 	// Controls: this game's own controller layout (nil = the user's layout, plus the game's
 	// built-in preset if it has one).
 	Controls *GameLayout `json:"controls,omitempty"`

@@ -38,19 +38,24 @@ type Game struct {
 	ArtPref    string `json:"artPref,omitempty"`
 	ArtFit     string `json:"artFit,omitempty"`
 	HasCustom  bool   `json:"hasCustom,omitempty"`
-	HasEmbed   bool   `json:"hasEmbedded,omitempty"`
-	HasOnline  bool   `json:"hasOnline,omitempty"`
-	OnlineErr  string `json:"onlineError,omitempty"`
-	Hidden     bool   `json:"hidden,omitempty"`
-	PerGame    int    `json:"perGame,omitempty"`  // number of per-game emulator overrides
-	Emulator   string `json:"emulator,omitempty"` // per-game emulator choice ("" = default)
-	Note       string `json:"note,omitempty"`
+	// Cards layout pictures (modification time, 0 = none): /art/<key>?src=background|logo
+	BgRev     int64  `json:"bgRev,omitempty"`
+	LogoRev   int64  `json:"logoRev,omitempty"`
+	HasEmbed  bool   `json:"hasEmbedded,omitempty"`
+	HasOnline bool   `json:"hasOnline,omitempty"`
+	OnlineErr string `json:"onlineError,omitempty"`
+	Hidden    bool   `json:"hidden,omitempty"`
+	PerGame   int    `json:"perGame,omitempty"`  // number of per-game emulator overrides
+	Emulator  string `json:"emulator,omitempty"` // per-game emulator choice ("" = default)
+	Note      string `json:"note,omitempty"`
+	Added     int64  `json:"added,omitempty"` // when NEXUS first found the file (Unix seconds)
 }
 
 // cached identification so rescans are instant
 type cacheEntry struct {
 	Size      int64  `json:"size"`
 	ModTime   int64  `json:"mtime"`
+	FirstSeen int64  `json:"firstSeen,omitempty"` // when NEXUS first found this file ("date added")
 	TitleID   string `json:"titleId"`
 	FullID    string `json:"fullId"`
 	Kind      string `json:"kind"`
@@ -295,6 +300,13 @@ func (l *Library) scan(force bool, onlyPath string) error {
 		if ok && ce.V < 3 && !ce.HasIcon {
 			redo = true // 0.3.0 reads NUP packages and larger/other-format icons: look again once
 		}
+		first := ce.FirstSeen
+		if first == 0 {
+			first = time.Now().Unix()
+			if ok { // found by an earlier NEXUS that did not record it: the file's own date
+				first = fi.ModTime().Unix()
+			}
+		}
 		if redo || !ok || ce.Size != fi.Size() || ce.ModTime != fi.ModTime().Unix() || ce.KeysRev != krev {
 			info, ierr := IdentifyFile(path, ks)
 			ce = cacheEntry{Size: fi.Size(), ModTime: fi.ModTime().Unix(), TitleID: info.TitleID, FullID: info.FullID,
@@ -314,12 +326,13 @@ func (l *Library) scan(force bool, onlyPath string) error {
 				l.app.Events.Emit("library.scan", map[string]any{"state": "progress", "done": i, "total": len(files)})
 			}
 		}
+		ce.FirstSeen = first
 		newCache[path] = ce
 		key := gameKey(GameInfo{TitleID: ce.TitleID, FullID: ce.FullID, Kind: ce.Kind}, path)
 		ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(path), "."))
 		g := Game{Key: key, Path: path, Dir: filepath.Dir(path), Format: ext, Size: fi.Size(),
 			TitleID: ce.TitleID, FullID: ce.FullID, Kind: ce.Kind, Version: ce.Version, IDSource: ce.Source,
-			FileTitle: CleanTitle(path), EmbedName: ce.Name, Publisher: ce.Publisher, Note: ce.Err}
+			FileTitle: CleanTitle(path), EmbedName: ce.Name, Publisher: ce.Publisher, Note: ce.Err, Added: ce.FirstSeen}
 		if g.Kind == "" {
 			g.Kind = "unknown"
 		}
@@ -396,6 +409,13 @@ func (l *Library) decorateLocked(g *Game) {
 		g.Title = g.FileTitle
 	}
 	g.HasCustom = p.CustomIcon != "" && fileExists(l.GP.File(g.Key, p.CustomIcon))
+	g.BgRev, g.LogoRev = 0, 0
+	if fi, err := os.Stat(l.GP.File(g.Key, p.CustomBackground)); p.CustomBackground != "" && err == nil {
+		g.BgRev = fi.ModTime().UnixMilli()
+	}
+	if fi, err := os.Stat(l.GP.File(g.Key, p.CustomLogo)); p.CustomLogo != "" && err == nil {
+		g.LogoRev = fi.ModTime().UnixMilli()
+	}
 	g.HasEmbed = fileExists(l.GP.File(g.Key, "embedded-icon.jpg"))
 	g.HasOnline = p.Online.File != "" && fileExists(l.GP.File(g.Key, p.Online.File))
 	path, src := l.artFor(g, p)
@@ -530,6 +550,16 @@ func (l *Library) ArtPath(key, variant string) string {
 	case "custom":
 		if p.CustomIcon != "" {
 			return existing(l.GP.File(key, p.CustomIcon))
+		}
+		return ""
+	case "background":
+		if p.CustomBackground != "" {
+			return existing(l.GP.File(key, p.CustomBackground))
+		}
+		return ""
+	case "logo":
+		if p.CustomLogo != "" {
+			return existing(l.GP.File(key, p.CustomLogo))
 		}
 		return ""
 	}
@@ -702,4 +732,36 @@ func (l *Library) ByTitleID(titleID string) *Game {
 		}
 	}
 	return nil
+}
+
+// SetExtraArt stores a game's Cards background or title picture (kind "background" | "logo") as
+// System/GameProfiles/<ID>/custom-<kind>.<ext>; data nil removes it. The game files are never
+// touched.
+func (l *Library) SetExtraArt(key, kind string, data []byte, ext string) error {
+	if !l.has(key) {
+		return errors.New("Game not found.")
+	}
+	if kind != "background" && kind != "logo" {
+		return errors.New("unknown picture")
+	}
+	_ = os.MkdirAll(l.GP.Dir(key), 0o755)
+	for _, e := range append(imageExts, ".gif") {
+		_ = os.Remove(l.GP.File(key, "custom-"+kind+e))
+	}
+	name := ""
+	if data != nil {
+		name = "custom-" + kind + ext
+		if err := os.WriteFile(l.GP.File(key, name), data, 0o644); err != nil {
+			return err
+		}
+	}
+	_, err := l.GP.Update(key, func(p *GameProfile) {
+		if kind == "background" {
+			p.CustomBackground = name
+		} else {
+			p.CustomLogo = name
+		}
+	})
+	l.redecorate(key)
+	return err
 }
