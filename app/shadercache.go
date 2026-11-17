@@ -171,7 +171,7 @@ func v2Header(created int64) []byte {
 
 // ShaderLogPath is a game's shader cache v2 log.
 func (e *Emulator) ShaderLogPath(titleID string) string {
-	return filepath.Join(e.DataDir(), "cache", "shader", strings.ToLower(titleID), v2LogName)
+	return filepath.Join(e.ShaderDir(), strings.ToLower(titleID), v2LogName)
 }
 
 func (e *Emulator) shaderFilesBusy() error {
@@ -293,69 +293,24 @@ func (e *Emulator) ImportShaders(r io.Reader, games func(titleID string) *Game) 
 	if err := e.shaderFilesBusy(); err != nil {
 		return res, err
 	}
-	_, precs, _, err := parseV2Log(log)
-	if err != nil {
+	if _, _, _, err := parseV2Log(log); err != nil {
 		return res, err
 	}
+	// added to the game's cache under the engine's lock, by appending (sharedcache.go): records
+	// already there or removed there stay as they are, and a game another NEXUS user is playing
+	// can go on writing
 	path := e.ShaderLogPath(g.TitleID)
-	local, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return res, err
+	added, present, removed, err := appendPortable(path, log)
+	if err != nil {
+		return res, fmt.Errorf("The shader data for %s was not imported; nothing was changed: %v", g.Title, err)
 	}
-	var out []byte
-	var have map[rk]v2Record
-	var removed map[rk]bool
-	if len(local) == 0 {
-		out = v2Header(time.Now().Unix())
-	} else {
-		ver, lrecs, end, err := parseV2Log(local)
-		if err != nil {
-			return res, fmt.Errorf("This device's shader cache for %s cannot be read (%v); nothing was changed.", g.Title, err)
-		}
-		if ver != v2FormatVersion {
-			return res, fmt.Errorf("This device's shader cache for %s uses format %d; nothing was changed.", g.Title, ver)
-		}
-		have, _, removed = liveRecords(local, lrecs)
-		out = append([]byte{}, local[:end]...) // a cut-off tail is left out
+	res.Added, res.Present, res.Removed = added, present, removed
+	if fi, err := os.Stat(path); err == nil {
+		res.LogBytes = fi.Size()
 	}
-	plive, porder, _ := liveRecords(log, precs)
-	for _, k := range porder {
-		pr, ok := plive[k]
-		if !ok || !portableKind(pr.kind) {
-			continue
-		}
-		switch {
-		case removed[k]:
-			res.Removed++
-		case have != nil && func() bool { _, ok := have[k]; return ok }():
-			res.Present++
-		default:
-			out = append(out, log[pr.off:pr.end]...)
-			res.Added++
-		}
-	}
-	res.LogBytes = int64(len(out))
 	if res.Added == 0 {
 		e.app.Log.Printf("shaders: import for %s added nothing (%d present, %d removed here)", g.TitleID, res.Present, res.Removed)
 		return res, nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return res, err
-	}
-	if len(local) > 0 {
-		res.Backup = path + ".nexus-backup"
-		if err := os.WriteFile(res.Backup, local, 0o644); err != nil {
-			return res, fmt.Errorf("Could not back up the shader cache; nothing was changed: %v", err)
-		}
-	}
-	tmp := path + ".nexus-import"
-	if err := os.WriteFile(tmp, out, 0o644); err != nil {
-		os.Remove(tmp)
-		return res, err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
-		return res, err
 	}
 	e.app.Log.Printf("shaders: imported into %s: %d records added, %d present, %d removed here, from %s (%s)",
 		g.TitleID, res.Added, res.Present, res.Removed, info.Device, info.Nexus)

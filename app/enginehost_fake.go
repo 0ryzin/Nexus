@@ -129,7 +129,18 @@ func (f *fakeEngine) run(req EngineRequest) {
 	if strings.Contains(req.Game, "nx2") {
 		sys = "switch2"
 	}
-	f.set(func(s *EngineStatus) { s.State = "running"; s.System = sys; s.ProgramID = "0100000000010000" })
+	// like the engine's shader cache (shared between NEXUS users when req.ShaderDir is set): the
+	// game's pipelines already in the cache are ready at once; the others are built while playing
+	// and appended to the cache, where the next session - of any user - finds them
+	cache := fakeShaderCache(req)
+	known := cache.known()
+	f.set(func(s *EngineStatus) {
+		s.State = "running"
+		s.System = sys
+		s.ProgramID = "0100000000010000"
+		s.Shaders = fakeShaders(uint64(len(known)), 0, 0, 0)
+	})
+	defer cache.flush()
 	playStart := time.Now()
 	dur := 2 * time.Second
 	if d := os.Getenv("NEXUS_FAKE_PLAY"); d != "" {
@@ -161,7 +172,10 @@ func (f *fakeEngine) run(req EngineRequest) {
 			if f.st.Shaders != nil {
 				cached = f.st.Shaders.FromCache
 			}
-			f.st.Shaders = fakeShaders(cached, uint64(min(el, 5)*8), uint64(max(0, 10-el*3)), uint64(max(0, 30-el*10)))
+			// the game asks for its pipelines over its first seconds: 8 a second, 40 in all
+			asked := min(int(el*8), fakeGamePipelines)
+			built := cache.build(asked)
+			f.st.Shaders = fakeShaders(cached, uint64(built), uint64(max(0, 10-el*3)), uint64(max(0, 30-el*10)))
 			f.samples = toneBuffer(f.volume)
 			// like engine 0.4: ready with the first frame, shown at once or after Reveal
 			if !f.st.Ready {

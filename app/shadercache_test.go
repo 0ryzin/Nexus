@@ -136,8 +136,9 @@ func TestShaderImportNeverOverrides(t *testing.T) {
 	if got[rk{2, 1}] != "mine" || got[rk{2, 2}] != "new to me" || got[rk{3, 3}] != "" {
 		t.Fatalf("after import: %v", got)
 	}
-	if b, _ := os.ReadFile(res.Backup); !bytes.Equal(b, before) {
-		t.Fatal("no exact backup of the previous log")
+	// appended, never rewritten: what was there (torn tail included) is unchanged in front
+	if b, _ := os.ReadFile(path); !bytes.HasPrefix(b, before) {
+		t.Fatal("the previous log was rewritten")
 	}
 }
 

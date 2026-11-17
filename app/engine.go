@@ -453,7 +453,7 @@ func (e *Emulator) Launch(g *Game, profileID string) error {
 	if v, ok := gameNexusSettings(e.app.Library.GP.Get(g.Key))["audio.volume"]; ok {
 		fmt.Sscanf(v, "%d", &vol)
 	}
-	req := EngineRequest{Game: g.Path, DataDir: e.DataDir(), ConfigFile: cfg, Title: "NEXUS — " + g.Title,
+	req := EngineRequest{Game: g.Path, DataDir: e.DataDir(), ShaderDir: e.sharedForEngine(), TitleID: g.TitleID, ConfigFile: cfg, Title: "NEXUS — " + g.Title,
 		Fullscreen: s.Emulator.Fullscreen, Volume: vol, OwnerWindow: e.app.UI.WindowHandle(),
 		Contents: e.extraContents(g), AutoMapController: e.inputProfileFor(g, pr) == "",
 		HomeKey: s.Emulator.HomeKey, HomeButton: s.Emulator.HomeButton,
@@ -493,7 +493,8 @@ func (e *Emulator) Launch(g *Game, profileID string) error {
 	st := RunState{Running: true, Phase: "starting", Stage: "preparing", Started: nowUnix(), ProfileID: profileID, Mode: "game",
 		GameKey: g.Key, Title: g.Title, Emulator: engineID, EmuName: "NEXUS", Volume: vol}
 	e.crash.begin(sessionRecord{Game: g.Title, GameKey: g.Key, TitleID: g.TitleID, Phase: st.Phase, Stage: st.Stage,
-		Engine: e.Builds.ActiveVersionLabel(), Settings: sessionSettings(cfg)})
+		Engine: e.Builds.ActiveVersionLabel(), EngineDir: e.Builds.ActiveDir(), EngineSHA: engineDLLHash(e.Builds.ActiveDir()),
+		Commit: engineCommit(e.Builds.ActiveDir()), Settings: sessionSettings(cfg)})
 	go func() { // hardware detection can take a moment when not cached: never on the launch path
 		hw := e.app.DetectHardware(false)
 		if p := hw.PrimaryGPU(); p != nil {

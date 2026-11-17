@@ -1,7 +1,7 @@
 From 3aa70c47120016a7d8013977e60e97b6a88f3c96 Mon Sep 17 00:00:00 2001
 From: Zortos <zortosdev@proton.me>
 Date: Tue, 17 Nov 2026 01:45:22 +0100
-Subject: [PATCH 25/28] common: keep a sparse vector page writable when the
+Subject: [PATCH 25/30] common: keep a sparse vector page writable when the
  fault handler commits it again (#2041)
 
 FakePageFaultHandler committed pages read-only. When another thread had committed the same page read-write and was storing entries into it (CommitRegion, then GetUnchecked), the handler's VirtualProtect or VirtualAlloc set it back to read-only while the committed bit stayed set, so the next store faulted. Commit every page read-write and leave committed pages alone.

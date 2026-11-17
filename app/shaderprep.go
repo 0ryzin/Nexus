@@ -120,7 +120,7 @@ func (e *Emulator) cancelPrep() bool {
 }
 
 func (e *Emulator) prepRequest(g *Game, cfg string, force bool) PrepRequest {
-	return PrepRequest{Game: g.Path, DataDir: e.DataDir(), ConfigFile: cfg, TitleID: g.TitleID, Contents: e.extraContents(g), Force: force}
+	return PrepRequest{Game: g.Path, DataDir: e.DataDir(), ShaderDir: e.sharedForEngine(), ConfigFile: cfg, TitleID: g.TitleID, Contents: e.extraContents(g), Force: force}
 }
 
 // PrepareShadersNow prepares a game's shaders on Home, in the background (the game's menu).

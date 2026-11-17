@@ -1,7 +1,7 @@
 From 92a0c7ed4e2f07786341640c7358b93b36017612 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Tue, 17 Nov 2026 16:19:09 +0000
-Subject: [PATCH 28/28] shader precache: keep the progress of a precache that
+Subject: [PATCH 28/30] shader precache: keep the progress of a precache that
  is skipped or stopped
 
 The boot precache builds the game's compute programs only to fill the GPU driver's cache, and

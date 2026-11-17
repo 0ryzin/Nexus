@@ -90,6 +90,9 @@ type EmulatorSettings struct {
 	// PrepareShaders: before a game starts, find its shaders in its files and compile them
 	// (shaderprep.go). On by default.
 	PrepareShaders bool `json:"prepareShaders"`
+	// PrivateShaderCache: keep this user's shader cache to themselves instead of the cache shared
+	// by every NEXUS user of the PC (sharedcache.go). Off by default: shared.
+	PrivateShaderCache bool `json:"privateShaderCache"`
 	// HomeAction: what NEXUS Home does to the game: "background" keeps it running (muted, no
 	// input) behind NEXUS, "pause" pauses it.
 	HomeAction string `json:"homeAction"`

@@ -569,6 +569,19 @@ func (s *Server) routes() {
 		}
 		writeJSON(w, res)
 	})
+	// the shader cache NEXUS uses (shared by the PC's NEXUS users unless turned off; sharedcache.go)
+	m.HandleFunc("GET /api/shaders/cache", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, a.Emu.SharedCacheStatus())
+	})
+	m.HandleFunc("GET /api/games/{key}/shaders/cache", func(w http.ResponseWriter, r *http.Request) {
+		g, ok := a.Library.Get(r.PathValue("key"))
+		if !ok {
+			writeErr(w, http.StatusNotFound, errors.New("game not found"))
+			return
+		}
+		t, have := a.Emu.GameShaderCache(g.TitleID)
+		writeJSON(w, map[string]any{"have": have, "cache": t})
+	})
 	m.HandleFunc("POST /api/shaders/prepare/cancel", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, a.Emu.cancelPrep())
 	})

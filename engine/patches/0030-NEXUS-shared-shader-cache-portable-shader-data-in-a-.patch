@@ -1,0 +1,373 @@
+From 2158ff0b7f5f6142d3fac10d719e4305fd76c044 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 17 Nov 2026 18:24:57 +0000
+Subject: [PATCH 30/30] NEXUS shared shader cache: portable shader data in a
+ folder shared by NEXUS users
+
+A session or shader preparation can name "shaderDir": EdenPath::ShaderDir then points there,
+and it holds only what is the same on any GPU - the shader cache v2 log (guest programs,
+pipeline keys, used lists; appends under its own file lock, records hashed, torn tails
+skipped) and the precache files. What belongs to this user's GPU and driver stays in the
+user's own cache folder (Common::FS::DeviceShaderDir): driver blobs, the Vulkan pipeline cache,
+the static pipeline cache, the boot marker, and the precache's .done marker and progress (the
+driver keeps its cache per Windows user, so another user's "done" says nothing about this
+one's). Preparing the same game's shaders is serialised by a lock next to the precache file;
+a second NEXUS waits and then finds the file current. Without "shaderDir" nothing changes.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
+---
+ src/common/CMakeLists.txt                     |  1 +
+ src/common/fs/nexus_shared_cache.h            | 30 +++++++++++++
+ src/nexus_engine/nexus_engine.cpp             | 43 +++++++++++++++++++
+ src/tests/video_core/shader_precache.cpp      | 32 ++++++++++++++
+ .../renderer_vulkan/vk_pipeline_cache.cpp     | 19 +++++---
+ .../shader_warm/shader_warm_builder.cpp       | 28 +++++++++---
+ .../vulkan_common/vulkan_device.cpp           |  4 +-
+ 7 files changed, 145 insertions(+), 12 deletions(-)
+ create mode 100644 src/common/fs/nexus_shared_cache.h
+
+diff --git a/src/common/CMakeLists.txt b/src/common/CMakeLists.txt
+index 5a3b63b12..d6731056d 100644
+--- a/src/common/CMakeLists.txt
++++ b/src/common/CMakeLists.txt
+@@ -67,6 +67,7 @@ add_library(
+     fs/file.h
+     fs/file_lock.cpp
+     fs/file_lock.h
++    fs/nexus_shared_cache.h
+     fs/fs.cpp
+     fs/fs.h
+     fs/fs_paths.h
+diff --git a/src/common/fs/nexus_shared_cache.h b/src/common/fs/nexus_shared_cache.h
+new file mode 100644
+index 000000000..f5512d2c9
+--- /dev/null
++++ b/src/common/fs/nexus_shared_cache.h
+@@ -0,0 +1,30 @@
++// SPDX-FileCopyrightText: Copyright 2026 NEXUS
++// SPDX-License-Identifier: GPL-3.0-or-later
++
++#pragma once
++
++#include <filesystem>
++
++#include "common/fs/fs_paths.h"
++#include "common/fs/path_util.h"
++
++namespace Common::FS {
++
++/// NEXUS shared shader cache. NEXUS can point EdenPath::ShaderDir at a folder shared by every
++/// NEXUS user on the PC (the session's "shaderDir"). That folder holds only data that is the same
++/// on any GPU: the shader cache v2 log (guest programs and pipeline keys, its own file lock for
++/// appends) and the precache files. What belongs to this user's GPU and driver stays in the
++/// user's own cache folder, returned here: the driver blobs, the Vulkan pipeline cache, the boot
++/// marker and the precache's "done" marker and progress, whose meaning is "the driver's cache of
++/// this user has these programs" (the GPU driver keeps its cache per Windows user).
++/// Without a shared folder both are the same folder, as before.
++[[nodiscard]] inline std::filesystem::path DeviceShaderDir() {
++    return GetEdenPath(EdenPath::CacheDir) / SHADER_DIR;
++}
++
++/// True when the portable shader data is in a shared folder.
++[[nodiscard]] inline bool SharedShaderCache() {
++    return GetEdenPath(EdenPath::ShaderDir) != DeviceShaderDir();
++}
++
++} // namespace Common::FS
+diff --git a/src/nexus_engine/nexus_engine.cpp b/src/nexus_engine/nexus_engine.cpp
+index 669ebb64a..832b27d5a 100644
+--- a/src/nexus_engine/nexus_engine.cpp
++++ b/src/nexus_engine/nexus_engine.cpp
+@@ -27,6 +27,8 @@
+ #include <nlohmann/json.hpp>
+ 
+ #include "common/fs/fs.h"
++#include "common/fs/file_lock.h"
++#include "common/fs/nexus_shared_cache.h"
+ #include "common/fs/path_util.h"
+ #include "common/logging.h"
+ #include "common/scm_rev.h"
+@@ -100,6 +102,7 @@ const char* StateName(State s) {
+ struct Request {
+     std::string game;
+     std::string data_dir;
++    std::string shader_dir; ///< shared shader folder (nexus_shared_cache.h), "" = the user's own
+     std::string config_file;
+     std::string title{"NEXUS"};
+     bool fullscreen{true};
+@@ -215,6 +218,20 @@ Engine& E() {
+ // stack, flushes the log and writes eden_crash.dmp next to it. Without it a native crash inside
+ // NEXUS ends the process with no trace, because the Go runtime turns off the Windows error box.
+ // EDEN_NX2_CRASH_DUMP=<dir> puts the dump elsewhere, as in Lichii.
++// NEXUS shared shader cache: the portable shader data in the folder NEXUS shares between its
++// users (nexus_shared_cache.h); the rest stays in this user's data folder.
++void UseSharedShaderDir(const std::string& dir) {
++    if (dir.empty()) {
++        return;
++    }
++    std::error_code ec;
++    const auto path = std::filesystem::path(Common::FS::ToU8String(dir));
++    std::filesystem::create_directories(path, ec);
++    if (!ec && Common::FS::IsDir(path)) {
++        Common::FS::SetEdenPath(Common::FS::EdenPath::ShaderDir, path);
++    }
++}
++
+ void StartLogging(Engine& e) {
+     if (e.logging_started) {
+         return;
+@@ -870,6 +887,7 @@ void RunSession(Request req) {
+ 
+     // All engine data lives in the folder NEXUS chose (keys, firmware, NAND, saves, caches).
+     Common::FS::SetAppDirectory(req.data_dir);
++    UseSharedShaderDir(req.shader_dir);
+     StartLogging(e);
+     LOG_INFO(Frontend, "NEXUS Engine {} ({}-{}) starting {}", NEXUS_ENGINE_VERSION,
+              Common::g_scm_branch, Common::g_scm_desc, req.game);
+@@ -1290,6 +1308,7 @@ std::string BuildInfo() {
+ struct PrepRequest {
+     std::string game;
+     std::string data_dir;
++    std::string shader_dir; ///< shared shader folder (nexus_shared_cache.h), "" = the user's own
+     std::string config_file;
+     std::uint64_t title_id{};
+     std::vector<std::string> contents;
+@@ -1310,6 +1329,7 @@ void RunPrepare(PrepRequest req, std::stop_token stop) {
+         e.prep_state = state;
+     };
+     Common::FS::SetAppDirectory(req.data_dir);
++    UseSharedShaderDir(req.shader_dir);
+     StartLogging(e);
+     LOG_INFO(Frontend, "NEXUS Engine: preparing shaders for {:016X} from {}", req.title_id, req.game);
+     SdlConfig config{req.config_file};
+@@ -1328,6 +1348,27 @@ void RunPrepare(PrepRequest req, std::stop_token stop) {
+     RegisterExternalContent(prep_provider, system, req.game, req.contents);
+ 
+     const auto path = ShaderWarm::ComputeWarmPath(req.title_id);
++    // Another NEXUS user preparing the same game in the shared folder: wait for it, then use its
++    // file (current by then) instead of writing the same file at the same time.
++    std::error_code dir_ec;
++    std::filesystem::create_directories(path.parent_path(), dir_ec);
++    auto lock_path = path;
++    lock_path += ".lock";
++    std::optional<Common::FS::FileLock> prep_lock;
++    prep_lock.emplace(lock_path);
++    if (prep_lock->Busy()) {
++        LOG_INFO(Frontend, "NEXUS Engine: another NEXUS is preparing these shaders; waiting");
++        {
++            std::scoped_lock lk{e.mutex};
++            e.prep_stage = "Waiting for another NEXUS user";
++        }
++        prep_lock.reset();
++        prep_lock.emplace(lock_path, std::chrono::hours{2}, stop);
++        if (stop.stop_requested()) {
++            finish(PrepStopped, {});
++            return;
++        }
++    }
+     const auto stale = ShaderWarm::WarmFilesStale(path);
+     if (!req.force && !stale) {
+         LOG_INFO(Frontend, "NEXUS Engine: shader precache file is current");
+@@ -1395,6 +1436,7 @@ NEXUS_API int32_t nexus_engine_start(const char* request_json) {
+         const json j = json::parse(request_json ? request_json : "{}");
+         req.game = j.at("game").get<std::string>();
+         req.data_dir = j.at("dataDir").get<std::string>();
++        req.shader_dir = j.value("shaderDir", std::string{});
+         req.config_file = j.at("configFile").get<std::string>();
+         req.title = j.value("title", std::string{"NEXUS"});
+         req.fullscreen = j.value("fullscreen", true);
+@@ -1492,6 +1534,7 @@ NEXUS_API int32_t nexus_engine_prepare_shaders(const char* request_json) {
+         const json j = json::parse(request_json ? request_json : "{}");
+         req.game = j.at("game").get<std::string>();
+         req.data_dir = j.at("dataDir").get<std::string>();
++        req.shader_dir = j.value("shaderDir", std::string{});
+         req.config_file = j.at("configFile").get<std::string>();
+         req.title_id = std::stoull(j.at("titleId").get<std::string>(), nullptr, 16);
+         req.force = j.value("force", false);
+diff --git a/src/tests/video_core/shader_precache.cpp b/src/tests/video_core/shader_precache.cpp
+index 4c0cbbc60..ea1db87fe 100644
+--- a/src/tests/video_core/shader_precache.cpp
++++ b/src/tests/video_core/shader_precache.cpp
+@@ -12,6 +12,8 @@
+ #include <catch2/catch_test_macros.hpp>
+ #include <fmt/format.h>
+ 
++#include "common/fs/nexus_shared_cache.h"
++#include "common/fs/path_util.h"
+ #include "shader_recompiler/exception.h"
+ #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
+ #include "video_core/shader_environment.h"
+@@ -145,6 +147,36 @@ TEST_CASE("ShaderPrecache: progress of an unfinished precache is kept for the sa
+     REQUIRE(ShaderWarm::ReadWarmProgress(warm, stamp).empty());
+ }
+ 
++// NEXUS shared shader cache: the precache file is shared, what says "this user's driver cache has
++// it" is not.
++TEST_CASE("ShaderPrecache: in a shared folder the marker and progress stay with the user",
++          "[video_core]") {
++    TempDir dir;
++    const auto shared = dir.path / "shared";
++    const auto user = dir.path / "user";
++    std::filesystem::create_directories(shared / "0400486024dec000");
++    std::filesystem::create_directories(user / "shader");
++    using Common::FS::EdenPath;
++    const auto old_cache = Common::FS::GetEdenPath(EdenPath::CacheDir);
++    const auto old_shader = Common::FS::GetEdenPath(EdenPath::ShaderDir);
++    Common::FS::SetEdenPath(EdenPath::CacheDir, user);
++    Common::FS::SetEdenPath(EdenPath::ShaderDir, shared);
++    const auto warm = shared / "0400486024dec000" / "warm-compute.bin";
++    const bool is_shared = Common::FS::SharedShaderCache();
++    const auto marker = ShaderWarm::WarmMarkerPath(warm);
++    const auto progress = ShaderWarm::WarmProgressPath(warm);
++    const auto outside = ShaderWarm::WarmMarkerPath(dir.path / "elsewhere" / "warm-compute.bin");
++    Common::FS::SetEdenPath(EdenPath::ShaderDir, user / "shader");
++    const bool not_shared = !Common::FS::SharedShaderCache();
++    Common::FS::SetEdenPath(EdenPath::CacheDir, old_cache);
++    Common::FS::SetEdenPath(EdenPath::ShaderDir, old_shader);
++    REQUIRE(is_shared);
++    REQUIRE(not_shared);
++    REQUIRE(marker == user / "shader" / "0400486024dec000" / "warm-compute.done");
++    REQUIRE(progress == user / "shader" / "0400486024dec000" / "warm-compute.partial");
++    REQUIRE(outside == dir.path / "elsewhere" / "warm-compute.done");
++}
++
+ TEST_CASE("ShaderPrecache: a rebuild with the same contents keeps the marker", "[video_core]") {
+     TempDir dir;
+     const auto warm = dir.path / "warm-compute.bin";
+diff --git a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp b/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
+index b439cd91e..8eb96ce93 100644
+--- a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
++++ b/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
+@@ -31,6 +31,7 @@
+ #include "common/fs/file_lock.h"
+ #include "common/settings.h"
+ #include "common/fs/fs.h"
++#include "common/fs/nexus_shared_cache.h"
+ #include "common/fs/path_util.h"
+ #include "common/memory_detect.h"
+ #include "common/scope_exit.h"
+@@ -1233,16 +1234,24 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
+     StutterTrace::BootMarker("shader_load_begin");
+     const auto shader_dir{Common::FS::GetEdenPath(Common::FS::EdenPath::ShaderDir)};
+     const auto base_dir{shader_dir / fmt::format("{:016x}", title_id)};
+-    if (!Common::FS::CreateDir(shader_dir) || !Common::FS::CreateDir(base_dir)) {
++    // NEXUS: this GPU's and driver's files, in the user's own folder (nexus_shared_cache.h)
++    const auto device_root{Common::FS::DeviceShaderDir()};
++    const auto device_dir{device_root / fmt::format("{:016x}", title_id)};
++    if (!Common::FS::CreateDir(shader_dir) || !Common::FS::CreateDir(base_dir) ||
++        !Common::FS::CreateDir(device_root) || !Common::FS::CreateDir(device_dir)) {
+         LOG_ERROR(Common_Filesystem, "Failed to create pipeline cache directories");
+         return;
+     }
++    if (Common::FS::SharedShaderCache()) {
++        LOG_INFO(Render_Vulkan, "Shader cache: shared programs and pipelines in {}, this GPU's in {}",
++                 Common::FS::PathToUTF8String(base_dir), Common::FS::PathToUTF8String(device_dir));
++    }
+     namespace CacheV2 = VideoCommon::ShaderCacheV2;
+     pipeline_cache_filename = base_dir / CacheV2::FileName;
+     // Left by a boot load that never finished (a driver crash, abort or hang): this boot builds
+     // nothing from the cache. The lock is held for as long as the marker may be there, so while
+     // another emulator holds it, its load is running (or its crash dump is being written).
+-    auto boot_marker = pipeline_cache_filename;
++    auto boot_marker = device_dir / CacheV2::FileName;
+     boot_marker += ".booting";
+     auto boot_lock_path = boot_marker;
+     boot_lock_path += ".lock";
+@@ -1272,7 +1281,7 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
+         cache_v2->KeepStalePrograms();
+     }
+     shader_cache_v2 = cache_v2.get();
+-    pipeline_binaries = PipelineBinaries::Open(device, base_dir);
++    pipeline_binaries = PipelineBinaries::Open(device, device_dir);
+     // Without the lock: another emulator's appends are complete records or a cut-off tail.
+     // The payload hashes are checked on the shader job workers.
+     auto log_v2 = std::make_shared<CacheV2::LogFile>(CacheV2::ReadLogFile(
+@@ -1306,9 +1315,9 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
+         build_at_boot;
+     if (use_vulkan_pipeline_cache) {
+         vulkan_pipeline_cache_filename =
+-            VideoCommon::VersionedPipelineCachePath(base_dir, "vulkan_pipelines", CACHE_VERSION);
++            VideoCommon::VersionedPipelineCachePath(device_dir, "vulkan_pipelines", CACHE_VERSION);
+         if (VideoCommon::CarryOverPipelineCache(
+-                base_dir, "vulkan_pipelines", VULKAN_CACHE_MAGIC_NUMBER,
++                device_dir, "vulkan_pipelines", VULKAN_CACHE_MAGIC_NUMBER,
+                 VideoCommon::CompatibleVulkanPipelineCacheVersions, CACHE_VERSION)
+                 .failed) {
+             LOG_WARNING(Render_Vulkan,
+diff --git a/src/video_core/shader_warm/shader_warm_builder.cpp b/src/video_core/shader_warm/shader_warm_builder.cpp
+index a45ac6963..643166935 100644
+--- a/src/video_core/shader_warm/shader_warm_builder.cpp
++++ b/src/video_core/shader_warm/shader_warm_builder.cpp
+@@ -20,6 +20,7 @@
+ 
+ #include "common/cityhash.h"
+ #include "common/fs/fs_util.h"
++#include "common/fs/nexus_shared_cache.h"
+ #include "common/fs/path_util.h"
+ #include "common/logging.h"
+ #include "common/thread.h"
+@@ -296,10 +297,27 @@ fs::path ComputeWarmPath(u64 title_id) {
+     return TitleDir(title_id) / "warm-compute.bin";
+ }
+ 
++namespace {
++/// NEXUS: a file about this user's driver cache that goes with a precache file. Next to it,
++/// unless the precache file is in a shared shader folder: then in the user's own folder, under
++/// the same title (nexus_shared_cache.h).
++fs::path DeviceSidecar(const fs::path& warm_file, const char* extension) {
++    fs::path path = warm_file;
++    path.replace_extension(extension);
++    if (Common::FS::SharedShaderCache() &&
++        warm_file.parent_path().parent_path() ==
++            Common::FS::GetEdenPath(Common::FS::EdenPath::ShaderDir)) {
++        const fs::path dir = Common::FS::DeviceShaderDir() / warm_file.parent_path().filename();
++        std::error_code ignored;
++        fs::create_directories(dir, ignored);
++        return dir / path.filename();
++    }
++    return path;
++}
++} // Anonymous namespace
++
+ fs::path WarmMarkerPath(const fs::path& warm_file) {
+-    fs::path marker = warm_file;
+-    marker.replace_extension(".done");
+-    return marker;
++    return DeviceSidecar(warm_file, ".done");
+ }
+ 
+ fs::path WarmCountPath(const fs::path& warm_file) {
+@@ -384,9 +402,7 @@ bool WriteWarmMarker(const fs::path& warm_file, const WarmStamp& stamp) {
+ }
+ 
+ fs::path WarmProgressPath(const fs::path& warm_file) {
+-    fs::path progress = warm_file;
+-    progress.replace_extension(".partial");
+-    return progress;
++    return DeviceSidecar(warm_file, ".partial");
+ }
+ 
+ std::unordered_set<u64> ReadWarmProgress(const fs::path& warm_file, const WarmStamp& current) {
+diff --git a/src/video_core/vulkan_common/vulkan_device.cpp b/src/video_core/vulkan_common/vulkan_device.cpp
+index 23c81e97f..d8d5c2a29 100644
+--- a/src/video_core/vulkan_common/vulkan_device.cpp
++++ b/src/video_core/vulkan_common/vulkan_device.cpp
+@@ -25,6 +25,7 @@
+ 
+ #include "common/assert.h"
+ #include "common/fs/fs.h"
++#include "common/fs/nexus_shared_cache.h"
+ #include "common/fs/path_util.h"
+ #include "common/literals.h"
+ #include "common/logging.h"
+@@ -441,7 +442,8 @@ constexpr std::array<char, 8> STATIC_CACHE_MAGIC_NUMBER{'e', 'd', 'e', 'n', 's',
+ constexpr u32 STATIC_CACHE_VERSION = 1;
+ 
+ std::filesystem::path StaticPipelineCacheFilename() {
+-    const auto shader_dir = Common::FS::GetEdenPath(Common::FS::EdenPath::ShaderDir);
++    // NEXUS: a driver pipeline cache, so the user's own folder (nexus_shared_cache.h)
++    const auto shader_dir = Common::FS::DeviceShaderDir();
+     if (!Common::FS::CreateDir(shader_dir)) {
+         return {};
+     }

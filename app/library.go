@@ -690,3 +690,16 @@ func (l *Library) TitleIDOf(key string) string {
 	}
 	return ""
 }
+
+// ByTitleID: the first game with this title ID (nil when none).
+func (l *Library) ByTitleID(titleID string) *Game {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for i := range l.games {
+		if strings.EqualFold(l.games[i].TitleID, titleID) {
+			g := l.games[i]
+			return &g
+		}
+	}
+	return nil
+}

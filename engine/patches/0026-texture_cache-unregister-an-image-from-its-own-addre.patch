@@ -1,7 +1,7 @@
 From 04cc7f259059a10013f318b53661e6855cc3364c Mon Sep 17 00:00:00 2001
 From: Zortos <zortosdev@proton.me>
 Date: Tue, 17 Nov 2026 10:39:11 +0100
-Subject: [PATCH 26/28] texture_cache: unregister an image from its own address
+Subject: [PATCH 26/30] texture_cache: unregister an image from its own address
  space's page table (#2062)
 
 RegisterImage adds an image's GPU pages to the page table of the channel bound at the time and records that address space in image.address_space. UnregisterImage cleared the pages from the currently bound channel's table instead. The garbage collector, CPU unmaps and joins reach images of any address space through the shared CPU page table, so an image registered on one channel and removed while another channel was bound tripped the "Unregistering unregistered page" assert and left its ids in the original table. Unregister from the table of the image's recorded address space.

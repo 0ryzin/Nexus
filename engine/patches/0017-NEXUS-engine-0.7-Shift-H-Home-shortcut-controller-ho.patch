@@ -1,7 +1,7 @@
 From 403bc888bc26e846908c0461ed258745d0aba592 Mon Sep 17 00:00:00 2001
 From: NEXUS <nexus@users.noreply.github.com>
 Date: Thu, 12 Nov 2026 21:19:58 +0000
-Subject: [PATCH 17/28] NEXUS engine 0.7: Shift+H Home shortcut, controller
+Subject: [PATCH 17/30] NEXUS engine 0.7: Shift+H Home shortcut, controller
  hot-plug, keyboard focus for the embedded game
 
 - The Home shortcut may have modifiers (default Shift+H): plain H stays the game's.

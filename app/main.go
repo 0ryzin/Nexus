@@ -88,6 +88,8 @@ func StartCore(o CoreOptions) (*Core, error) {
 	// the last game session ended without NEXUS seeing it end: report it (crashreport.go). This
 	// runs before the engine is loaded, while its log is still the crashed session's.
 	app.setCrashNotice(app.checkLastSession())
+	// a user's earlier private shader cache goes into the shared one (once; sharedcache.go)
+	go app.Emu.shareUserCaches()
 	app.migrateToDataDir()
 	// the engine's data folder and configuration belong to NEXUS: create them if missing (other
 	// emulators' data is only imported when the user chooses to, see enginedata.go)

@@ -45,6 +45,7 @@ type ShaderPreparer interface {
 type PrepRequest struct {
 	Game       string   `json:"game"`
 	DataDir    string   `json:"dataDir"`
+	ShaderDir  string   `json:"shaderDir,omitempty"` // shared shader cache (sharedcache.go)
 	ConfigFile string   `json:"configFile"`
 	TitleID    string   `json:"titleId"`
 	Contents   []string `json:"contents,omitempty"`
@@ -87,6 +88,8 @@ type EnginePad struct {
 type EngineRequest struct {
 	Game        string  `json:"game"`
 	DataDir     string  `json:"dataDir"`
+	ShaderDir   string  `json:"shaderDir,omitempty"` // shared shader cache (sharedcache.go)
+	TitleID     string  `json:"titleId,omitempty"`   // informative (the engine reads it from the game)
 	ConfigFile  string  `json:"configFile"`
 	Title       string  `json:"title"`
 	Fullscreen  bool    `json:"fullscreen"`

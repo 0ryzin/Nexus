@@ -1905,6 +1905,16 @@ function gameInfo(key) {
       h('dt', {}, 'Compatibility'), h('dd', {}, compatText(S.compat?.[g.key])),
       h('dt', {}, 'Game settings'), h('dd', {}, g.perGame ? `${g.perGame} setting(s) override the global settings` : 'Uses global settings'),
       h('dt', {}, 'File'), h('dd', {}, g.path)));
+    if (g.titleId && isPlayable(g)) {
+      const sh = h('dl', { class: 'kv' }); body.append(sh);
+      api(`/api/games/${encodeURIComponent(g.key)}/shaders/cache`).then(r => {
+        const c = r.cache || {};
+        const where = c.location === 'shared' ? 'shared with every NEXUS user of this PC' : 'yours only';
+        sh.append(h('dt', {}, 'Shaders'), h('dd', {}, r.have && (c.graphics + c.compute) > 0
+          ? `${(c.graphics + c.compute).toLocaleString()} ready from earlier play (${where})${c.precache ? (c.doneHere ? '; prepared for your graphics card' : '; prepared shaders available, your graphics card prepares them at its next start') : ''}`
+          : 'None yet: they are built as the game is played and kept for next time'));
+      }).catch(() => { });
+    }
     if (g.note) body.append(h('p', { class: 'note warn' }, g.note));
     if (g.onlineError && g.onlineError !== 'removed by user') body.append(h('p', { class: 'note' }, 'Online artwork: ' + g.onlineError));
   });
@@ -3333,6 +3343,7 @@ const Panels = {
     p.append(rowToggle('Fade into the game', es.fadeIn !== false, v => saveSettings({ emulator: { fadeIn: v } }), 'The loading screen fades out and the game fades in. Turn off if the game window stays dark or flickers with your graphics driver.'));
     p.append(rowToggle('Prepare shaders before playing', es.prepareShaders !== false, v => saveSettings({ emulator: { prepareShaders: v } }),
       'Before a game starts, NEXUS finds the shader programs in the game’s own files and compiles them, so they do not stutter the first time they appear. The first start of a game takes longer (once per game, and again after a graphics driver update); later starts are quick. Graphics effects the game has never shown on any of your devices are still compiled the first time they appear, and then kept.'));
+    const sc = h('div'); p.append(sc); sharedCachePanel(sc);
     p.append(rowToggle('Start games in full screen', es.fullscreen, v => saveSettings({ emulator: { fullscreen: v } }), 'The game window belongs to NEXUS; when the game ends you are back on the NEXUS home screen.'));
     p.append(rowToggle('Quit shortcut: hold View + Menu', es.quitCombo, v => saveSettings({ emulator: { quitCombo: v } }), 'Hold Back + Start for 2 seconds on an XInput controller to close the game.'));
     p.append(rowButton('Save Data…', { sub: 'Every user has their own saves.', onClick: () => selectCat('savedata', true) }));
@@ -3485,6 +3496,27 @@ async function enhancementsPanel(box) {
     if (en.dlss.supported) { const db = h('div'); box.append(db); dlssPanel(db); }
   };
   draw();
+}
+
+// ---------- Shared shader cache (sharedcache.go, docs/SHADERS.md)
+async function sharedCachePanel(box) {
+  let st;
+  try { st = await api('/api/shaders/cache'); } catch (e) { box.replaceChildren(h('p', { class: 'note warn' }, e.message)); return; }
+  const es = S.settings.emulator || {};
+  box.replaceChildren(h('h3', { class: 'set-h' }, 'Shader cache'));
+  box.append(rowToggle('Share shaders with other NEXUS users on this PC', !es.privateShaderCache, async v => {
+    await saveSettings({ emulator: { privateShaderCache: !v } }); sharedCachePanel(box);
+  }, 'Shaders one user\u2019s games have built are ready for every NEXUS user of this PC, so the second person to play a game has fewer stutters. Only shader data that works on any graphics card is shared; what your graphics driver builds for your card stays yours. Nothing is uploaded. Some effects are still built the first time anyone meets them, and each user\u2019s graphics driver still prepares its own copy once.'));
+  const games = st.titles.length;
+  box.append(h('p', { class: 'note' }, `${st.shared ? 'Shared cache' : 'Your own cache'}: ${games} game${games === 1 ? '' : 's'}, ${st.records.toLocaleString()} shaders and pipelines, ${fmtBytes(st.bytes)}.`));
+  for (const t of st.titles.slice(0, 12)) {
+    const bits = [`${(t.graphics + t.compute).toLocaleString()} pipelines`, `${t.programs.toLocaleString()} programs`, fmtBytes(t.bytes)];
+    if (t.precache) bits.push(t.doneHere ? 'prepared for your graphics card' : 'prepared shaders available');
+    if (t.damaged) bits.push('cannot be read: the engine rebuilds it as you play');
+    else if (!t.usable) bits.push('another cache version: not used by this engine');
+    box.append(h('div', { class: 'row static' }, h('div', { class: 'rl' }, h('b', {}, t.title || t.titleId), h('small', {}, bits.join(' \u00b7 ')))));
+  }
+  box.append(h('p', { class: 'note' }, st.dir));
 }
 
 // ---------- Lossless Scaling setup (lossless.go, docs/LOSSLESS.md)

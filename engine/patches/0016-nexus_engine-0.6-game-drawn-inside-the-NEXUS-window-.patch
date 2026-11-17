@@ -1,7 +1,7 @@
 From faae6624441134f7d0e900f59ee88ec350a36b64 Mon Sep 17 00:00:00 2001
 From: NEXUS <nexus@localhost>
 Date: Thu, 12 Nov 2026 16:28:40 +0000
-Subject: [PATCH 16/28] nexus_engine 0.6: game drawn inside the NEXUS window,
+Subject: [PATCH 16/30] nexus_engine 0.6: game drawn inside the NEXUS window,
  shortcut keys freed from the default keyboard layout, amiibo
 
 - embed: the game window becomes a child of the NEXUS window when it is revealed and follows
