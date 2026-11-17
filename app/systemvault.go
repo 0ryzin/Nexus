@@ -24,8 +24,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
+
+var vaultMu sync.Mutex
 
 func systemVaultDir() string {
 	if d := os.Getenv("NEXUS_SYSTEM_FILES"); d != "" {
@@ -87,6 +90,8 @@ func isFirmwareFile(name string) bool { return strings.HasSuffix(strings.ToLower
 
 // SyncSystemVault runs the steps above. Returns what was copied, for the log.
 func (e *Emulator) SyncSystemVault() (toVault, fromVault int, found string) {
+	vaultMu.Lock() // one copy at a time (start-up, key installs and firmware installs can overlap)
+	defer vaultMu.Unlock()
 	vault := systemVaultDir()
 	if vault == "" {
 		return
@@ -147,6 +152,8 @@ func (e *Emulator) findOtherCopy() string {
 // a firmware version): the new set is copied first, the vault's previous set is removed only
 // after that succeeded.
 func (e *Emulator) SaveFirmwareToVault() error {
+	vaultMu.Lock()
+	defer vaultMu.Unlock()
 	vault := systemVaultDir()
 	if vault == "" || !dirHasFiles(e.FirmwareDir()) {
 		return nil

@@ -5,6 +5,18 @@ Newest first.
 
 ## 0.8.0 (in development)
 
+### Installing keys could race with a background vault copy
+- **Problem (found 17 Nov, CI):** `TestSystemFilesKeys` failed intermittently ("keys not
+  installed into the NEXUS engine"; locally also "directory not empty" after the test).
+- **Cause:** `InstallKeys` started a background copy between the engine's keys and the per-user
+  system vault on every call, including rejected files, and these copies ran unsynchronised
+  with each other and with the next install, so one could copy keys while another wrote them.
+- **Fix:** the vault is synchronised only after a successful install, before `InstallKeys`
+  returns; all vault copies (start-up, keys, firmware) take one lock.
+- **Files:** `app/systemfiles.go`, `app/systemvault.go`.
+- **Test:** `TestSystemFilesKeys` passes 60 runs in a row and under shuffled test order (it
+  failed in 4 of 6 shuffled orders before).
+
 ### NEXUS Account unsynchronised after a period of inactivity
 - **Problem (13 Nov):** after NEXUS had been left alone, the account showed as unsynchronised or
   signed out.

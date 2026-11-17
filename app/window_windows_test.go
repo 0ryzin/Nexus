@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"runtime"
 	"testing"
 	"unsafe"
@@ -136,14 +137,23 @@ func TestHUDStacksAboveItsOwner(t *testing.T) {
 	o.bar = hudWin{hwnd: hud, shown: true}
 	o.own(&o.bar, owner)
 	o.stack(&o.bar)
-	if prev(owner) != hud {
-		t.Fatalf("HUD not directly above its owner (window above the owner: %#x, hud %#x)", prev(owner), hud)
-	}
-	// the other window was in front of the owner and stays in front of the HUD too
-	for w := hud; w != 0; w = prev(w) {
-		if w == other {
+	// walking up from the owner: the HUD must come before the window that was in front of the
+	// game (other top-level windows of the desktop may sit in between; only the order matters)
+	var between []string
+	for w := prev(owner); w != 0; w = prev(w) {
+		switch w {
+		case hud:
 			return
+		case other:
+			t.Fatalf("HUD below the window in front of the game, or below its owner; windows passed: %v", between)
 		}
+		between = append(between, windowClass(w))
 	}
-	t.Fatal("HUD was put above a window that was in front of the game")
+	t.Fatalf("HUD not above its owner; windows above the owner: %v", between)
+}
+
+func windowClass(w uintptr) string {
+	buf := make([]uint16, 128)
+	n, _, _ := user32.NewProc("GetClassNameW").Call(w, uintptr(unsafe.Pointer(&buf[0])), 128)
+	return fmt.Sprintf("%#x %s", w, windows.UTF16ToString(buf[:n]))
 }

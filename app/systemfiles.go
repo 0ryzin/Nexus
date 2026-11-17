@@ -278,7 +278,6 @@ func countKeyLines(p string) int {
 // InstallKeys validates and installs prod.keys (and an optional title.keys).
 // An existing file is archived, never overwritten in place.
 func (s *SystemFiles) InstallKeys(prod, title string) (KeysInfo, error) {
-	defer func() { go s.app.Emu.SyncSystemVault() }()
 	ki := s.ValidateKeys(prod)
 	if !ki.Valid {
 		return ki, errors.New(strings.Join(ki.Errors, " "))
@@ -303,6 +302,9 @@ func (s *SystemFiles) InstallKeys(prod, title string) (KeysInfo, error) {
 	ki = s.KeysStatus()
 	ki.Warnings = append(ki.Warnings, warns...)
 	s.app.Log.Printf("system files: keys installed (%d keys, master key %02x)", ki.Count, ki.MasterKeyMax)
+	// only after a successful install, and before returning: a background copy used to start on
+	// every call (rejected files too) and could copy keys while the next install wrote them
+	s.app.Emu.SyncSystemVault()
 	if !s.noBackground {
 		go s.app.Avatars.Ensure(false)
 		go s.app.Library.Scan()
