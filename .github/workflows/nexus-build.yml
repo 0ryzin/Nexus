@@ -214,7 +214,7 @@ jobs:
             "-DCMAKE_AR=$LLVM_ROOT/bin/llvm-lib.exe" \
             "-DCMAKE_C_FLAGS=$flags" \
             "-DCMAKE_CXX_FLAGS=-EHsc $flags" \
-            "-DCMAKE_SHARED_LINKER_FLAGS=/MAP"
+            "-DCMAKE_SHARED_LINKER_FLAGS=-MAP"
 
       - name: Save CPM downloads
         if: steps.cpm-cache.outputs.cache-hit != 'true'
