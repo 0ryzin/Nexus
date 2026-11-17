@@ -24,6 +24,13 @@ type fakeGitHub struct {
 	owner    map[string]int  // gist id -> user id
 	flaky401 int             // the next n gist requests answer 401 (GitHub having a moment)
 	revoked  map[string]bool // tokens GitHub no longer accepts
+	// account_persist_test.go: GitHub's eight-hour sign-ins (OAuth apps since August 2026)
+	expiring bool            // issue access tokens that expire, with refresh tokens
+	refresh  map[string]int  // live refresh token -> user id
+	issued   int             // tokens issued so far (device flow + renewals)
+	renewals int             // successful renewals
+	down     bool            // the network is down: every connection is dropped
+	scopes   []string        // scope asked for at each device-flow start
 }
 
 func (f *fakeGitHub) userOf(auth string) int {
@@ -36,10 +43,28 @@ func (f *fakeGitHub) userOf(auth string) int {
 func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.down {
+		if hj, ok := w.(http.Hijacker); ok {
+			c, _, _ := hj.Hijack()
+			c.Close()
+			return
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	auth := r.Header.Get("Authorization")
 	switch {
+	case r.URL.Path == "/login/oauth/access_token" && r.URL.Query().Get("grant_type") == "refresh_token":
+		rt := r.URL.Query().Get("refresh_token")
+		u, ok := f.refresh[rt]
+		if !ok {
+			json.NewEncoder(w).Encode(map[string]string{"error": "bad_refresh_token", "error_description": "The refresh token passed is incorrect or expired."})
+			return
+		}
+		delete(f.refresh, rt) // GitHub rotates: the old refresh token is spent
+		f.renewals++
+		json.NewEncoder(w).Encode(f.issue(u, fmt.Sprintf("r%d", f.renewals)))
 	case r.URL.Path == "/login/device/code":
+		f.scopes = append(f.scopes, r.URL.Query().Get("scope"))
 		f.n++
 		dc := fmt.Sprintf("dc%d", f.n)
 		json.NewEncoder(w).Encode(map[string]any{"device_code": dc, "user_code": fmt.Sprintf("ABCD-%04d", f.n), "verification_uri": "https://github.com/login/device", "expires_in": 900, "interval": 0})
@@ -47,6 +72,11 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		dc := r.URL.Query().Get("device_code")
 		if !f.approved[dc] {
 			json.NewEncoder(w).Encode(map[string]string{"error": "authorization_pending"})
+			return
+		}
+		if f.expiring {
+			delete(f.approved, dc)
+			json.NewEncoder(w).Encode(f.issue(max(f.nextUser, 42), dc))
 			return
 		}
 		if f.nextUser != 0 {
@@ -127,6 +157,38 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		w.WriteHeader(404)
 	}
+}
+
+// issue: an eight-hour access token and a refresh token, as GitHub answers (expires_in as a
+// number).
+func (f *fakeGitHub) issue(user int, tag string) map[string]any {
+	f.issued++
+	if f.tokUser == nil {
+		f.tokUser = map[string]int{}
+	}
+	if f.refresh == nil {
+		f.refresh = map[string]int{}
+	}
+	at, rt := fmt.Sprintf("gho_%s_%d", tag, f.issued), fmt.Sprintf("ghr_%s_%d", tag, f.issued)
+	f.tokUser[at], f.refresh[rt] = user, user
+	return map[string]any{"access_token": at, "expires_in": 28800, "refresh_token": rt, "refresh_token_expires_in": 15897600, "scope": "gist", "token_type": "bearer"}
+}
+
+// expireAccess: every access token issued so far stops working (eight hours have passed).
+func (f *fakeGitHub) expireAccess() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for tok := range f.tokUser {
+		f.revoked[tok] = true
+	}
+}
+
+// revokeApp: the user revoked NEXUS at github.com/settings/applications.
+func (f *fakeGitHub) revokeApp() {
+	f.expireAccess()
+	f.mu.Lock()
+	f.refresh = map[string]int{}
+	f.mu.Unlock()
 }
 
 func signInGitHub(t *testing.T, a *App, f *fakeGitHub, name string) {

@@ -2375,6 +2375,16 @@ func (s *Server) routes() {
 		writeJSON(w, map[string]any{"status": st, "account": a.Account.Status()})
 	})
 	m.HandleFunc("POST /api/account/github/cancel", func(w http.ResponseWriter, r *http.Request) { a.Account.CancelGitHubSignIn(); acct(w, nil) })
+	m.HandleFunc("POST /api/account/test", func(w http.ResponseWriter, r *http.Request) {
+		v, err := a.Account.TestConnection()
+		if err != nil {
+			writeJSON(w, map[string]any{"ok": false, "error": err.Error(), "status": a.Account.Status()})
+			return
+		}
+		v["ok"] = true
+		v["status"] = a.Account.Status()
+		writeJSON(w, v)
+	})
 	m.HandleFunc("POST /api/account/onboard-seen", func(w http.ResponseWriter, r *http.Request) { a.Account.SetOnboardSeen(); acct(w, nil) })
 }
 

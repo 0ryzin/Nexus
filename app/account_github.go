@@ -73,6 +73,79 @@ func (ac *Account) isGitHub() bool {
 }
 
 func (ac *Account) gh(method, rawURL string, body, out any) (int, error) {
+	api := isGitHubAPI(rawURL)
+	if api {
+		// renew a short-lived sign-in shortly before it runs out; a failure to reach GitHub
+		// for that is not fatal (the request below still tries the current token)
+		if err := ac.ghRenew(false); errors.Is(err, errGitHubExpired) {
+			ac.endSession(err.Error())
+			return 401, err
+		}
+		ac.ghPersistPending()
+	}
+	code, data, err := ac.ghOnce(method, rawURL, body)
+	if err != nil {
+		return code, err
+	}
+	if code == 401 && api {
+		ac.mu.Lock()
+		renewable := ac.refresh != ""
+		ac.mu.Unlock()
+		if renewable {
+			// GitHub refused the access token: renew it (even if it should still be valid) and
+			// try once more. Only GitHub refusing the refresh token ends the sign-in.
+			switch err := ac.ghRenew(true); {
+			case errors.Is(err, errGitHubExpired):
+				ac.endSession(err.Error())
+				return 401, err
+			case err != nil:
+				return 401, errOffline
+			}
+			if code, data, err = ac.ghOnce(method, rawURL, body); err != nil {
+				return code, err
+			}
+			if code == 401 {
+				return 401, errOffline // a fresh token refused: GitHub having a moment; tried later
+			}
+		} else {
+			// A sign-in without a refresh token (made before NEXUS 0.8, or GitHub's long-lived
+			// kind). One 401 is not proof: GitHub can answer it for a moment during an
+			// incident. The sign-in ends only when GitHub also refuses it for /user.
+			if rawURL != githubAPI+"/user" && ac.ghTokenStillValid() {
+				return 401, errOffline
+			}
+			ac.endSession(errGitHubExpired.Error())
+			return 401, errGitHubExpired
+		}
+	}
+	if code >= 500 {
+		return code, errOffline
+	}
+	if out != nil && code < 300 {
+		if err := json.Unmarshal(data, out); err != nil {
+			return code, fmt.Errorf("GitHub sent an unexpected answer (%v)", err)
+		}
+	}
+	if code >= 300 {
+		var e struct{ Message string }
+		_ = json.Unmarshal(data, &e)
+		if code == 403 && strings.Contains(strings.ToLower(e.Message), "rate limit") {
+			return code, errors.New("GitHub asked NEXUS to wait a little (rate limit). NEXUS tries again later.")
+		}
+		return code, fmt.Errorf("GitHub answered %d: %s", code, e.Message)
+	}
+	return code, nil
+}
+
+// isGitHubAPI: a request to GitHub's API (sent with the sign-in), not to the sign-in endpoints
+// on github.com/login (which tests serve from the same address).
+func isGitHubAPI(rawURL string) bool {
+	return strings.HasPrefix(rawURL, githubAPI) && !strings.HasPrefix(rawURL, githubWeb+"/login/")
+}
+
+// ghOnce sends one request (with the current token for GitHub's API). A network failure is
+// errOffline; any HTTP answer, including an error status, is returned for gh to judge.
+func (ac *Account) ghOnce(method, rawURL string, body any) (int, []byte, error) {
 	var rd io.Reader
 	if body != nil {
 		b, _ := json.Marshal(body)
@@ -80,11 +153,11 @@ func (ac *Account) gh(method, rawURL string, body, out any) (int, error) {
 	}
 	req, err := http.NewRequest(method, rawURL, rd)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "NEXUS/"+AppVersion)
-	if strings.HasPrefix(rawURL, githubAPI) {
+	if isGitHubAPI(rawURL) {
 		req.Header.Set("Accept", "application/vnd.github+json")
 		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 		ac.mu.Lock()
@@ -98,36 +171,14 @@ func (ac *Account) gh(method, rawURL string, body, out any) (int, error) {
 	}
 	resp, err := ac.client.Do(req)
 	if err != nil {
-		return 0, errOffline
+		return 0, nil, errOffline
 	}
 	defer resp.Body.Close()
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
-	if resp.StatusCode == 401 && strings.HasPrefix(rawURL, githubAPI) {
-		// One 401 is not proof: GitHub can answer it for a moment during an incident. The sign-in
-		// ends only when GitHub also refuses it for /user; otherwise it is tried again later.
-		if rawURL != githubAPI+"/user" && ac.ghTokenStillValid() {
-			return 401, errOffline
-		}
-		ac.endSession("GitHub no longer accepts NEXUS's sign-in on this device (it was revoked or expired). Sign in with GitHub again.")
-		return 401, errors.New("Signed out: GitHub no longer accepts this device's sign-in.")
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	if err != nil {
+		return 0, nil, errOffline
 	}
-	if resp.StatusCode >= 500 {
-		return resp.StatusCode, errOffline
-	}
-	if out != nil && resp.StatusCode < 300 {
-		if err := json.Unmarshal(data, out); err != nil {
-			return resp.StatusCode, fmt.Errorf("GitHub sent an unexpected answer (%v)", err)
-		}
-	}
-	if resp.StatusCode >= 300 {
-		var e struct{ Message string }
-		_ = json.Unmarshal(data, &e)
-		if resp.StatusCode == 403 && strings.Contains(strings.ToLower(e.Message), "rate limit") {
-			return resp.StatusCode, errors.New("GitHub asked NEXUS to wait a little (rate limit). NEXUS tries again later.")
-		}
-		return resp.StatusCode, fmt.Errorf("GitHub answered %s: %s", resp.Status, e.Message)
-	}
-	return resp.StatusCode, nil
+	return resp.StatusCode, data, nil
 }
 
 // ghTokenStillValid asks GitHub whether the stored sign-in is still accepted (GET /user).
@@ -165,7 +216,9 @@ func (ac *Account) StartGitHubSignIn(deviceName string) (map[string]any, error) 
 		Error           string `json:"error"`
 		ErrorDesc       string `json:"error_description"`
 	}
-	form := url.Values{"client_id": {githubClientID}, "scope": {"gist"}}
+	// offline_access: GitHub's renewable sign-in (an eight-hour access token and a refresh
+	// token). Apps registered since August 2026 get it anyway; asking makes it certain.
+	form := url.Values{"client_id": {githubClientID}, "scope": {"gist offline_access"}}
 	if _, err := ac.gh("POST", githubWeb+"/login/device/code?"+form.Encode(), nil, &r); err != nil {
 		return nil, err
 	}
@@ -198,11 +251,7 @@ func (ac *Account) GitHubSignInStatus() (string, error) {
 		return "pending", nil
 	}
 	f.next = time.Now().Add(f.Interval)
-	var r struct {
-		AccessToken string `json:"access_token"`
-		Error       string `json:"error"`
-		Interval    int    `json:"interval"`
-	}
+	var r ghTokenAnswer
 	form := url.Values{"client_id": {githubClientID}, "device_code": {f.DeviceCode}, "grant_type": {"urn:ietf:params:oauth:grant-type:device_code"}}
 	if _, err := ac.gh("POST", githubWeb+"/login/oauth/access_token?"+form.Encode(), nil, &r); err != nil {
 		return "pending", err
@@ -228,7 +277,7 @@ func (ac *Account) GitHubSignInStatus() (string, error) {
 		return "pending", nil
 	}
 	ac.CancelGitHubSignIn()
-	return "approved", ac.finishGitHubSignIn(r.AccessToken, f.DeviceName)
+	return "approved", ac.finishGitHubSignIn(r.cred(time.Now()), f.DeviceName)
 }
 
 func (ac *Account) CancelGitHubSignIn() {
@@ -238,14 +287,14 @@ func (ac *Account) CancelGitHubSignIn() {
 	ac.changed()
 }
 
-func (ac *Account) finishGitHubSignIn(token, deviceName string) error {
+func (ac *Account) finishGitHubSignIn(cred ghCred, deviceName string) error {
 	ac.mu.Lock()
-	prevToken := ac.token
-	ac.token = token
+	prev := ac.credLocked()
+	ac.setCredLocked(cred)
 	ac.mu.Unlock()
 	fail := func(err error) error {
 		ac.mu.Lock()
-		ac.token = prevToken
+		ac.setCredLocked(prev)
 		ac.mu.Unlock()
 		return err
 	}
@@ -261,24 +310,34 @@ func (ac *Account) finishGitHubSignIn(token, deviceName string) error {
 	if err != nil {
 		return fail(err)
 	}
-	if err := storeSecretFile(ac.tokenPath(), []byte(token)); err != nil {
+	if err := storeSecretFile(ac.tokenPath(), cred.encode()); err != nil {
 		return fail(fmt.Errorf("NEXUS could not store the sign-in safely on this device: %v", err))
 	}
 	accountID := fmt.Sprintf("github:%d", u.ID)
 	ac.mu.Lock()
+	sameDevice := ac.st.AccountID == accountID && ac.st.GistID == gistID && ac.st.DeviceID != ""
 	if ac.st.AccountID != accountID || ac.st.GistID != gistID {
 		ac.st.Cursor, ac.st.Base, ac.st.ProfileMap, ac.st.Conflicts = 0, map[string]syncBase{}, nil, nil
 	}
 	ac.noteAccountSwitchLocked(accountID, "@"+u.Login)
 	ac.st.Provider, ac.st.GistID, ac.st.AccountID = "github", gistID, accountID
 	ac.st.Email, ac.st.DisplayName = "@"+u.Login, firstNonEmpty(u.Name, u.Login)
-	ac.st.DeviceID, ac.st.DeviceName = newAmiiboEntryID()+newAmiiboEntryID(), firstNonEmpty(deviceName, ac.st.DeviceName, defaultDeviceName())
+	// reconnecting the same GitHub account keeps this device's entry in the device list (each
+	// sign-in used to add another "Toms_Pc")
+	if !sameDevice {
+		ac.st.DeviceID = newAmiiboEntryID() + newAmiiboEntryID()
+	}
+	ac.st.DeviceName = firstNonEmpty(deviceName, ac.st.DeviceName, defaultDeviceName())
 	ac.st.SignedIn, ac.st.Ended, ac.st.SyncOn = true, "", true
 	ac.noteLocked("signin", fmt.Sprintf("Signed in with GitHub as @%s on %s.", u.Login, ac.st.DeviceName))
 	ac.saveLocked()
 	ac.mu.Unlock()
 	if err := ac.ghUpdateDevices(func(m map[string]*ghDevice) {
-		m[ac.st.DeviceID] = &ghDevice{ID: ac.st.DeviceID, Name: ac.st.DeviceName, Platform: devicePlatform(), Created: nowUnix(), LastSeen: nowUnix()}
+		created := nowUnix()
+		if old := m[ac.st.DeviceID]; old != nil && old.Created != 0 {
+			created = old.Created
+		}
+		m[ac.st.DeviceID] = &ghDevice{ID: ac.st.DeviceID, Name: ac.st.DeviceName, Platform: devicePlatform(), Created: created, LastSeen: nowUnix()}
 	}); err != nil {
 		ac.app.Log.Printf("account: device list: %v", err)
 	}

@@ -140,19 +140,28 @@ type sessionResult struct {
 
 // Account is the NEXUS Account subsystem.
 type Account struct {
-	app    *App
-	dir    string
-	mu     sync.Mutex
-	st     accountState
-	token  string
-	syncMu sync.Mutex // one synchronisation at a time
-	busy   bool
-	claim  *linkClaim // this device is waiting for approval of a linking code
-	client *http.Client
-	wake   chan struct{}
-	stop   chan struct{}
-	touch  *time.Timer
-	ghFlow *ghFlow // GitHub sign-in in progress
+	app   *App
+	dir   string
+	mu    sync.Mutex
+	st    accountState
+	token string
+	// GitHub's short-lived sign-in (OAuth apps since August 2026): the access token lasts
+	// eight hours and the refresh token renews it (account_github_cred.go). Empty for a
+	// token that does not expire.
+	refresh     string
+	tokExp      int64 // unix seconds; 0 = does not expire
+	refreshExp  int64
+	refreshMu   sync.Mutex // one renewal at a time (GitHub rotates the refresh token)
+	renewing    bool       // a renewal is in progress (status: Reconnecting)
+	credUnsaved bool       // a renewed sign-in is only in memory so far (saving failed)
+	syncMu      sync.Mutex // one synchronisation at a time
+	busy        bool
+	claim       *linkClaim // this device is waiting for approval of a linking code
+	client      *http.Client
+	wake        chan struct{}
+	stop        chan struct{}
+	touch       *time.Timer
+	ghFlow      *ghFlow // GitHub sign-in in progress
 }
 
 type linkClaim struct {
@@ -229,7 +238,8 @@ func (ac *Account) ReleaseHold(send bool) error {
 func (ac *Account) loadTokenLocked() bool {
 	b, err := loadSecretFile(ac.tokenPath())
 	if err == nil && len(b) > 0 {
-		ac.token, ac.st.TokenUnread = string(b), 0
+		ac.setCredLocked(decodeCred(b))
+		ac.st.TokenUnread = 0
 		return true
 	}
 	if err == nil || errors.Is(err, os.ErrNotExist) || ac.st.TokenUnread >= 5 {
@@ -335,6 +345,11 @@ type AccountStatus struct {
 	GitHub       map[string]any    `json:"github,omitempty"` // sign-in code while signing in with GitHub
 	OnboardSeen  bool              `json:"onboardSeen"`
 	TokenStorage string            `json:"tokenStorage"`
+	// Connection is the GitHub (or service) connection on its own, apart from synchronisation:
+	// connected | notconnected | reconnecting (renewing the sign-in) | expired (GitHub refused
+	// it: reconnect) | problem (cannot reach the service just now; still connected) | syncing
+	Connection string `json:"connection"`
+	Renewable  bool   `json:"renewable,omitempty"` // the sign-in renews itself (GitHub's eight-hour tokens)
 }
 
 type linkClaimView struct {
@@ -372,6 +387,21 @@ func (ac *Account) Status() AccountStatus {
 	}
 	if ac.claim != nil {
 		st.Linking = &linkClaimView{ac.claim.Account, ac.claim.DisplayName, ac.claim.Expires}
+	}
+	st.Renewable = ac.refresh != ""
+	switch {
+	case !st.SignedIn && st.Ended != "" && ac.st.AccountID != "":
+		st.Connection = "expired"
+	case !st.SignedIn:
+		st.Connection = "notconnected"
+	case ac.renewing:
+		st.Connection = "reconnecting"
+	case ac.busy:
+		st.Connection = "syncing"
+	case ac.st.Offline:
+		st.Connection = "problem"
+	default:
+		st.Connection = "connected"
 	}
 	switch {
 	case !st.Available && !st.SignedIn:
@@ -497,7 +527,8 @@ func (ac *Account) callAt(server, tok, method, path string, body, out any) error
 // removed, expired). Local data is untouched.
 func (ac *Account) endSession(msg string) {
 	ac.mu.Lock()
-	ac.token, ac.st.SignedIn, ac.st.Ended = "", false, msg
+	ac.setCredLocked(ghCred{})
+	ac.st.SignedIn, ac.st.Ended = false, msg
 	ac.noteLocked("signout", msg)
 	ac.saveLocked()
 	ac.mu.Unlock()
@@ -593,7 +624,8 @@ func (ac *Account) SignOut() error {
 		return err
 	}
 	ac.mu.Lock()
-	ac.token, ac.st.SignedIn, ac.st.Ended, ac.st.Devices, ac.st.LastError, ac.st.Offline = "", false, "", nil, "", false
+	ac.setCredLocked(ghCred{})
+	ac.st.SignedIn, ac.st.Ended, ac.st.Devices, ac.st.LastError, ac.st.Offline = false, "", nil, "", false
 	ac.noteLocked("signout", "Signed out on this device.")
 	ac.saveLocked()
 	ac.mu.Unlock()
