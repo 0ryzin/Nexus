@@ -220,6 +220,10 @@ func (f *fakeEngine) Status() EngineStatus {
 	defer f.mu.Unlock()
 	s := f.st
 	s.Volume = f.volume
+	if s.Prepare != nil { // a copy: the preparation timer updates f.st.Prepare in place
+		p := *s.Prepare
+		s.Prepare = &p
+	}
 	return s
 }
 
