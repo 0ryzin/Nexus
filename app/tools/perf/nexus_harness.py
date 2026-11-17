@@ -72,7 +72,10 @@ async def enter(pg):
     """Open the interface, skip the start-up animation, pick the first user, wait for the games."""
     await pg.goto(f"http://localhost:{PORT}/")
     await pg.wait_for_function("typeof S!=='undefined' && (!!S.screen || Nav.top()?.name === 'who')", timeout=20000)
-    await pg.keyboard.press("Space"); await pg.wait_for_timeout(1500)
+    # Space skips the start-up animation; only while it shows: on Home it would start the focused game
+    if await pg.evaluate("!!document.querySelector('#boot') && getComputedStyle(document.querySelector('#boot')).display !== 'none' && document.body.classList.contains('booting')"):
+        await pg.keyboard.press("Space")
+    await pg.wait_for_timeout(1500)
     if await pg.evaluate("S.screen === 'who' || Nav.top()?.name === 'who'"):
         await pg.evaluate("document.querySelector('.who-item').click()"); await pg.wait_for_timeout(900)
     await pg.wait_for_function("S.games && S.games.length > 0 && S.screen === 'home'", timeout=30000)
