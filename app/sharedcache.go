@@ -38,6 +38,11 @@ func (e *Emulator) SharedShaderDir() string {
 	if d := os.Getenv("NEXUS_SHARED_SHADER_DIR"); d != "" {
 		return d
 	}
+	if e.app.Paths.IsPortable {
+		// a portable NEXUS (on a USB drive, say) keeps everything in its own folder and leaves
+		// nothing in the PC's ProgramData
+		return ""
+	}
 	return defaultSharedShaderDir()
 }
 
