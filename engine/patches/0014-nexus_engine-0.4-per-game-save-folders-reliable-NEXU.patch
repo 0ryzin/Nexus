@@ -1,7 +1,7 @@
-From 14005c17116b2826c1da94f619275c3c12520bf8 Mon Sep 17 00:00:00 2001
+From 735387878abfbf7f74df2099676aa594d5a2b861 Mon Sep 17 00:00:00 2001
 From: NEXUS <nexus@localhost>
 Date: Wed, 11 Nov 2026 23:03:04 +0000
-Subject: [PATCH 14/21] nexus_engine 0.4: per-game save folders, reliable NEXUS
+Subject: [PATCH 14/22] nexus_engine 0.4: per-game save folders, reliable NEXUS
  Home, F11, screenshots, controller choice, reveal after the loading screen
 
 - savedata_factory: NexusSaveFolders() maps a game's account/device save to folders NEXUS names
@@ -19,6 +19,8 @@ Subject: [PATCH 14/21] nexus_engine 0.4: per-game save folders, reliable NEXUS
 - revealOnRequest / nexus_engine_reveal: after the first frame the window waits for NEXUS to fade
   its loading screen out (failsafe timeout); optional fadeInMs opacity fade
 - status: ready, fullscreen, screenshots, lastScreenshot
+
+(cherry picked from commit 14005c17116b2826c1da94f619275c3c12520bf8)
 ---
  src/core/file_sys/savedata_factory.cpp  |  22 ++
  src/core/file_sys/savedata_factory.h    |  12 +
@@ -776,12 +778,12 @@ index 7535468a7..1750cf16b 100644
  #ifdef _WIN32
      if (void* hwnd = E().window_handle.load()) {
 diff --git a/src/tests/CMakeLists.txt b/src/tests/CMakeLists.txt
-index 639ba9a5b..74e5773b0 100644
+index ce6eb27ae..6f8e66e95 100644
 --- a/src/tests/CMakeLists.txt
 +++ b/src/tests/CMakeLists.txt
-@@ -66,6 +66,7 @@ add_executable(tests
-     frontend_common/nx_archive.cpp
-     core/vfs_vector.cpp
+@@ -96,6 +96,7 @@ add_executable(tests
+     core/ncz_io_guards.cpp
+     core/ncz_container.cpp
      core/file_sys_parsers.cpp
 +    core/nexus_save_folders.cpp
      input_common/calibration_lifetime.cpp

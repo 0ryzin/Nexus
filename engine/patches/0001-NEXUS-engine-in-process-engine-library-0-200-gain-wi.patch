@@ -1,12 +1,13 @@
-From 821d00f5586305930b5d207270c7841a39ab4c7c Mon Sep 17 00:00:00 2001
+From 46689904ae03295f28e32ce12cc7dfa51c27361b Mon Sep 17 00:00:00 2001
 From: NEXUS <nexus@localhost>
 Date: Tue, 10 Nov 2026 23:27:30 +0000
-Subject: [PATCH 01/21] NEXUS engine: in-process engine library, 0-200% gain
+Subject: [PATCH 01/22] NEXUS engine: in-process engine library, 0-200% gain
  with soft limiter, explicit data root, window title/icon, CI and upstream
  sync tooling
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 (cherry picked from commit 8acbc62f275e19c531deb3c0c6ef1fe9e141323c)
+(cherry picked from commit 821d00f5586305930b5d207270c7841a39ab4c7c)
 ---
  .github/workflows/nexus-engine.yml            |  50 ++
  CMakeLists.txt                                |   1 +
@@ -216,7 +217,7 @@ literal 0
 HcmV?d00001
 
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index 603e8216c..af82db461 100644
+index 1e8623229..ef84df0f3 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
 @@ -306,6 +306,11 @@ add_subdirectory(input_common)
@@ -288,7 +289,7 @@ index 000000000..f0506621b
 +
 +} // namespace AudioCore::Nexus
 diff --git a/src/audio_core/sink/sink_stream.cpp b/src/audio_core/sink/sink_stream.cpp
-index 78be66224..99322c6f1 100644
+index 28990cc73..6109c2ad0 100644
 --- a/src/audio_core/sink/sink_stream.cpp
 +++ b/src/audio_core/sink/sink_stream.cpp
 @@ -19,6 +19,7 @@
@@ -345,7 +346,7 @@ index 78be66224..99322c6f1 100644
  
          pushed = samples_buffer.Push(samples);
 diff --git a/src/common/fs/path_util.cpp b/src/common/fs/path_util.cpp
-index 9c2decca9..7614e9210 100644
+index d4969125a..16886ab50 100644
 --- a/src/common/fs/path_util.cpp
 +++ b/src/common/fs/path_util.cpp
 @@ -114,12 +114,17 @@ public:
@@ -1032,7 +1033,7 @@ index 000000000..9d420e8d7
 +
 +} // extern "C"
 diff --git a/src/tests/CMakeLists.txt b/src/tests/CMakeLists.txt
-index 853568b14..639ba9a5b 100644
+index 1a038b6fc..ce6eb27ae 100644
 --- a/src/tests/CMakeLists.txt
 +++ b/src/tests/CMakeLists.txt
 @@ -4,6 +4,7 @@
@@ -1041,8 +1042,8 @@ index 853568b14..639ba9a5b 100644
  add_executable(tests
 +    nexus/nexus_gain.cpp
      common/addon_config.cpp
+     common/thread_worker.cpp
      video_core/vulkan_overlay_filter.cpp
-     video_core/buffer_cache_ports.cpp
 diff --git a/src/tests/nexus/nexus_gain.cpp b/src/tests/nexus/nexus_gain.cpp
 new file mode 100644
 index 000000000..623954df5

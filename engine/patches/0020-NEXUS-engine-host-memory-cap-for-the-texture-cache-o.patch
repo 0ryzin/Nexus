@@ -1,7 +1,7 @@
-From e86bf7b54261040d94a9738274985ccd999cf01a Mon Sep 17 00:00:00 2001
+From 9d6a81b34fda33188762de8295da90ab58272861 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Fri, 13 Nov 2026 18:06:34 +0000
-Subject: [PATCH 20/21] NEXUS engine: host-memory cap for the texture cache on
+Subject: [PATCH 20/22] NEXUS engine: host-memory cap for the texture cache on
  Linux
 
 Common::GetSystemCommitRoom returned no value outside Windows, so the
@@ -21,6 +21,7 @@ Not measured on a handheld.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
+(cherry picked from commit e86bf7b54261040d94a9738274985ccd999cf01a)
 ---
  src/common/CMakeLists.txt          |  1 +
  src/common/linux_commit_room.h     | 86 ++++++++++++++++++++++++++++++
@@ -31,10 +32,10 @@ Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
  create mode 100644 src/common/linux_commit_room.h
 
 diff --git a/src/common/CMakeLists.txt b/src/common/CMakeLists.txt
-index cd87d553f..a2b0de61f 100644
+index db61eefa1..5a3b63b12 100644
 --- a/src/common/CMakeLists.txt
 +++ b/src/common/CMakeLists.txt
-@@ -90,6 +90,7 @@ add_library(
+@@ -92,6 +92,7 @@ add_library(
      lz4_compression.cpp
      lz4_compression.h
      math_util.h
@@ -135,12 +136,12 @@ index 000000000..ebbcfa3f5
 +
 +} // namespace Common
 diff --git a/src/common/memory_detect.cpp b/src/common/memory_detect.cpp
-index cfc836206..35d53349b 100644
+index 9a711d59b..4f32aaee1 100644
 --- a/src/common/memory_detect.cpp
 +++ b/src/common/memory_detect.cpp
-@@ -23,7 +23,9 @@
- #include <cstdlib>
+@@ -25,7 +25,9 @@
  #include <fstream>
+ #include <iterator>
  #include <string>
 +#include <iterator>
  #include <string_view>
@@ -148,7 +149,7 @@ index cfc836206..35d53349b 100644
  #endif
  
  #include <atomic>
-@@ -146,6 +148,17 @@ std::optional<u64> GetSystemCommitRoom() {
+@@ -229,6 +231,17 @@ std::optional<u64> GetSystemCommitRoom() {
          const u64 committed = performance.CommitTotal;
          return (committed < limit ? limit - committed : 0) * performance.PageSize;
      }
@@ -167,11 +168,11 @@ index cfc836206..35d53349b 100644
      return std::nullopt;
  }
 diff --git a/src/common/memory_detect.h b/src/common/memory_detect.h
-index cba1f7b33..dbcc70f5e 100644
+index a49a39e8b..1993a6b63 100644
 --- a/src/common/memory_detect.h
 +++ b/src/common/memory_detect.h
-@@ -47,7 +47,8 @@ struct ProcessMemoryUsage {
- [[nodiscard]] ProcessMemoryUsage GetProcessMemoryUsage();
+@@ -60,7 +60,8 @@ struct ProcessMemoryUsage {
+ [[nodiscard]] u64 GetProcessPageFaults();
  
  /// Commit the system can still hand out, in bytes: its commit limit (RAM plus the page files)
 -/// minus what is committed. No value where the host reports no such limit (anything but Windows).
@@ -181,10 +182,10 @@ index cba1f7b33..dbcc70f5e 100644
  
  /// Physical memory the host can hand out now without paging anything out (0 when unknown).
 diff --git a/src/tests/common/memory_detect.cpp b/src/tests/common/memory_detect.cpp
-index 4a57ab224..cb2892ed5 100644
+index 7869d1de3..d1740b7ab 100644
 --- a/src/tests/common/memory_detect.cpp
 +++ b/src/tests/common/memory_detect.cpp
-@@ -3,7 +3,9 @@
+@@ -5,7 +5,9 @@
  
  #include <catch2/catch_test_macros.hpp>
  #include "common/literals.h"
@@ -194,9 +195,9 @@ index 4a57ab224..cb2892ed5 100644
  
  using namespace Common::Literals;
  using Common::HostRam;
-@@ -40,3 +42,39 @@ TEST_CASE("Switch 2 RAM minimum: unknown RAM gives no warning", "[common]") {
-     CHECK_FALSE(IsBelowSwitch2RamMinimum(HostRam{0, true}));
-     CHECK_FALSE(IsBelowSwitch2RamMinimum(HostRam{0, false}));
+@@ -91,3 +93,39 @@ TEST_CASE("Host RAM takes udev's total only when it covers managed memory", "[co
+     CHECK(none.bytes == 15_GiB);
+     CHECK_FALSE(none.installed);
  }
 +
 +TEST_CASE("Linux commit room: default overcommit uses available RAM and free swap", "[common]") {

@@ -1,0 +1,58 @@
+From f4ffbb18629915798f837402e0aa2532bf52e8e9 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 17 Nov 2026 11:31:08 +0000
+Subject: [PATCH 22/22] nexus_engine: register the booted NSP's or XCI's own
+ contents (port of Lichii #1935)
+
+The game's control data (NACP: save data sizes, user account requirement)
+is looked up in the manual content provider. NEXUS registered only the
+update and DLC files from the game folders there, so games booted from an
+NSP or XCI read an empty NACP. Lichii's CLI fixed the same gap in #1935;
+nexus_engine now registers the booted container first, the same way.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
+---
+ src/nexus_engine/nexus_engine.cpp | 21 +++++++++++++++++++--
+ 1 file changed, 19 insertions(+), 2 deletions(-)
+
+diff --git a/src/nexus_engine/nexus_engine.cpp b/src/nexus_engine/nexus_engine.cpp
+index bc35e1417..652541b4c 100644
+--- a/src/nexus_engine/nexus_engine.cpp
++++ b/src/nexus_engine/nexus_engine.cpp
+@@ -729,8 +729,25 @@ void ToggleFullscreen(EmuWindow_SDL3& window) {
+ }
+ 
+ void RegisterExternalContent(FileSys::ManualContentProvider& provider, Core::System& system,
+-                             const std::vector<std::string>& paths) {
++                             const std::string& game, const std::vector<std::string>& paths) {
+     provider.ClearAllEntries();
++    // The booted NSP's or XCI's own contents too, as Lichii's CLI does since #1935: the game's
++    // control data (NACP: save data sizes, user account requirements) is looked up here, and
++    // without it the game reads an empty NACP.
++    if (const auto file = system.GetFilesystem()->OpenFile(game, FileSys::OpenMode::Read)) {
++        switch (Loader::IdentifyFile(file)) {
++        case Loader::FileType::NSP:
++        case Loader::FileType::NSZ:
++        case Loader::FileType::XCI:
++        case Loader::FileType::XCZ:
++            if (!provider.AddEntriesFromContainer(file)) {
++                LOG_WARNING(Frontend, "NEXUS: the contents of {} could not be registered", game);
++            }
++            break;
++        default:
++            break;
++        }
++    }
+     for (const auto& path : paths) {
+         if (const auto file = system.GetFilesystem()->OpenFile(path, FileSys::OpenMode::Read)) {
+             if (!provider.AddEntriesFromContainer(file)) {
+@@ -848,7 +865,7 @@ void RunSession(Request req) {
+                                        &manual_provider);
+         system.SetFilesystem(std::make_shared<FileSys::RealVfsFilesystem>());
+         system.GetFileSystemController().CreateFactories(*system.GetFilesystem());
+-        RegisterExternalContent(manual_provider, system, req.contents);
++        RegisterExternalContent(manual_provider, system, req.game, req.contents);
+         // player 1's keyboard layout, to go back to when the last controller is disconnected
+         const auto keyboard_player = Settings::values.players.GetValue()[0];
+         if (req.auto_map_controller) {

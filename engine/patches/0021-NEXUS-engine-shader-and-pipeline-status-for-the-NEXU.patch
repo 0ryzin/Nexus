@@ -1,7 +1,7 @@
-From 7994a095ae1941fa411227d83bbc17fdebe95e87 Mon Sep 17 00:00:00 2001
+From 6c9ae7def415698776653a08dc62926c8be9b5a8 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Fri, 13 Nov 2026 21:16:27 +0000
-Subject: [PATCH 21/21] NEXUS engine: shader and pipeline status for the NEXUS
+Subject: [PATCH 21/22] NEXUS engine: shader and pipeline status for the NEXUS
  performance interface
 
 nexus_shader_status.h reads, per session, how the pipelines a game used
@@ -14,6 +14,7 @@ nexus_engine reports them as "shaders" in its status while a session runs.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
+(cherry picked from commit 7994a095ae1941fa411227d83bbc17fdebe95e87)
 ---
  src/nexus_engine/nexus_engine.cpp             |  27 +++++
  src/video_core/CMakeLists.txt                 |   1 +
@@ -82,11 +83,11 @@ index 91489d9cd..bc35e1417 100644
          std::scoped_lock lk{e.mutex};
          if (!e.code.empty()) {
 diff --git a/src/video_core/CMakeLists.txt b/src/video_core/CMakeLists.txt
-index 5b9f0e204..cda478577 100644
+index 68af0b1be..d0f4ca57d 100644
 --- a/src/video_core/CMakeLists.txt
 +++ b/src/video_core/CMakeLists.txt
-@@ -132,6 +132,7 @@ add_library(video_core STATIC
-     nx2_fast_draw.h
+@@ -148,6 +148,7 @@ add_library(video_core STATIC
+     nx2_owed_words.h
      nx2_profile.h
      nx2_stutter_trace.cpp
 +    nexus_shader_status.h
@@ -203,10 +204,10 @@ index 000000000..e25f5093d
 +
 +} // namespace NexusShaderStatus
 diff --git a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp b/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
-index b01cf47cf..be1207404 100644
+index b0315a24b..eeff8715e 100644
 --- a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
 +++ b/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
-@@ -62,6 +62,7 @@
+@@ -68,6 +68,7 @@
  #include "video_core/renderer_vulkan/vk_cooperative_hmma_test.h"
  #include "video_core/renderer_vulkan/vk_descriptor_pool.h"
  #include "video_core/renderer_vulkan/vk_pipeline_binaries.h"
@@ -214,7 +215,7 @@ index b01cf47cf..be1207404 100644
  #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
  #include "video_core/renderer_vulkan/vk_pipeline_cache_records.h"
  #include "video_core/renderer_vulkan/vk_scheduler.h"
-@@ -789,6 +790,7 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
+@@ -864,6 +865,7 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
          .driver_threads = driver_threads,
          .name = "VkShader",
      });
@@ -222,7 +223,7 @@ index b01cf47cf..be1207404 100644
  }
  
  namespace {
-@@ -877,6 +879,7 @@ void DestroyPipelinesWithProgress(Container& pipelines) {
+@@ -969,6 +971,7 @@ void LogRuntimePipelineTotals();
  } // Anonymous namespace
  
  PipelineCache::~PipelineCache() {
@@ -230,7 +231,7 @@ index b01cf47cf..be1207404 100644
      serialization_stop.request_stop();
      StopBackgroundJobs();
      // The pipelines' builds end before the driver pipeline cache they build into goes.
-@@ -1059,7 +1062,8 @@ ComputePipeline* PipelineCache::CurrentComputePipeline(u64& native_key) {
+@@ -1198,7 +1201,8 @@ ComputePipeline* PipelineCache::CurrentComputePipeline(u64& native_key) {
              entry.rebuilds = MaxComputeRebuilds;
          }
      }
@@ -240,9 +241,9 @@ index b01cf47cf..be1207404 100644
          VideoCommon::StutterTrace::CountLookup(
              is_new ? VideoCommon::StutterTrace::Lookup::ComputeNew
                     : VideoCommon::StutterTrace::Lookup::ComputePrebuilt);
-@@ -2117,12 +2121,11 @@ GraphicsPipeline* PipelineCache::CurrentGraphicsPipelineSlowPath() {
-         if (scheduled_prebuild) {
-             pipeline = scheduled_prebuild->Take(graphics_key);
+@@ -2374,12 +2378,11 @@ GraphicsPipeline* PipelineCache::CurrentGraphicsPipelineSlowPath() {
+                 ReportRuntimePipeline(RuntimeBuild::Prebuild, *waited);
+             }
          }
 -        if (StutterTrace::Enabled()) {
 -            StutterTrace::CountLookup(pipeline ? StutterTrace::Lookup::GraphicsBackground
@@ -257,9 +258,9 @@ index b01cf47cf..be1207404 100644
 +                                      : StutterTrace::Lookup::GraphicsNew);
          if (!pipeline) {
              const auto keep = evicted_pointer_slots.Take(graphics_key.Hash());
-             if (auto kept = kept_stages.Take(graphics_key)) {
-@@ -2133,7 +2136,7 @@ GraphicsPipeline* PipelineCache::CurrentGraphicsPipelineSlowPath() {
-                 pipeline = CreateGraphicsPipeline(keep ? &*keep : nullptr);
+             const bool evicted = evicted_hashes.erase(graphics_key.Hash()) != 0;
+@@ -2393,7 +2396,7 @@ GraphicsPipeline* PipelineCache::CurrentGraphicsPipelineSlowPath() {
+                 pipeline = CreateGraphicsPipeline(keep ? &*keep : nullptr, evicted);
              }
          }
 -    } else if (StutterTrace::Enabled() && pipeline && !pipeline->WasUsed()) {

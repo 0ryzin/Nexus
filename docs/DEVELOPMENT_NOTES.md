@@ -13,7 +13,7 @@
 | `app/account*.go`, `accountd/` | NEXUS Account (GitHub device flow + private Gist; or the self-hosted service) |
 | `app/amiibo.go` | Amiibo library, virtual amiibo, hand-off to the engine |
 | `app/overlay_windows.go`, `perf.go` | In-game HUD (performance strip, REC) |
-| `engine/patches/` | NEXUS changes to the engine, applied by CI on top of Lichii `build-177` |
+| `engine/patches/` | NEXUS changes to the engine, applied by CI on top of Lichii `build-316` |
 | `android/` | Internal Android source (no release) |
 
 ## Where user data lives
@@ -39,9 +39,9 @@ the first frame → Home (`Suspend`: background or pause) → stop. The engine h
 - Windows: CI `nexus-build` builds the engine (about 45-60 min, cached) and NEXUS, runs both test
   suites, packs `NEXUS-<VERSION>-Windows-x64.zip`. A release is published only when
   `docs/releases/v<VERSION>.md` exists (pre-release if it contains `<!-- nexus:prerelease -->`).
-- Engine patches: edit the fork (branch `nexus-177` on top of `build-177`), then
-  `git format-patch --binary --no-signature -o engine/patches build-177..nexus-177` and check they
-  apply with `git am` on a clean `build-177` worktree.
+- Engine patches: edit the fork (branch `nexus-316` on top of `build-316`), then
+  `git format-patch --binary --no-signature -o engine/patches build-316..nexus-316` and check they
+  apply with `git am` on a clean `build-316` worktree.
 - Real games cannot be run in CI (no keys, no GPU): anything game-specific needs a test on a PC.
 
 ## Moving the engine to a newer Lichii build

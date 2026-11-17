@@ -1,11 +1,12 @@
-From 3183cb639832ef694371876ffc76bf4a51b29231 Mon Sep 17 00:00:00 2001
+From 21dc2a18d6104468e327f7166bf92209ae01b61b Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 11 Nov 2026 00:14:04 +0000
-Subject: [PATCH 06/21] abi_smoke: load from the packaged NEXUS Engine layout
+Subject: [PATCH 06/22] abi_smoke: load from the packaged NEXUS Engine layout
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
 (cherry picked from commit 1c1e5b78f3dc714133cfc64b0fec78f7190431b2)
+(cherry picked from commit 3183cb639832ef694371876ffc76bf4a51b29231)
 ---
  tools/nexus/abi_smoke.py | 7 ++++++-
  1 file changed, 6 insertions(+), 1 deletion(-)

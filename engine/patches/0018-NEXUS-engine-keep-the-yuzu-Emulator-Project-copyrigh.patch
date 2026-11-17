@@ -1,12 +1,14 @@
-From 405b988756161e29f4422b24a78ea71f26674556 Mon Sep 17 00:00:00 2001
+From 0a3478caa88dccec295fb3dbfb00a47b38cc562f Mon Sep 17 00:00:00 2001
 From: NEXUS <nexus@users.noreply.github.com>
 Date: Fri, 13 Nov 2026 17:28:45 +0000
-Subject: [PATCH 18/21] NEXUS engine: keep the yuzu Emulator Project copyright
+Subject: [PATCH 18/22] NEXUS engine: keep the yuzu Emulator Project copyright
  notices
 
 Lichii #1544 (9b50adb7b) removed the 'SPDX-FileCopyrightText: ... yuzu Emulator Project' lines
 from 2,512 source files. The code is still the yuzu project's work under GPL-3.0, whose notices
 must be kept, so the NEXUS engine restores them (a revert of that commit).
+
+(cherry picked from commit 405b988756161e29f4422b24a78ea71f26674556)
 ---
  .codespellrc                                                    | 1 +
  .git-blame-ignore-revs                                          | 1 +
@@ -654,7 +656,6 @@ must be kept, so the NEXUS engine restores them (a revert of that commit).
  src/core/file_sys/system_archive/data/font_nintendo_extended.h  | 1 +
  src/core/file_sys/system_archive/data/font_standard.cpp         | 1 +
  src/core/file_sys/system_archive/data/font_standard.h           | 1 +
- src/core/file_sys/system_archive/mii_model.cpp                  | 1 +
  src/core/file_sys/system_archive/mii_model.h                    | 1 +
  src/core/file_sys/system_archive/ng_word.cpp                    | 1 +
  src/core/file_sys/system_archive/ng_word.h                      | 1 +
@@ -2520,7 +2521,7 @@ must be kept, so the NEXUS engine restores them (a revert of that commit).
  tools/generate_converters.py                                    | 1 +
  tools/svc_generator.py                                          | 2 ++
  tools/windows/install-vulkan-sdk.ps1                            | 1 +
- 2512 files changed, 2513 insertions(+)
+ 2511 files changed, 2512 insertions(+)
 
 diff --git a/.codespellrc b/.codespellrc
 index 9fa5fa373..1874359d3 100644
@@ -2759,7 +2760,7 @@ index 3f0b3fb93..07f9db624 100644
  */
  QAbstractSpinBox {
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index af82db461..095b166eb 100644
+index ef84df0f3..a9d38b6f9 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
 @@ -1,6 +1,7 @@
@@ -3227,7 +3228,7 @@ index 06c746bc1..6475a0e2f 100644
  
  package io.github.zortos293.lichii.features.settings.model
 diff --git a/src/android/app/src/main/java/io/github/zortos293/lichii/features/settings/model/IntSetting.kt b/src/android/app/src/main/java/io/github/zortos293/lichii/features/settings/model/IntSetting.kt
-index b42e0deff..4d945d081 100644
+index 102254531..3bd24a4ed 100644
 --- a/src/android/app/src/main/java/io/github/zortos293/lichii/features/settings/model/IntSetting.kt
 +++ b/src/android/app/src/main/java/io/github/zortos293/lichii/features/settings/model/IntSetting.kt
 @@ -1,6 +1,7 @@
@@ -3353,7 +3354,7 @@ index ae1c5ccae..a01c88703 100644
  
  package io.github.zortos293.lichii.features.settings.model.view
 diff --git a/src/android/app/src/main/java/io/github/zortos293/lichii/features/settings/model/view/SettingsItem.kt b/src/android/app/src/main/java/io/github/zortos293/lichii/features/settings/model/view/SettingsItem.kt
-index 6d7931033..9011465e3 100644
+index c333a45ac..4181230bd 100644
 --- a/src/android/app/src/main/java/io/github/zortos293/lichii/features/settings/model/view/SettingsItem.kt
 +++ b/src/android/app/src/main/java/io/github/zortos293/lichii/features/settings/model/view/SettingsItem.kt
 @@ -1,6 +1,7 @@
@@ -6466,7 +6467,7 @@ index b2056b592..6dc7d3d29 100644
  
  #pragma once
 diff --git a/src/audio_core/sink/null_sink.h b/src/audio_core/sink/null_sink.h
-index 3a1aa4592..bcfa02275 100644
+index abf5b8862..30b5f3957 100644
 --- a/src/audio_core/sink/null_sink.h
 +++ b/src/audio_core/sink/null_sink.h
 @@ -1,6 +1,7 @@
@@ -6535,7 +6536,7 @@ index 7925330d7..c8498842b 100644
  
  #pragma once
 diff --git a/src/audio_core/sink/sink_stream.cpp b/src/audio_core/sink/sink_stream.cpp
-index 99322c6f1..e9b40abad 100644
+index 6109c2ad0..27914e199 100644
 --- a/src/audio_core/sink/sink_stream.cpp
 +++ b/src/audio_core/sink/sink_stream.cpp
 @@ -1,6 +1,7 @@
@@ -6547,7 +6548,7 @@ index 99322c6f1..e9b40abad 100644
  
  #include <algorithm>
 diff --git a/src/audio_core/sink/sink_stream.h b/src/audio_core/sink/sink_stream.h
-index f0e5eb322..c8f14821e 100644
+index abfaa2b2e..3a58d4b1e 100644
 --- a/src/audio_core/sink/sink_stream.h
 +++ b/src/audio_core/sink/sink_stream.h
 @@ -1,6 +1,7 @@
@@ -6559,7 +6560,7 @@ index f0e5eb322..c8f14821e 100644
  
  #pragma once
 diff --git a/src/common/CMakeLists.txt b/src/common/CMakeLists.txt
-index b56b99db8..cd87d553f 100644
+index 2d7f0f30b..db61eefa1 100644
 --- a/src/common/CMakeLists.txt
 +++ b/src/common/CMakeLists.txt
 @@ -1,6 +1,7 @@
@@ -6791,7 +6792,7 @@ index f5a9fcffd..913668b29 100644
  
  #pragma once
 diff --git a/src/common/fs/file.cpp b/src/common/fs/file.cpp
-index 5c4aeb1ec..461a5eee3 100644
+index 50214a2b5..509c13790 100644
 --- a/src/common/fs/file.cpp
 +++ b/src/common/fs/file.cpp
 @@ -1,6 +1,7 @@
@@ -6803,7 +6804,7 @@ index 5c4aeb1ec..461a5eee3 100644
  
  #include <vector>
 diff --git a/src/common/fs/file.h b/src/common/fs/file.h
-index 3dd5c910d..b1ccfbd18 100644
+index 06b7effa0..204a4c3e3 100644
 --- a/src/common/fs/file.h
 +++ b/src/common/fs/file.h
 @@ -1,6 +1,7 @@
@@ -6899,7 +6900,7 @@ index d786cf0c5..2492a9f94 100644
  
  #pragma once
 diff --git a/src/common/fs/path_util.cpp b/src/common/fs/path_util.cpp
-index 9442d2bb5..55ca2428c 100644
+index 93fe7b583..8de82882f 100644
 --- a/src/common/fs/path_util.cpp
 +++ b/src/common/fs/path_util.cpp
 @@ -1,6 +1,7 @@
@@ -6944,7 +6945,7 @@ index 454a9ca9c..ee5b0bf43 100644
  
  #pragma once
 diff --git a/src/common/host_memory.cpp b/src/common/host_memory.cpp
-index 2ce8caa08..9df31e044 100644
+index f06062fea..eda442690 100644
 --- a/src/common/host_memory.cpp
 +++ b/src/common/host_memory.cpp
 @@ -1,6 +1,7 @@
@@ -6956,7 +6957,7 @@ index 2ce8caa08..9df31e044 100644
  
  #ifdef _WIN32
 diff --git a/src/common/host_memory.h b/src/common/host_memory.h
-index c1143941f..c52ee010a 100644
+index e7d5356a8..e748ecf30 100644
 --- a/src/common/host_memory.h
 +++ b/src/common/host_memory.h
 @@ -1,6 +1,7 @@
@@ -7025,7 +7026,7 @@ index ee56fa754..3ae17c2bb 100644
  
  #pragma once
 diff --git a/src/common/memory_detect.cpp b/src/common/memory_detect.cpp
-index a96a2e2ec..cfc836206 100644
+index 9436ebcf8..9a711d59b 100644
 --- a/src/common/memory_detect.cpp
 +++ b/src/common/memory_detect.cpp
 @@ -1,3 +1,4 @@
@@ -7034,7 +7035,7 @@ index a96a2e2ec..cfc836206 100644
  
  #ifdef _WIN32
 diff --git a/src/common/memory_detect.h b/src/common/memory_detect.h
-index 011136d77..cba1f7b33 100644
+index 260b54a8d..a49a39e8b 100644
 --- a/src/common/memory_detect.h
 +++ b/src/common/memory_detect.h
 @@ -1,3 +1,4 @@
@@ -7094,7 +7095,7 @@ index 742c43188..73278cfc5 100644
  
  #include "common/page_table.h"
 diff --git a/src/common/page_table.h b/src/common/page_table.h
-index 236218e51..78fd609f7 100644
+index df5fb117c..9c29b9d59 100644
 --- a/src/common/page_table.h
 +++ b/src/common/page_table.h
 @@ -1,6 +1,7 @@
@@ -7198,7 +7199,7 @@ index 6483c1af0..cad150692 100644
  
  #pragma once
 diff --git a/src/common/settings.cpp b/src/common/settings.cpp
-index 1ab7ae288..736ba83d6 100644
+index a2e57f9de..8f63131e2 100644
 --- a/src/common/settings.cpp
 +++ b/src/common/settings.cpp
 @@ -1,6 +1,7 @@
@@ -7210,7 +7211,7 @@ index 1ab7ae288..736ba83d6 100644
  
  #include <version>
 diff --git a/src/common/settings.h b/src/common/settings.h
-index 92a022ef4..105627534 100644
+index 24930e377..24c576033 100644
 --- a/src/common/settings.h
 +++ b/src/common/settings.h
 @@ -1,6 +1,7 @@
@@ -7243,7 +7244,7 @@ index 7f5dc338f..bbc16f52e 100644
  
  #pragma once
 diff --git a/src/common/settings_enums.h b/src/common/settings_enums.h
-index 31a1a7dc1..216e009b6 100644
+index 8136707be..6a80423e1 100644
 --- a/src/common/settings_enums.h
 +++ b/src/common/settings_enums.h
 @@ -4,6 +4,7 @@
@@ -7315,7 +7316,7 @@ index d282b18e2..2e3d6b23f 100644
  
  #pragma once
 diff --git a/src/common/socket_types.h b/src/common/socket_types.h
-index 5c8e372ee..e42306869 100644
+index 25a2eb1f6..757cc0906 100644
 --- a/src/common/socket_types.h
 +++ b/src/common/socket_types.h
 @@ -1,6 +1,7 @@
@@ -7414,7 +7415,7 @@ index fe944955b..5bb26e883 100644
  
  #pragma once
 diff --git a/src/common/thread_worker.h b/src/common/thread_worker.h
-index 5a53f7d5f..791586f2b 100644
+index 2c0b847a5..921a2e37c 100644
 --- a/src/common/thread_worker.h
 +++ b/src/common/thread_worker.h
 @@ -1,6 +1,7 @@
@@ -7579,7 +7580,7 @@ index 81f87555c..c20d96adb 100644
  
  #pragma once
 diff --git a/src/core/CMakeLists.txt b/src/core/CMakeLists.txt
-index b44e433c1..1a40a3a38 100644
+index 8e1aeb0cc..ca32b435d 100644
 --- a/src/core/CMakeLists.txt
 +++ b/src/core/CMakeLists.txt
 @@ -1,6 +1,7 @@
@@ -7659,7 +7660,7 @@ index f19b04075..22655dff4 100644
  
  #pragma once
 diff --git a/src/core/arm/dynarmic/arm_dynarmic_64.cpp b/src/core/arm/dynarmic/arm_dynarmic_64.cpp
-index 553583ddd..f2aef4c87 100644
+index 52530e9ba..3522d2a89 100644
 --- a/src/core/arm/dynarmic/arm_dynarmic_64.cpp
 +++ b/src/core/arm/dynarmic/arm_dynarmic_64.cpp
 @@ -1,6 +1,7 @@
@@ -7848,7 +7849,7 @@ index fc161070d..0f9b6bfe2 100644
  
  #pragma once
 diff --git a/src/core/core_timing.cpp b/src/core/core_timing.cpp
-index f7dd7e408..0827de9e1 100644
+index b8d843ce4..0c8f2f4c4 100644
 --- a/src/core/core_timing.cpp
 +++ b/src/core/core_timing.cpp
 @@ -1,6 +1,7 @@
@@ -7860,7 +7861,7 @@ index f7dd7e408..0827de9e1 100644
  
  #include <algorithm>
 diff --git a/src/core/core_timing.h b/src/core/core_timing.h
-index d754cc076..536b9bc19 100644
+index 0438e0fac..02cfae78b 100644
 --- a/src/core/core_timing.h
 +++ b/src/core/core_timing.h
 @@ -1,6 +1,7 @@
@@ -7896,7 +7897,7 @@ index 209957d86..5e97f51bf 100644
  
  #pragma once
 diff --git a/src/core/crypto/aes_util.cpp b/src/core/crypto/aes_util.cpp
-index 09cce8480..7eea665e6 100644
+index 192dfad6b..f279f0ba9 100644
 --- a/src/core/crypto/aes_util.cpp
 +++ b/src/core/crypto/aes_util.cpp
 @@ -1,6 +1,7 @@
@@ -7906,7 +7907,7 @@ index 09cce8480..7eea665e6 100644
 +// SPDX-FileCopyrightText: Copyright 2018 yuzu Emulator Project
  // SPDX-License-Identifier: GPL-2.0-or-later
  
- #include <array>
+ #include <algorithm>
 diff --git a/src/core/crypto/aes_util.h b/src/core/crypto/aes_util.h
 index eda2a36a0..704e175d8 100644
 --- a/src/core/crypto/aes_util.h
@@ -7959,7 +7960,7 @@ index 985381e84..b53f0b12e 100644
  
  #pragma once
 diff --git a/src/core/crypto/key_manager.cpp b/src/core/crypto/key_manager.cpp
-index 27d61bf84..292969254 100644
+index 76b889d1b..409450a61 100644
 --- a/src/core/crypto/key_manager.cpp
 +++ b/src/core/crypto/key_manager.cpp
 @@ -1,6 +1,7 @@
@@ -7971,7 +7972,7 @@ index 27d61bf84..292969254 100644
  
  #include <algorithm>
 diff --git a/src/core/crypto/key_manager.h b/src/core/crypto/key_manager.h
-index 8b0c64be0..c1a0399b4 100644
+index 668cd31fa..de73c51e8 100644
 --- a/src/core/crypto/key_manager.h
 +++ b/src/core/crypto/key_manager.h
 @@ -1,6 +1,7 @@
@@ -8139,7 +8140,7 @@ index 01b24faf2..ac61ccc40 100644
  
  #pragma once
 diff --git a/src/core/device_memory_manager.inc b/src/core/device_memory_manager.inc
-index 97b03f855..a20775978 100644
+index 326ce0f76..353f477e4 100644
 --- a/src/core/device_memory_manager.inc
 +++ b/src/core/device_memory_manager.inc
 @@ -1,6 +1,7 @@
@@ -8190,7 +8191,7 @@ index 57ea9dcdc..97871da4a 100644
  
  #pragma once
 diff --git a/src/core/file_sys/common_funcs.h b/src/core/file_sys/common_funcs.h
-index a7be3cd35..3dd8f1244 100644
+index 94338dc1e..bb3909c3a 100644
 --- a/src/core/file_sys/common_funcs.h
 +++ b/src/core/file_sys/common_funcs.h
 @@ -1,3 +1,4 @@
@@ -8199,7 +8200,7 @@ index a7be3cd35..3dd8f1244 100644
  
  #pragma once
 diff --git a/src/core/file_sys/content_archive.cpp b/src/core/file_sys/content_archive.cpp
-index ca61fb762..b102598b5 100644
+index 014b90f42..00e5cf4a5 100644
 --- a/src/core/file_sys/content_archive.cpp
 +++ b/src/core/file_sys/content_archive.cpp
 @@ -1,6 +1,7 @@
@@ -8211,7 +8212,7 @@ index ca61fb762..b102598b5 100644
  
  #include <algorithm>
 diff --git a/src/core/file_sys/content_archive.h b/src/core/file_sys/content_archive.h
-index 014890fe6..b88fcdc4e 100644
+index 73c7ab8a5..2e5aeb323 100644
 --- a/src/core/file_sys/content_archive.h
 +++ b/src/core/file_sys/content_archive.h
 @@ -1,6 +1,7 @@
@@ -8442,7 +8443,7 @@ index f8476cb03..58798014e 100644
  
  #pragma once
 diff --git a/src/core/file_sys/fssystem/fssystem_aes_ctr_storage.cpp b/src/core/file_sys/fssystem/fssystem_aes_ctr_storage.cpp
-index e1c7a654f..6eb78c825 100644
+index 9cbc619e3..4b21ce2e8 100644
 --- a/src/core/file_sys/fssystem/fssystem_aes_ctr_storage.cpp
 +++ b/src/core/file_sys/fssystem/fssystem_aes_ctr_storage.cpp
 @@ -1,6 +1,7 @@
@@ -8496,7 +8497,7 @@ index e714646d6..6eef567e1 100644
  
  #pragma once
 diff --git a/src/core/file_sys/fssystem/fssystem_alignment_matching_storage_impl.cpp b/src/core/file_sys/fssystem/fssystem_alignment_matching_storage_impl.cpp
-index dde220001..322e6e05f 100644
+index 49dac879c..c0bbae2f2 100644
 --- a/src/core/file_sys/fssystem/fssystem_alignment_matching_storage_impl.cpp
 +++ b/src/core/file_sys/fssystem/fssystem_alignment_matching_storage_impl.cpp
 @@ -1,6 +1,7 @@
@@ -8859,7 +8860,7 @@ index 687bc5d79..e3c61f161 100644
  
  #pragma once
 diff --git a/src/core/file_sys/kernel_executable.cpp b/src/core/file_sys/kernel_executable.cpp
-index 67e348f4a..dea05f840 100644
+index 9c5cbb3d2..c77c7179e 100644
 --- a/src/core/file_sys/kernel_executable.cpp
 +++ b/src/core/file_sys/kernel_executable.cpp
 @@ -1,6 +1,7 @@
@@ -8871,7 +8872,7 @@ index 67e348f4a..dea05f840 100644
  
  #include <cstring>
 diff --git a/src/core/file_sys/kernel_executable.h b/src/core/file_sys/kernel_executable.h
-index 588dfba35..ac4b1acaf 100644
+index e2df308e8..26d6b9a85 100644
 --- a/src/core/file_sys/kernel_executable.h
 +++ b/src/core/file_sys/kernel_executable.h
 @@ -1,6 +1,7 @@
@@ -8928,7 +8929,7 @@ index b4f756ffe..c64b29b5d 100644
  
  #pragma once
 diff --git a/src/core/file_sys/patch_manager.cpp b/src/core/file_sys/patch_manager.cpp
-index 4e9f0739f..dd3ca6bb9 100644
+index b99b3bdd7..5e459e83c 100644
 --- a/src/core/file_sys/patch_manager.cpp
 +++ b/src/core/file_sys/patch_manager.cpp
 @@ -1,6 +1,7 @@
@@ -8940,7 +8941,7 @@ index 4e9f0739f..dd3ca6bb9 100644
  
  #include <algorithm>
 diff --git a/src/core/file_sys/patch_manager.h b/src/core/file_sys/patch_manager.h
-index 1fa932f8f..1ee2ef514 100644
+index 9113a52f2..74e6dcf84 100644
 --- a/src/core/file_sys/patch_manager.h
 +++ b/src/core/file_sys/patch_manager.h
 @@ -1,6 +1,7 @@
@@ -8952,7 +8953,7 @@ index 1fa932f8f..1ee2ef514 100644
  
  #pragma once
 diff --git a/src/core/file_sys/program_metadata.cpp b/src/core/file_sys/program_metadata.cpp
-index e17a2e288..464e496ea 100644
+index aefdec39c..ff01e6e15 100644
 --- a/src/core/file_sys/program_metadata.cpp
 +++ b/src/core/file_sys/program_metadata.cpp
 @@ -1,6 +1,7 @@
@@ -8973,7 +8974,7 @@ index a0151ef80..5ce32af1a 100644
  
  #pragma once
 diff --git a/src/core/file_sys/registered_cache.cpp b/src/core/file_sys/registered_cache.cpp
-index ebfa818e1..3b0d05d80 100644
+index 4bd29be7c..4cf45a74a 100644
 --- a/src/core/file_sys/registered_cache.cpp
 +++ b/src/core/file_sys/registered_cache.cpp
 @@ -1,6 +1,7 @@
@@ -9084,7 +9085,7 @@ index 5ac3991e2..ee69ccd07 100644
  
  #pragma once
 diff --git a/src/core/file_sys/submission_package.cpp b/src/core/file_sys/submission_package.cpp
-index 1f238641b..1a39d819f 100644
+index b4738d9d9..45deddcbe 100644
 --- a/src/core/file_sys/submission_package.cpp
 +++ b/src/core/file_sys/submission_package.cpp
 @@ -1,6 +1,7 @@
@@ -9096,7 +9097,7 @@ index 1f238641b..1a39d819f 100644
  
  #include <algorithm>
 diff --git a/src/core/file_sys/submission_package.h b/src/core/file_sys/submission_package.h
-index 4d414e2fd..935e9589d 100644
+index ed07bef21..08c125235 100644
 --- a/src/core/file_sys/submission_package.h
 +++ b/src/core/file_sys/submission_package.h
 @@ -1,3 +1,4 @@
@@ -9212,15 +9213,6 @@ index f28c19eaf..edfd7055e 100644
  // SPDX-License-Identifier: GPL-2.0-or-later
  
  #pragma once
-diff --git a/src/core/file_sys/system_archive/mii_model.cpp b/src/core/file_sys/system_archive/mii_model.cpp
-index 3d495957d..a96cb2cd2 100644
---- a/src/core/file_sys/system_archive/mii_model.cpp
-+++ b/src/core/file_sys/system_archive/mii_model.cpp
-@@ -1,3 +1,4 @@
-+// SPDX-FileCopyrightText: Copyright 2019 yuzu Emulator Project
- // SPDX-License-Identifier: GPL-2.0-or-later
- 
- #include "core/file_sys/system_archive/mii_model.h"
 diff --git a/src/core/file_sys/system_archive/mii_model.h b/src/core/file_sys/system_archive/mii_model.h
 index 30a814359..61723ed0d 100644
 --- a/src/core/file_sys/system_archive/mii_model.h
@@ -9501,7 +9493,7 @@ index 9cb2890d3..86beed931 100644
  
  #pragma once
 diff --git a/src/core/file_sys/xts_archive.cpp b/src/core/file_sys/xts_archive.cpp
-index 4265db5fe..7c5da5e7e 100644
+index f4eb37c56..d69a46995 100644
 --- a/src/core/file_sys/xts_archive.cpp
 +++ b/src/core/file_sys/xts_archive.cpp
 @@ -1,6 +1,7 @@
@@ -10717,7 +10709,7 @@ index 96cc370df..c3a3b7355 100644
  
  #include <random>
 diff --git a/src/core/hle/kernel/k_process.h b/src/core/hle/kernel/k_process.h
-index 8aec8c1b7..e4096e692 100644
+index 6212be7ba..75080bef3 100644
 --- a/src/core/hle/kernel/k_process.h
 +++ b/src/core/hle/kernel/k_process.h
 @@ -1,6 +1,7 @@
@@ -11044,7 +11036,7 @@ index c21e4e538..c0362497f 100644
  
  #pragma once
 diff --git a/src/core/hle/kernel/k_thread.cpp b/src/core/hle/kernel/k_thread.cpp
-index 5fe4d1642..d27312999 100644
+index d6c12e150..e1308d318 100644
 --- a/src/core/hle/kernel/k_thread.cpp
 +++ b/src/core/hle/kernel/k_thread.cpp
 @@ -1,6 +1,7 @@
@@ -11206,7 +11198,7 @@ index c924b49df..8745a4ce2 100644
  
  #pragma once
 diff --git a/src/core/hle/kernel/kernel.cpp b/src/core/hle/kernel/kernel.cpp
-index afa02e7e0..300ea149b 100644
+index 9817a5773..c123fda9b 100644
 --- a/src/core/hle/kernel/kernel.cpp
 +++ b/src/core/hle/kernel/kernel.cpp
 @@ -1,6 +1,7 @@
@@ -11248,7 +11240,7 @@ index 5b37ecd94..d528a9bb3 100644
  
  #pragma once
 diff --git a/src/core/hle/kernel/physical_core.cpp b/src/core/hle/kernel/physical_core.cpp
-index 4e1faf851..5b31f5743 100644
+index 7c5420e5d..eb58891f4 100644
 --- a/src/core/hle/kernel/physical_core.cpp
 +++ b/src/core/hle/kernel/physical_core.cpp
 @@ -1,6 +1,7 @@
@@ -11260,7 +11252,7 @@ index 4e1faf851..5b31f5743 100644
  
  #include <algorithm>
 diff --git a/src/core/hle/kernel/physical_core.h b/src/core/hle/kernel/physical_core.h
-index 7c454e14c..3e7bbb3af 100644
+index 65acabe33..99630551e 100644
 --- a/src/core/hle/kernel/physical_core.h
 +++ b/src/core/hle/kernel/physical_core.h
 @@ -1,6 +1,7 @@
@@ -11762,7 +11754,7 @@ index bb28fb02e..ec5c5a006 100644
  
  #pragma once
 diff --git a/src/core/hle/service/acc/acc.cpp b/src/core/hle/service/acc/acc.cpp
-index dda264b53..2a6708e10 100644
+index 20fbdace9..3387630a0 100644
 --- a/src/core/hle/service/acc/acc.cpp
 +++ b/src/core/hle/service/acc/acc.cpp
 @@ -1,6 +1,7 @@
@@ -11942,7 +11934,7 @@ index 6dbb73cfb..1fbe89a38 100644
  
  #pragma once
 diff --git a/src/core/hle/service/am/applet_manager.cpp b/src/core/hle/service/am/applet_manager.cpp
-index 888ee6071..887c4521f 100644
+index faec4fce7..1a71d6815 100644
 --- a/src/core/hle/service/am/applet_manager.cpp
 +++ b/src/core/hle/service/am/applet_manager.cpp
 @@ -1,6 +1,7 @@
@@ -11954,7 +11946,7 @@ index 888ee6071..887c4521f 100644
  
  #include "common/settings.h"
 diff --git a/src/core/hle/service/am/applet_manager.h b/src/core/hle/service/am/applet_manager.h
-index d69be6307..bae3ab426 100644
+index 8c355a378..724d4c15f 100644
 --- a/src/core/hle/service/am/applet_manager.h
 +++ b/src/core/hle/service/am/applet_manager.h
 @@ -1,6 +1,7 @@
@@ -13022,7 +13014,7 @@ index 0cb05487e..824ae14a1 100644
  
  #pragma once
 diff --git a/src/core/hle/service/aoc/addon_content_manager.cpp b/src/core/hle/service/aoc/addon_content_manager.cpp
-index 36e2b8b1a..c63b08e40 100644
+index a61d8dd20..382caace1 100644
 --- a/src/core/hle/service/aoc/addon_content_manager.cpp
 +++ b/src/core/hle/service/aoc/addon_content_manager.cpp
 @@ -1,6 +1,7 @@
@@ -13142,7 +13134,7 @@ index 0654ca2ff..eeac3474b 100644
  
  #pragma once
 diff --git a/src/core/hle/service/audio/audio.cpp b/src/core/hle/service/audio/audio.cpp
-index 53090ade4..b4c6b69c1 100644
+index 9d9e1e609..2b165fa7c 100644
 --- a/src/core/hle/service/audio/audio.cpp
 +++ b/src/core/hle/service/audio/audio.cpp
 @@ -1,6 +1,7 @@
@@ -13166,7 +13158,7 @@ index 0c7342d1c..eb8f48269 100644
  
  #pragma once
 diff --git a/src/core/hle/service/audio/audio_controller.cpp b/src/core/hle/service/audio/audio_controller.cpp
-index cfa93a288..9e2db4a84 100644
+index 7fc293749..925f31150 100644
 --- a/src/core/hle/service/audio/audio_controller.cpp
 +++ b/src/core/hle/service/audio/audio_controller.cpp
 @@ -1,6 +1,7 @@
@@ -14258,7 +14250,7 @@ index 9d4706560..debae97a4 100644
  
  #pragma once
 diff --git a/src/core/hle/service/cmif_serialization.h b/src/core/hle/service/cmif_serialization.h
-index 2b6117b02..acc63f0ac 100644
+index 82c3d45ce..370eb9c86 100644
 --- a/src/core/hle/service/cmif_serialization.h
 +++ b/src/core/hle/service/cmif_serialization.h
 @@ -1,6 +1,7 @@
@@ -14450,7 +14442,7 @@ index c8d2b827d..89ef7096b 100644
  
  #pragma once
 diff --git a/src/core/hle/service/filesystem/filesystem.cpp b/src/core/hle/service/filesystem/filesystem.cpp
-index 60f06010d..925af7b37 100644
+index ec2cd948e..9e9dd9cc2 100644
 --- a/src/core/hle/service/filesystem/filesystem.cpp
 +++ b/src/core/hle/service/filesystem/filesystem.cpp
 @@ -1,6 +1,7 @@
@@ -14594,7 +14586,7 @@ index b17b9d798..d2b8eb97c 100644
  
  #pragma once
 diff --git a/src/core/hle/service/filesystem/fsp/fs_i_storage.cpp b/src/core/hle/service/filesystem/fsp/fs_i_storage.cpp
-index 79b9ba55f..864252e46 100644
+index a5e70d3f9..cebc3f019 100644
 --- a/src/core/hle/service/filesystem/fsp/fs_i_storage.cpp
 +++ b/src/core/hle/service/filesystem/fsp/fs_i_storage.cpp
 @@ -1,6 +1,7 @@
@@ -14606,7 +14598,7 @@ index 79b9ba55f..864252e46 100644
  
  #include <algorithm>
 diff --git a/src/core/hle/service/filesystem/fsp/fs_i_storage.h b/src/core/hle/service/filesystem/fsp/fs_i_storage.h
-index 58d418c70..204e637e0 100644
+index e3d687ee5..24ef96e20 100644
 --- a/src/core/hle/service/filesystem/fsp/fs_i_storage.h
 +++ b/src/core/hle/service/filesystem/fsp/fs_i_storage.h
 @@ -1,6 +1,7 @@
@@ -14774,17 +14766,17 @@ index 9eecdf7a8..afb95cb94 100644
  
  #pragma once
 diff --git a/src/core/hle/service/friend/friend.cpp b/src/core/hle/service/friend/friend.cpp
-index 45dbf2f99..bfb2d6b50 100644
+index 198654b36..2e2a05d71 100644
 --- a/src/core/hle/service/friend/friend.cpp
 +++ b/src/core/hle/service/friend/friend.cpp
-@@ -1,6 +1,7 @@
- // SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
+@@ -2,6 +2,7 @@
  // SPDX-License-Identifier: GPL-3.0-or-later
  
+ // SPDX-FileCopyrightText: Copyright 2025 citron Emulator Project
 +// SPDX-FileCopyrightText: Copyright 2018 yuzu Emulator Project
  // SPDX-License-Identifier: GPL-2.0-or-later
  
- #include <queue>
+ #include <algorithm>
 diff --git a/src/core/hle/service/friend/friend.h b/src/core/hle/service/friend/friend.h
 index 7087b9bce..61ac92fbb 100644
 --- a/src/core/hle/service/friend/friend.h
@@ -15458,7 +15450,7 @@ index 10dc19700..9000110a9 100644
  
  #pragma once
 diff --git a/src/core/hle/service/hle_ipc.cpp b/src/core/hle/service/hle_ipc.cpp
-index 4dd542b9e..3d662592d 100644
+index 9d0c5e0fe..680c4af45 100644
 --- a/src/core/hle/service/hle_ipc.cpp
 +++ b/src/core/hle/service/hle_ipc.cpp
 @@ -1,6 +1,7 @@
@@ -15470,7 +15462,7 @@ index 4dd542b9e..3d662592d 100644
  
  #include <algorithm>
 diff --git a/src/core/hle/service/hle_ipc.h b/src/core/hle/service/hle_ipc.h
-index 38c90a40b..a4102ba1b 100644
+index 0e7c86be7..abade268f 100644
 --- a/src/core/hle/service/hle_ipc.h
 +++ b/src/core/hle/service/hle_ipc.h
 @@ -1,6 +1,7 @@
@@ -16490,13 +16482,13 @@ index 0ddcdfdbb..11a99f225 100644
  
  #pragma once
 diff --git a/src/core/hle/service/nifm/nifm.cpp b/src/core/hle/service/nifm/nifm.cpp
-index 5595bb03d..d481e4a4b 100644
+index 16f4b4cd3..82a7cfe76 100644
 --- a/src/core/hle/service/nifm/nifm.cpp
 +++ b/src/core/hle/service/nifm/nifm.cpp
-@@ -1,6 +1,7 @@
- // SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
+@@ -2,6 +2,7 @@
  // SPDX-License-Identifier: GPL-3.0-or-later
  
+ // SPDX-FileCopyrightText: Copyright 2025 citron Emulator Project
 +// SPDX-FileCopyrightText: Copyright 2018 yuzu Emulator Project
  // SPDX-License-Identifier: GPL-2.0-or-later
  
@@ -16538,7 +16530,7 @@ index fc501b4e9..0fad2a71a 100644
  
  #pragma once
 diff --git a/src/core/hle/service/npns/npns.cpp b/src/core/hle/service/npns/npns.cpp
-index 9084f977a..b0f74bef0 100644
+index e3af2dfad..3df5c21f2 100644
 --- a/src/core/hle/service/npns/npns.cpp
 +++ b/src/core/hle/service/npns/npns.cpp
 @@ -1,6 +1,7 @@
@@ -16874,7 +16866,7 @@ index e96f44168..c3b4856e7 100644
  
  #pragma once
 diff --git a/src/core/hle/service/ns/platform_service_manager.cpp b/src/core/hle/service/ns/platform_service_manager.cpp
-index f03a24428..629020bb5 100644
+index d7118ab48..deb378372 100644
 --- a/src/core/hle/service/ns/platform_service_manager.cpp
 +++ b/src/core/hle/service/ns/platform_service_manager.cpp
 @@ -1,6 +1,7 @@
@@ -16886,7 +16878,7 @@ index f03a24428..629020bb5 100644
  
  #include <algorithm>
 diff --git a/src/core/hle/service/ns/platform_service_manager.h b/src/core/hle/service/ns/platform_service_manager.h
-index 04a0dad61..b4dd7fa29 100644
+index c0ba061dc..f8a7f544a 100644
 --- a/src/core/hle/service/ns/platform_service_manager.h
 +++ b/src/core/hle/service/ns/platform_service_manager.h
 @@ -1,6 +1,7 @@
@@ -17042,7 +17034,7 @@ index f6136595b..76f8959ed 100644
  
  #pragma once
 diff --git a/src/core/hle/service/nvdrv/core/container.cpp b/src/core/hle/service/nvdrv/core/container.cpp
-index 1c36cb84b..22db243e3 100644
+index 2b916ff2e..9df31436e 100644
 --- a/src/core/hle/service/nvdrv/core/container.cpp
 +++ b/src/core/hle/service/nvdrv/core/container.cpp
 @@ -1,3 +1,4 @@
@@ -17051,7 +17043,7 @@ index 1c36cb84b..22db243e3 100644
  // SPDX-License-Identifier: GPL-3.0-or-later
  
 diff --git a/src/core/hle/service/nvdrv/core/container.h b/src/core/hle/service/nvdrv/core/container.h
-index 927c4a1ab..bc60636ac 100644
+index f46865392..6bf373725 100644
 --- a/src/core/hle/service/nvdrv/core/container.h
 +++ b/src/core/hle/service/nvdrv/core/container.h
 @@ -1,6 +1,7 @@
@@ -17171,7 +17163,7 @@ index 7ef1b05b5..ff0bfb2ec 100644
  
  #pragma once
 diff --git a/src/core/hle/service/nvdrv/devices/nvhost_as_gpu.cpp b/src/core/hle/service/nvdrv/devices/nvhost_as_gpu.cpp
-index 35f0da2dd..160cf1fa6 100644
+index 601e8d0b5..6dc7df4cb 100644
 --- a/src/core/hle/service/nvdrv/devices/nvhost_as_gpu.cpp
 +++ b/src/core/hle/service/nvdrv/devices/nvhost_as_gpu.cpp
 @@ -1,6 +1,7 @@
@@ -17183,7 +17175,7 @@ index 35f0da2dd..160cf1fa6 100644
  // SPDX-License-Identifier: GPL-3.0-or-later
  
 diff --git a/src/core/hle/service/nvdrv/devices/nvhost_as_gpu.h b/src/core/hle/service/nvdrv/devices/nvhost_as_gpu.h
-index 3208d4641..a9574249b 100644
+index 59d08f208..9b3ac92ca 100644
 --- a/src/core/hle/service/nvdrv/devices/nvhost_as_gpu.h
 +++ b/src/core/hle/service/nvdrv/devices/nvhost_as_gpu.h
 @@ -1,6 +1,7 @@
@@ -17693,7 +17685,7 @@ index 45749a6f6..05980eb48 100644
  // SPDX-License-Identifier: GPL-3.0-or-later
  // Parts of this implementation were based on:
 diff --git a/src/core/hle/service/nvnflinger/hardware_composer.cpp b/src/core/hle/service/nvnflinger/hardware_composer.cpp
-index ddefa9397..9ac56e17b 100644
+index 4540b9504..0c77e9197 100644
 --- a/src/core/hle/service/nvnflinger/hardware_composer.cpp
 +++ b/src/core/hle/service/nvnflinger/hardware_composer.cpp
 @@ -1,6 +1,7 @@
@@ -19337,7 +19329,7 @@ index 319e6cbe9..8e88f4324 100644
  
  #pragma once
 diff --git a/src/core/hle/service/server_manager.cpp b/src/core/hle/service/server_manager.cpp
-index 208f59f81..a8a4df360 100644
+index 22610f619..74c19a1bc 100644
 --- a/src/core/hle/service/server_manager.cpp
 +++ b/src/core/hle/service/server_manager.cpp
 @@ -1,6 +1,7 @@
@@ -19349,7 +19341,7 @@ index 208f59f81..a8a4df360 100644
  
  #include <utility>
 diff --git a/src/core/hle/service/server_manager.h b/src/core/hle/service/server_manager.h
-index a4cec9808..c94cb1a50 100644
+index fa5045e02..638f6669d 100644
 --- a/src/core/hle/service/server_manager.h
 +++ b/src/core/hle/service/server_manager.h
 @@ -1,6 +1,7 @@
@@ -19361,7 +19353,7 @@ index a4cec9808..c94cb1a50 100644
  
  #pragma once
 diff --git a/src/core/hle/service/service.cpp b/src/core/hle/service/service.cpp
-index 3a4537d26..b47d67468 100644
+index 39c31cf1d..106eb98d4 100644
 --- a/src/core/hle/service/service.cpp
 +++ b/src/core/hle/service/service.cpp
 @@ -1,6 +1,7 @@
@@ -19385,7 +19377,7 @@ index 507fcbd81..d1be62c8c 100644
  
  #pragma once
 diff --git a/src/core/hle/service/services.cpp b/src/core/hle/service/services.cpp
-index 0b34a7994..b90af960d 100644
+index e01f7c2bb..9c7a7e3fc 100644
 --- a/src/core/hle/service/services.cpp
 +++ b/src/core/hle/service/services.cpp
 @@ -1,6 +1,7 @@
@@ -19397,7 +19389,7 @@ index 0b34a7994..b90af960d 100644
  
  #include "core/hle/service/services.h"
 diff --git a/src/core/hle/service/services.h b/src/core/hle/service/services.h
-index 24c7eb6d5..4072afa3d 100644
+index 4781ae557..bb3e8182c 100644
 --- a/src/core/hle/service/services.h
 +++ b/src/core/hle/service/services.h
 @@ -1,6 +1,7 @@
@@ -19649,7 +19641,7 @@ index 680579102..1d56e61f8 100644
  
  #pragma once
 diff --git a/src/core/hle/service/sm/sm.cpp b/src/core/hle/service/sm/sm.cpp
-index 0f08f004e..406d6c902 100644
+index fe46961e6..b4d65a7c2 100644
 --- a/src/core/hle/service/sm/sm.cpp
 +++ b/src/core/hle/service/sm/sm.cpp
 @@ -1,6 +1,7 @@
@@ -19661,7 +19653,7 @@ index 0f08f004e..406d6c902 100644
  
  #include <tuple>
 diff --git a/src/core/hle/service/sm/sm.h b/src/core/hle/service/sm/sm.h
-index f3fbaf1a3..c520a46fb 100644
+index 0c6206904..7ef076907 100644
 --- a/src/core/hle/service/sm/sm.h
 +++ b/src/core/hle/service/sm/sm.h
 @@ -1,6 +1,7 @@
@@ -19697,7 +19689,7 @@ index fdca7ee76..f1fa327ff 100644
  
  #pragma once
 diff --git a/src/core/hle/service/sockets/bsd.cpp b/src/core/hle/service/sockets/bsd.cpp
-index 6e42d51ee..a5b1d6d49 100644
+index 6be531aa0..930281a51 100644
 --- a/src/core/hle/service/sockets/bsd.cpp
 +++ b/src/core/hle/service/sockets/bsd.cpp
 @@ -1,6 +1,7 @@
@@ -19709,7 +19701,7 @@ index 6e42d51ee..a5b1d6d49 100644
  
  #include <algorithm>
 diff --git a/src/core/hle/service/sockets/bsd.h b/src/core/hle/service/sockets/bsd.h
-index 665c1d038..298117ab5 100644
+index 04893c58e..0b9ebbf24 100644
 --- a/src/core/hle/service/sockets/bsd.h
 +++ b/src/core/hle/service/sockets/bsd.h
 @@ -1,6 +1,7 @@
@@ -19721,7 +19713,7 @@ index 665c1d038..298117ab5 100644
  
  #pragma once
 diff --git a/src/core/hle/service/sockets/nsd.cpp b/src/core/hle/service/sockets/nsd.cpp
-index 98dc230a3..eb867cf08 100644
+index c8ee68234..a2366decd 100644
 --- a/src/core/hle/service/sockets/nsd.cpp
 +++ b/src/core/hle/service/sockets/nsd.cpp
 @@ -1,6 +1,7 @@
@@ -19745,7 +19737,7 @@ index e73e998c3..e4a458846 100644
  
  #pragma once
 diff --git a/src/core/hle/service/sockets/sfdnsres.cpp b/src/core/hle/service/sockets/sfdnsres.cpp
-index b840377f4..d731dfd1f 100644
+index 9b4e6a797..f8d975a12 100644
 --- a/src/core/hle/service/sockets/sfdnsres.cpp
 +++ b/src/core/hle/service/sockets/sfdnsres.cpp
 @@ -1,6 +1,7 @@
@@ -19755,9 +19747,9 @@ index b840377f4..d731dfd1f 100644
 +// SPDX-FileCopyrightText: Copyright 2018 yuzu Emulator Project
  // SPDX-License-Identifier: GPL-2.0-or-later
  
- #include <string_view>
+ #include <array>
 diff --git a/src/core/hle/service/sockets/sfdnsres.h b/src/core/hle/service/sockets/sfdnsres.h
-index 9624c356d..4302edc43 100644
+index 528a0981d..d42063ba4 100644
 --- a/src/core/hle/service/sockets/sfdnsres.h
 +++ b/src/core/hle/service/sockets/sfdnsres.h
 @@ -1,6 +1,7 @@
@@ -19781,7 +19773,7 @@ index 26fd0a26b..9aa423a5b 100644
  
  #include "core/hle/service/server_manager.h"
 diff --git a/src/core/hle/service/sockets/sockets.h b/src/core/hle/service/sockets/sockets.h
-index 7c44e2bbb..e706dbe77 100644
+index 1880aab1d..983b88d81 100644
 --- a/src/core/hle/service/sockets/sockets.h
 +++ b/src/core/hle/service/sockets/sockets.h
 @@ -1,6 +1,7 @@
@@ -19793,7 +19785,7 @@ index 7c44e2bbb..e706dbe77 100644
  
  #pragma once
 diff --git a/src/core/hle/service/sockets/sockets_translate.cpp b/src/core/hle/service/sockets/sockets_translate.cpp
-index b5fe5fa64..46ef0a89c 100644
+index 109d9e079..34564eebc 100644
 --- a/src/core/hle/service/sockets/sockets_translate.cpp
 +++ b/src/core/hle/service/sockets/sockets_translate.cpp
 @@ -1,6 +1,7 @@
@@ -19803,7 +19795,7 @@ index b5fe5fa64..46ef0a89c 100644
 +// SPDX-FileCopyrightText: Copyright 2020 yuzu Emulator Project
  // SPDX-License-Identifier: GPL-2.0-or-later
  
- #include <utility>
+ #include <cstring>
 diff --git a/src/core/hle/service/sockets/sockets_translate.h b/src/core/hle/service/sockets/sockets_translate.h
 index 780f49b48..b1dfc7196 100644
 --- a/src/core/hle/service/sockets/sockets_translate.h
@@ -19913,7 +19905,7 @@ index f933085d3..a85182ea1 100644
  
  #pragma once
 diff --git a/src/core/hle/service/ssl/ssl.cpp b/src/core/hle/service/ssl/ssl.cpp
-index 0f54d8834..bc6ad08c7 100644
+index caa8e3c1b..bdebdadcb 100644
 --- a/src/core/hle/service/ssl/ssl.cpp
 +++ b/src/core/hle/service/ssl/ssl.cpp
 @@ -1,6 +1,7 @@
@@ -19937,7 +19929,7 @@ index 7f4fb2331..dc9f2b746 100644
  
  #pragma once
 diff --git a/src/core/hle/service/ssl/ssl_backend.h b/src/core/hle/service/ssl/ssl_backend.h
-index a9481c903..ef6bf8f9d 100644
+index c980ffd05..2f2a42e7d 100644
 --- a/src/core/hle/service/ssl/ssl_backend.h
 +++ b/src/core/hle/service/ssl/ssl_backend.h
 @@ -1,6 +1,7 @@
@@ -19961,7 +19953,7 @@ index d6b741cba..3a8474e09 100644
  
  #include "common/logging.h"
 diff --git a/src/core/hle/service/ssl/ssl_backend_openssl.cpp b/src/core/hle/service/ssl/ssl_backend_openssl.cpp
-index 8870c6648..558fc18f2 100644
+index 0a3debf11..d0595d2a3 100644
 --- a/src/core/hle/service/ssl/ssl_backend_openssl.cpp
 +++ b/src/core/hle/service/ssl/ssl_backend_openssl.cpp
 @@ -1,6 +1,7 @@
@@ -20321,7 +20313,7 @@ index 38a378d48..1587e0e30 100644
  
  #pragma once
 diff --git a/src/core/hle/service/vi/vi.cpp b/src/core/hle/service/vi/vi.cpp
-index be31cbafe..2ea64f5d3 100644
+index 9eaa1bfb7..4f6c269c3 100644
 --- a/src/core/hle/service/vi/vi.cpp
 +++ b/src/core/hle/service/vi/vi.cpp
 @@ -1,6 +1,7 @@
@@ -20393,7 +20385,7 @@ index 180f13a46..9c0451674 100644
  
  #pragma once
 diff --git a/src/core/internal_network/network.cpp b/src/core/internal_network/network.cpp
-index e9e8f42d7..8b3e86a14 100644
+index 5a4a5a60b..5f4983227 100644
 --- a/src/core/internal_network/network.cpp
 +++ b/src/core/internal_network/network.cpp
 @@ -1,6 +1,7 @@
@@ -20405,7 +20397,7 @@ index e9e8f42d7..8b3e86a14 100644
  
  #include <algorithm>
 diff --git a/src/core/internal_network/network.h b/src/core/internal_network/network.h
-index bd08c1113..337158973 100644
+index 4c7e59aa1..db6d5b7f8 100644
 --- a/src/core/internal_network/network.h
 +++ b/src/core/internal_network/network.h
 @@ -1,6 +1,7 @@
@@ -20429,7 +20421,7 @@ index 7fc322072..769f4489e 100644
  
  #pragma once
 diff --git a/src/core/internal_network/socket_proxy.cpp b/src/core/internal_network/socket_proxy.cpp
-index 7094c9ff0..30e8f661d 100644
+index ae69cc8e8..25c5cf9f7 100644
 --- a/src/core/internal_network/socket_proxy.cpp
 +++ b/src/core/internal_network/socket_proxy.cpp
 @@ -1,5 +1,6 @@
@@ -20440,7 +20432,7 @@ index 7094c9ff0..30e8f661d 100644
  
  #include <algorithm>
 diff --git a/src/core/internal_network/socket_proxy.h b/src/core/internal_network/socket_proxy.h
-index ba855be6d..62c1b5615 100644
+index d11e621aa..4fc9ffcf3 100644
 --- a/src/core/internal_network/socket_proxy.h
 +++ b/src/core/internal_network/socket_proxy.h
 @@ -1,5 +1,6 @@
@@ -20451,7 +20443,7 @@ index ba855be6d..62c1b5615 100644
  
  #pragma once
 diff --git a/src/core/internal_network/sockets.h b/src/core/internal_network/sockets.h
-index 8ab789aa8..02cf7f9b7 100644
+index f6b00988d..99e44fcba 100644
 --- a/src/core/internal_network/sockets.h
 +++ b/src/core/internal_network/sockets.h
 @@ -1,6 +1,7 @@
@@ -20463,7 +20455,7 @@ index 8ab789aa8..02cf7f9b7 100644
  
  #pragma once
 diff --git a/src/core/loader/deconstructed_rom_directory.cpp b/src/core/loader/deconstructed_rom_directory.cpp
-index 43756dc06..45083fc03 100644
+index 99f71ae02..889978de1 100644
 --- a/src/core/loader/deconstructed_rom_directory.cpp
 +++ b/src/core/loader/deconstructed_rom_directory.cpp
 @@ -1,6 +1,7 @@
@@ -20475,7 +20467,7 @@ index 43756dc06..45083fc03 100644
  
  #include <algorithm>
 diff --git a/src/core/loader/deconstructed_rom_directory.h b/src/core/loader/deconstructed_rom_directory.h
-index b83725281..2b9478b8b 100644
+index b5be26086..98e70cec7 100644
 --- a/src/core/loader/deconstructed_rom_directory.h
 +++ b/src/core/loader/deconstructed_rom_directory.h
 @@ -1,6 +1,7 @@
@@ -20508,7 +20500,7 @@ index c6dcc2449..63f66e85c 100644
  
  #pragma once
 diff --git a/src/core/loader/loader.cpp b/src/core/loader/loader.cpp
-index a7917ff71..f527f59e8 100644
+index 82aef7e55..1ea3bfa31 100644
 --- a/src/core/loader/loader.cpp
 +++ b/src/core/loader/loader.cpp
 @@ -1,6 +1,7 @@
@@ -20520,7 +20512,7 @@ index a7917ff71..f527f59e8 100644
  
  #include <memory>
 diff --git a/src/core/loader/loader.h b/src/core/loader/loader.h
-index 9ee19f085..e9872e48d 100644
+index 44fadb9d6..a6e8a46a8 100644
 --- a/src/core/loader/loader.h
 +++ b/src/core/loader/loader.h
 @@ -1,6 +1,7 @@
@@ -20532,7 +20524,7 @@ index 9ee19f085..e9872e48d 100644
  
  #pragma once
 diff --git a/src/core/loader/nax.cpp b/src/core/loader/nax.cpp
-index b8ecc2beb..3b7b005ff 100644
+index e3096243b..869e558d3 100644
 --- a/src/core/loader/nax.cpp
 +++ b/src/core/loader/nax.cpp
 @@ -1,3 +1,4 @@
@@ -20541,7 +20533,7 @@ index b8ecc2beb..3b7b005ff 100644
  
  #include "core/file_sys/content_archive.h"
 diff --git a/src/core/loader/nax.h b/src/core/loader/nax.h
-index be202cf20..81df2bbcd 100644
+index 142e877e3..212673677 100644
 --- a/src/core/loader/nax.h
 +++ b/src/core/loader/nax.h
 @@ -1,3 +1,4 @@
@@ -20550,7 +20542,7 @@ index be202cf20..81df2bbcd 100644
  
  #pragma once
 diff --git a/src/core/loader/nca.cpp b/src/core/loader/nca.cpp
-index bb42ef16d..2f9cd68e9 100644
+index 01874124c..8c3869521 100644
 --- a/src/core/loader/nca.cpp
 +++ b/src/core/loader/nca.cpp
 @@ -1,6 +1,7 @@
@@ -20562,7 +20554,7 @@ index bb42ef16d..2f9cd68e9 100644
  
  #include <utility>
 diff --git a/src/core/loader/nca.h b/src/core/loader/nca.h
-index 67d387993..cf6382212 100644
+index 3205768b6..a6d2650fd 100644
 --- a/src/core/loader/nca.h
 +++ b/src/core/loader/nca.h
 @@ -1,6 +1,7 @@
@@ -20595,7 +20587,7 @@ index 7cf7f00c2..d2928cba0 100644
  
  #pragma once
 diff --git a/src/core/loader/nso.cpp b/src/core/loader/nso.cpp
-index edde6c435..23ab11ee5 100644
+index b8c53baef..b2a4cf231 100644
 --- a/src/core/loader/nso.cpp
 +++ b/src/core/loader/nso.cpp
 @@ -1,6 +1,7 @@
@@ -20607,7 +20599,7 @@ index edde6c435..23ab11ee5 100644
  
  #include <algorithm>
 diff --git a/src/core/loader/nso.h b/src/core/loader/nso.h
-index 09d3b2ecf..4a373edd0 100644
+index 7243ec825..decdf6684 100644
 --- a/src/core/loader/nso.h
 +++ b/src/core/loader/nso.h
 @@ -1,6 +1,7 @@
@@ -20619,7 +20611,7 @@ index 09d3b2ecf..4a373edd0 100644
  
  #pragma once
 diff --git a/src/core/loader/nsp.cpp b/src/core/loader/nsp.cpp
-index e2402a561..8af62995e 100644
+index 7a7867fac..013c3c28e 100644
 --- a/src/core/loader/nsp.cpp
 +++ b/src/core/loader/nsp.cpp
 @@ -1,6 +1,7 @@
@@ -20631,7 +20623,7 @@ index e2402a561..8af62995e 100644
  
  #include <vector>
 diff --git a/src/core/loader/nsp.h b/src/core/loader/nsp.h
-index d84db43ca..dad060f75 100644
+index b6030b935..6db221f0f 100644
 --- a/src/core/loader/nsp.h
 +++ b/src/core/loader/nsp.h
 @@ -1,3 +1,4 @@
@@ -20640,7 +20632,7 @@ index d84db43ca..dad060f75 100644
  
  #pragma once
 diff --git a/src/core/loader/xci.cpp b/src/core/loader/xci.cpp
-index db79ed33f..983184a22 100644
+index a5cb2966c..61e5f19ab 100644
 --- a/src/core/loader/xci.cpp
 +++ b/src/core/loader/xci.cpp
 @@ -1,6 +1,7 @@
@@ -20652,7 +20644,7 @@ index db79ed33f..983184a22 100644
  
  #include <vector>
 diff --git a/src/core/loader/xci.h b/src/core/loader/xci.h
-index b8102c93b..b02e136d3 100644
+index dba499ac7..64d423474 100644
 --- a/src/core/loader/xci.h
 +++ b/src/core/loader/xci.h
 @@ -1,3 +1,4 @@
@@ -20661,7 +20653,7 @@ index b8102c93b..b02e136d3 100644
  
  #pragma once
 diff --git a/src/core/memory.cpp b/src/core/memory.cpp
-index b03181b3b..6936315f1 100644
+index 91db78050..5b6bb384a 100644
 --- a/src/core/memory.cpp
 +++ b/src/core/memory.cpp
 @@ -2,6 +2,7 @@
@@ -20673,7 +20665,7 @@ index b03181b3b..6936315f1 100644
  
  #include <atomic>
 diff --git a/src/core/memory/cheat_engine.cpp b/src/core/memory/cheat_engine.cpp
-index 8209a6f79..e14147f5c 100644
+index 56480d67b..5f1aae643 100644
 --- a/src/core/memory/cheat_engine.cpp
 +++ b/src/core/memory/cheat_engine.cpp
 @@ -1,6 +1,7 @@
@@ -20706,16 +20698,16 @@ index c0db10048..64c072d3d 100644
  
  #pragma once
 diff --git a/src/core/memory/dmnt_cheat_vm.cpp b/src/core/memory/dmnt_cheat_vm.cpp
-index 3264cb51d..caceeec4f 100644
+index 6cffb2a0f..3a0ad891c 100644
 --- a/src/core/memory/dmnt_cheat_vm.cpp
 +++ b/src/core/memory/dmnt_cheat_vm.cpp
 @@ -1,3 +1,4 @@
 +// SPDX-FileCopyrightText: Copyright 2019 yuzu Emulator Project
  // SPDX-License-Identifier: GPL-2.0-or-later
  
- #include "common/assert.h"
+ #include <array>
 diff --git a/src/core/memory/dmnt_cheat_vm.h b/src/core/memory/dmnt_cheat_vm.h
-index ec1b808ff..2ccf44947 100644
+index e8867bef6..505d14405 100644
 --- a/src/core/memory/dmnt_cheat_vm.h
 +++ b/src/core/memory/dmnt_cheat_vm.h
 @@ -1,6 +1,7 @@
@@ -20820,7 +20812,7 @@ index 9775e2d80..518bc7e53 100644
  
  add_library(frontend_common STATIC
 diff --git a/src/frontend_common/config.cpp b/src/frontend_common/config.cpp
-index 0b9a2f2f4..09a83585b 100644
+index bc79fc82b..edc87d433 100644
 --- a/src/frontend_common/config.cpp
 +++ b/src/frontend_common/config.cpp
 @@ -1,6 +1,7 @@
@@ -20844,7 +20836,7 @@ index 2a9e2b589..8aaf71cc6 100644
  
  #pragma once
 diff --git a/src/frontend_common/content_manager.h b/src/frontend_common/content_manager.h
-index de1a6fe60..6d79098ef 100644
+index 707fb0c6d..6eb0239f0 100644
 --- a/src/frontend_common/content_manager.h
 +++ b/src/frontend_common/content_manager.h
 @@ -1,6 +1,7 @@
@@ -20856,7 +20848,7 @@ index de1a6fe60..6d79098ef 100644
  
  #pragma once
 diff --git a/src/frontend_common/play_time_manager.cpp b/src/frontend_common/play_time_manager.cpp
-index 8528be58a..3315cd713 100644
+index a926bb8c5..63317adc2 100644
 --- a/src/frontend_common/play_time_manager.cpp
 +++ b/src/frontend_common/play_time_manager.cpp
 @@ -1,6 +1,7 @@
@@ -20868,7 +20860,7 @@ index 8528be58a..3315cd713 100644
  
  #include "common/fs/file.h"
 diff --git a/src/frontend_common/play_time_manager.h b/src/frontend_common/play_time_manager.h
-index c45cdf0bd..1c5323ae1 100644
+index 46062d2d9..cc9759c26 100644
 --- a/src/frontend_common/play_time_manager.h
 +++ b/src/frontend_common/play_time_manager.h
 @@ -1,6 +1,7 @@
@@ -21003,7 +20995,7 @@ index b4a3006d6..3569aac93 100644
  
  #pragma once
 diff --git a/src/hid_core/frontend/motion_input.cpp b/src/hid_core/frontend/motion_input.cpp
-index 18eef7ec2..1dcb910a5 100644
+index 13b4fae89..d2f670ccb 100644
 --- a/src/hid_core/frontend/motion_input.cpp
 +++ b/src/hid_core/frontend/motion_input.cpp
 @@ -1,6 +1,7 @@
@@ -22756,7 +22748,7 @@ index d962ec7cf..e097e254c 100644
  
  #pragma once
 diff --git a/src/lichii/about_dialog.cpp b/src/lichii/about_dialog.cpp
-index f0951f2cf..45b51d623 100644
+index af40f3e59..524add052 100644
 --- a/src/lichii/about_dialog.cpp
 +++ b/src/lichii/about_dialog.cpp
 @@ -1,6 +1,7 @@
@@ -23234,7 +23226,7 @@ index eba4197f2..f5e62ee13 100644
  
  #pragma once
 diff --git a/src/lichii/configuration/configure_network.cpp b/src/lichii/configuration/configure_network.cpp
-index 2eaec40ec..638f35f88 100644
+index 40c09f4af..a01204871 100644
 --- a/src/lichii/configuration/configure_network.cpp
 +++ b/src/lichii/configuration/configure_network.cpp
 @@ -1,6 +1,7 @@
@@ -23246,7 +23238,7 @@ index 2eaec40ec..638f35f88 100644
  
  #include <QCoreApplication>
 diff --git a/src/lichii/configuration/configure_network.h b/src/lichii/configuration/configure_network.h
-index c3a6bc63f..e30d55c1e 100644
+index e228efbac..7de598b93 100644
 --- a/src/lichii/configuration/configure_network.h
 +++ b/src/lichii/configuration/configure_network.h
 @@ -1,3 +1,4 @@
@@ -23255,7 +23247,7 @@ index c3a6bc63f..e30d55c1e 100644
  
  #pragma once
 diff --git a/src/lichii/configuration/configure_per_game.cpp b/src/lichii/configuration/configure_per_game.cpp
-index f1d1bb069..a9797c676 100644
+index 798e6b77a..9c2234060 100644
 --- a/src/lichii/configuration/configure_per_game.cpp
 +++ b/src/lichii/configuration/configure_per_game.cpp
 @@ -1,6 +1,7 @@
@@ -23267,7 +23259,7 @@ index f1d1bb069..a9797c676 100644
  
  #include <algorithm>
 diff --git a/src/lichii/configuration/configure_per_game.h b/src/lichii/configuration/configure_per_game.h
-index f80749f92..03c68d3e1 100644
+index e40ff73d1..d479dfc71 100644
 --- a/src/lichii/configuration/configure_per_game.h
 +++ b/src/lichii/configuration/configure_per_game.h
 @@ -1,6 +1,7 @@
@@ -23321,7 +23313,7 @@ index 0ae4e3ae6..a91891906 100644
  
  #pragma once
 diff --git a/src/lichii/configuration/configure_vibration.cpp b/src/lichii/configuration/configure_vibration.cpp
-index 3f1077a5f..85387e917 100644
+index 072aa2077..f7829c2a9 100644
 --- a/src/lichii/configuration/configure_vibration.cpp
 +++ b/src/lichii/configuration/configure_vibration.cpp
 @@ -1,3 +1,4 @@
@@ -23698,7 +23690,7 @@ index 8bcf31b11..bb9c58e0a 100644
  
  add_library(network STATIC
 diff --git a/src/qt_common/config/qt_config.cpp b/src/qt_common/config/qt_config.cpp
-index a9c8f5e86..94a5cd544 100644
+index 0334eabd8..b89fd4625 100644
 --- a/src/qt_common/config/qt_config.cpp
 +++ b/src/qt_common/config/qt_config.cpp
 @@ -1,6 +1,7 @@
@@ -23722,7 +23714,7 @@ index d216112a9..a8c80dd27 100644
  
  #pragma once
 diff --git a/src/qt_common/config/shared_translation.cpp b/src/qt_common/config/shared_translation.cpp
-index ee93aab55..527c93ef3 100644
+index ea46f4a3b..748afb9fc 100644
 --- a/src/qt_common/config/shared_translation.cpp
 +++ b/src/qt_common/config/shared_translation.cpp
 @@ -4,6 +4,7 @@
@@ -23746,7 +23738,7 @@ index 8848442c9..6208fe911 100644
  
  #pragma once
 diff --git a/src/qt_common/game_list/worker.cpp b/src/qt_common/game_list/worker.cpp
-index 749f44c11..1feb81963 100644
+index 6020bfbb3..acd4faaea 100644
 --- a/src/qt_common/game_list/worker.cpp
 +++ b/src/qt_common/game_list/worker.cpp
 @@ -1,6 +1,7 @@
@@ -23758,7 +23750,7 @@ index 749f44c11..1feb81963 100644
  
  #include <algorithm>
 diff --git a/src/qt_common/game_list/worker.h b/src/qt_common/game_list/worker.h
-index 2369ecee3..b627d9eb9 100644
+index 236d4ba81..138460f86 100644
 --- a/src/qt_common/game_list/worker.h
 +++ b/src/qt_common/game_list/worker.h
 @@ -1,6 +1,7 @@
@@ -23929,7 +23921,7 @@ index c09bc252e..0d259ea31 100644
  
  #include <utility>
 diff --git a/src/shader_recompiler/backend/glasm/emit_glasm_instructions.h b/src/shader_recompiler/backend/glasm/emit_glasm_instructions.h
-index 2b0bf6122..202960aa4 100644
+index 2de0f6f15..7b77e4f48 100644
 --- a/src/shader_recompiler/backend/glasm/emit_glasm_instructions.h
 +++ b/src/shader_recompiler/backend/glasm/emit_glasm_instructions.h
 @@ -1,6 +1,7 @@
@@ -23971,7 +23963,7 @@ index d7dc1c457..c81e9cb8d 100644
  
  #include "shader_recompiler/backend/glasm/emit_glasm_instructions.h"
 diff --git a/src/shader_recompiler/backend/glasm/emit_glasm_not_implemented.cpp b/src/shader_recompiler/backend/glasm/emit_glasm_not_implemented.cpp
-index 5bfdf25fd..eff07ffe4 100644
+index 39b10a608..763b39b2e 100644
 --- a/src/shader_recompiler/backend/glasm/emit_glasm_not_implemented.cpp
 +++ b/src/shader_recompiler/backend/glasm/emit_glasm_not_implemented.cpp
 @@ -1,3 +1,4 @@
@@ -24102,7 +24094,7 @@ index 2d2744865..14acc7b2a 100644
  
  #include <string_view>
 diff --git a/src/shader_recompiler/backend/glsl/emit_glsl_barriers.cpp b/src/shader_recompiler/backend/glsl/emit_glsl_barriers.cpp
-index 29cdc8aa1..076080995 100644
+index 09aaa864b..5ba63018c 100644
 --- a/src/shader_recompiler/backend/glsl/emit_glsl_barriers.cpp
 +++ b/src/shader_recompiler/backend/glsl/emit_glsl_barriers.cpp
 @@ -1,3 +1,4 @@
@@ -24174,7 +24166,7 @@ index f9a419048..ad39f44c3 100644
  
  #include <string_view>
 diff --git a/src/shader_recompiler/backend/glsl/emit_glsl_instructions.h b/src/shader_recompiler/backend/glsl/emit_glsl_instructions.h
-index 07d27159a..f704b29b2 100644
+index 6578aaa5b..f948364af 100644
 --- a/src/shader_recompiler/backend/glsl/emit_glsl_instructions.h
 +++ b/src/shader_recompiler/backend/glsl/emit_glsl_instructions.h
 @@ -1,6 +1,7 @@
@@ -24315,7 +24307,7 @@ index 51f3db0eb..c571473ed 100644
  
  #pragma once
 diff --git a/src/shader_recompiler/backend/spirv/emit_spirv.cpp b/src/shader_recompiler/backend/spirv/emit_spirv.cpp
-index 833d24a74..5f0583919 100644
+index 2592bc936..a24c07b81 100644
 --- a/src/shader_recompiler/backend/spirv/emit_spirv.cpp
 +++ b/src/shader_recompiler/backend/spirv/emit_spirv.cpp
 @@ -1,6 +1,7 @@
@@ -24327,7 +24319,7 @@ index 833d24a74..5f0583919 100644
  
  #include <algorithm>
 diff --git a/src/shader_recompiler/backend/spirv/emit_spirv.h b/src/shader_recompiler/backend/spirv/emit_spirv.h
-index af83d95ba..b0e79ca44 100644
+index 3d2f50855..4c9fdfbdc 100644
 --- a/src/shader_recompiler/backend/spirv/emit_spirv.h
 +++ b/src/shader_recompiler/backend/spirv/emit_spirv.h
 @@ -1,6 +1,7 @@
@@ -24339,7 +24331,7 @@ index af83d95ba..b0e79ca44 100644
  
  #pragma once
 diff --git a/src/shader_recompiler/backend/spirv/emit_spirv_atomic.cpp b/src/shader_recompiler/backend/spirv/emit_spirv_atomic.cpp
-index fbb6e78fd..6a013cafe 100644
+index 3b70835fd..8c2826a67 100644
 --- a/src/shader_recompiler/backend/spirv/emit_spirv_atomic.cpp
 +++ b/src/shader_recompiler/backend/spirv/emit_spirv_atomic.cpp
 @@ -1,6 +1,7 @@
@@ -24351,7 +24343,7 @@ index fbb6e78fd..6a013cafe 100644
  
  #include <bit>
 diff --git a/src/shader_recompiler/backend/spirv/emit_spirv_barriers.cpp b/src/shader_recompiler/backend/spirv/emit_spirv_barriers.cpp
-index 5d86d46e2..a4545053c 100644
+index 75bd4bd39..b7c0f7548 100644
 --- a/src/shader_recompiler/backend/spirv/emit_spirv_barriers.cpp
 +++ b/src/shader_recompiler/backend/spirv/emit_spirv_barriers.cpp
 @@ -1,3 +1,4 @@
@@ -24443,7 +24435,7 @@ index 82bdfbbd9..dde0f6e9c 100644
  
  #include "shader_recompiler/backend/spirv/emit_spirv_instructions.h"
 diff --git a/src/shader_recompiler/backend/spirv/emit_spirv_instructions.h b/src/shader_recompiler/backend/spirv/emit_spirv_instructions.h
-index a67c51d39..4dd939df1 100644
+index dbb8413e4..9097065f7 100644
 --- a/src/shader_recompiler/backend/spirv/emit_spirv_instructions.h
 +++ b/src/shader_recompiler/backend/spirv/emit_spirv_instructions.h
 @@ -1,6 +1,7 @@
@@ -24476,7 +24468,7 @@ index 1a2223226..c38427c93 100644
  
  #include "shader_recompiler/backend/spirv/emit_spirv_instructions.h"
 diff --git a/src/shader_recompiler/backend/spirv/emit_spirv_memory.cpp b/src/shader_recompiler/backend/spirv/emit_spirv_memory.cpp
-index 87920ecf9..e26920915 100644
+index 88343ee72..75e99f0f6 100644
 --- a/src/shader_recompiler/backend/spirv/emit_spirv_memory.cpp
 +++ b/src/shader_recompiler/backend/spirv/emit_spirv_memory.cpp
 @@ -1,6 +1,7 @@
@@ -24497,7 +24489,7 @@ index 68e51e7b0..68e5b1c8e 100644
  
  #include "shader_recompiler/backend/spirv/emit_spirv_instructions.h"
 diff --git a/src/shader_recompiler/backend/spirv/emit_spirv_shared_memory.cpp b/src/shader_recompiler/backend/spirv/emit_spirv_shared_memory.cpp
-index 47fcb5a7a..dc398aa29 100644
+index ca6fa6b91..af7228ddb 100644
 --- a/src/shader_recompiler/backend/spirv/emit_spirv_shared_memory.cpp
 +++ b/src/shader_recompiler/backend/spirv/emit_spirv_shared_memory.cpp
 @@ -1,6 +1,7 @@
@@ -24545,7 +24537,7 @@ index 2df9f06a9..999f008ca 100644
  
  #include "shader_recompiler/backend/spirv/emit_spirv_instructions.h"
 diff --git a/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp b/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp
-index 842dc537d..a7c95b8af 100644
+index 61427c778..d8d3fd2e4 100644
 --- a/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp
 +++ b/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp
 @@ -1,6 +1,7 @@
@@ -24557,7 +24549,7 @@ index 842dc537d..a7c95b8af 100644
  
  #include <algorithm>
 diff --git a/src/shader_recompiler/backend/spirv/spirv_emit_context.h b/src/shader_recompiler/backend/spirv/spirv_emit_context.h
-index 2c7e73603..38c4bab02 100644
+index e95ef1d31..65ee525bc 100644
 --- a/src/shader_recompiler/backend/spirv/spirv_emit_context.h
 +++ b/src/shader_recompiler/backend/spirv/spirv_emit_context.h
 @@ -1,6 +1,7 @@
@@ -24704,7 +24696,7 @@ index 02a51d85b..2f8967276 100644
  
  #pragma once
 diff --git a/src/shader_recompiler/frontend/ir/microinstruction.cpp b/src/shader_recompiler/frontend/ir/microinstruction.cpp
-index b08ed9e78..0d10b28eb 100644
+index 0a53bea4a..b141369c0 100644
 --- a/src/shader_recompiler/frontend/ir/microinstruction.cpp
 +++ b/src/shader_recompiler/frontend/ir/microinstruction.cpp
 @@ -1,3 +1,4 @@
@@ -24749,7 +24741,7 @@ index 23323392f..c9a081cdd 100644
  
  #pragma once
 diff --git a/src/shader_recompiler/frontend/ir/opcodes.inc b/src/shader_recompiler/frontend/ir/opcodes.inc
-index e593c0f5e..59a822eed 100644
+index 90a167c44..fe88c540e 100644
 --- a/src/shader_recompiler/frontend/ir/opcodes.inc
 +++ b/src/shader_recompiler/frontend/ir/opcodes.inc
 @@ -1,6 +1,7 @@
@@ -24815,7 +24807,7 @@ index bd5626fd4..39ff92ce7 100644
  
  #include <map>
 diff --git a/src/shader_recompiler/frontend/ir/program.h b/src/shader_recompiler/frontend/ir/program.h
-index c5b42469e..fee5cee72 100644
+index ca5616806..ece555c5e 100644
 --- a/src/shader_recompiler/frontend/ir/program.h
 +++ b/src/shader_recompiler/frontend/ir/program.h
 @@ -1,3 +1,4 @@
@@ -25878,7 +25870,7 @@ index 49008c8ab..2f98f0ec1 100644
  
  #pragma once
 diff --git a/src/shader_recompiler/frontend/maxwell/translate_program.cpp b/src/shader_recompiler/frontend/maxwell/translate_program.cpp
-index 904e70d44..f16e30af8 100644
+index edc238a42..dd81854da 100644
 --- a/src/shader_recompiler/frontend/maxwell/translate_program.cpp
 +++ b/src/shader_recompiler/frontend/maxwell/translate_program.cpp
 @@ -1,6 +1,7 @@
@@ -25890,7 +25882,7 @@ index 904e70d44..f16e30af8 100644
  
  #include <algorithm>
 diff --git a/src/shader_recompiler/frontend/maxwell/translate_program.h b/src/shader_recompiler/frontend/maxwell/translate_program.h
-index c25e2d297..8e58f3228 100644
+index 4b1e2cbe0..884232e7a 100644
 --- a/src/shader_recompiler/frontend/maxwell/translate_program.h
 +++ b/src/shader_recompiler/frontend/maxwell/translate_program.h
 @@ -1,3 +1,4 @@
@@ -25899,7 +25891,7 @@ index c25e2d297..8e58f3228 100644
  
  #pragma once
 diff --git a/src/shader_recompiler/host_translate_info.h b/src/shader_recompiler/host_translate_info.h
-index 7665a06ee..8ce771b51 100644
+index b82e6ae01..5b03c128a 100644
 --- a/src/shader_recompiler/host_translate_info.h
 +++ b/src/shader_recompiler/host_translate_info.h
 @@ -1,6 +1,7 @@
@@ -25911,7 +25903,7 @@ index 7665a06ee..8ce771b51 100644
  
  #pragma once
 diff --git a/src/shader_recompiler/ir_opt/collect_shader_info_pass.cpp b/src/shader_recompiler/ir_opt/collect_shader_info_pass.cpp
-index 555a695fc..43599e10a 100644
+index fb788e6d6..bab711730 100644
 --- a/src/shader_recompiler/ir_opt/collect_shader_info_pass.cpp
 +++ b/src/shader_recompiler/ir_opt/collect_shader_info_pass.cpp
 @@ -1,6 +1,7 @@
@@ -25923,16 +25915,16 @@ index 555a695fc..43599e10a 100644
  
  #include "common/alignment.h"
 diff --git a/src/shader_recompiler/ir_opt/conditional_barrier_pass.cpp b/src/shader_recompiler/ir_opt/conditional_barrier_pass.cpp
-index 839611d09..8a792b2ff 100644
+index 563bedc7e..27c42c94a 100644
 --- a/src/shader_recompiler/ir_opt/conditional_barrier_pass.cpp
 +++ b/src/shader_recompiler/ir_opt/conditional_barrier_pass.cpp
 @@ -1,3 +1,4 @@
 +// SPDX-FileCopyrightText: Copyright 2023 yuzu Emulator Project
  // SPDX-License-Identifier: GPL-2.0-or-later
  
- #include "shader_recompiler/frontend/ir/program.h"
+ #include <algorithm>
 diff --git a/src/shader_recompiler/ir_opt/constant_propagation_pass.cpp b/src/shader_recompiler/ir_opt/constant_propagation_pass.cpp
-index 829c184f4..7d246bec5 100644
+index 8657833f0..10d042f94 100644
 --- a/src/shader_recompiler/ir_opt/constant_propagation_pass.cpp
 +++ b/src/shader_recompiler/ir_opt/constant_propagation_pass.cpp
 @@ -1,6 +1,7 @@
@@ -25962,7 +25954,7 @@ index 282d31055..900f6f9fd 100644
  
  #include "shader_recompiler/frontend/ir/ir_emitter.h"
 diff --git a/src/shader_recompiler/ir_opt/global_memory_to_storage_buffer_pass.cpp b/src/shader_recompiler/ir_opt/global_memory_to_storage_buffer_pass.cpp
-index b9eab8d90..75f7fe6dd 100644
+index 90c2e805e..b749bef3e 100644
 --- a/src/shader_recompiler/ir_opt/global_memory_to_storage_buffer_pass.cpp
 +++ b/src/shader_recompiler/ir_opt/global_memory_to_storage_buffer_pass.cpp
 @@ -1,6 +1,7 @@
@@ -26028,7 +26020,7 @@ index 5ba091379..dbca9643d 100644
  
  #include <utility>
 diff --git a/src/shader_recompiler/ir_opt/passes.h b/src/shader_recompiler/ir_opt/passes.h
-index a773e6728..a2e51d43c 100644
+index 5bafd07eb..f68c4b741 100644
 --- a/src/shader_recompiler/ir_opt/passes.h
 +++ b/src/shader_recompiler/ir_opt/passes.h
 @@ -1,6 +1,7 @@
@@ -26073,7 +26065,7 @@ index 35e7797e1..3e6a88ad2 100644
  
  // This file implements the SSA rewriting algorithm proposed in
 diff --git a/src/shader_recompiler/ir_opt/texture_pass.cpp b/src/shader_recompiler/ir_opt/texture_pass.cpp
-index 926c0637c..aafae6e3a 100644
+index 6c5fd80ef..cfa27f722 100644
 --- a/src/shader_recompiler/ir_opt/texture_pass.cpp
 +++ b/src/shader_recompiler/ir_opt/texture_pass.cpp
 @@ -1,6 +1,7 @@
@@ -26115,7 +26107,7 @@ index 7f3d71515..4d3d337d2 100644
  
  #pragma once
 diff --git a/src/shader_recompiler/profile.h b/src/shader_recompiler/profile.h
-index 516d6e767..5b2e422aa 100644
+index 0cf8fe18f..5fcc4a890 100644
 --- a/src/shader_recompiler/profile.h
 +++ b/src/shader_recompiler/profile.h
 @@ -1,6 +1,7 @@
@@ -26136,7 +26128,7 @@ index e8573d620..1e8bae7cd 100644
  
  #pragma once
 diff --git a/src/shader_recompiler/runtime_info.h b/src/shader_recompiler/runtime_info.h
-index 5cc9f16e4..3dba8aae7 100644
+index f78963f71..075933f0a 100644
 --- a/src/shader_recompiler/runtime_info.h
 +++ b/src/shader_recompiler/runtime_info.h
 @@ -1,6 +1,7 @@
@@ -26148,7 +26140,7 @@ index 5cc9f16e4..3dba8aae7 100644
  
  #pragma once
 diff --git a/src/shader_recompiler/shader_info.h b/src/shader_recompiler/shader_info.h
-index 949bc7200..d8780c031 100644
+index 702bd7185..e9eef9a2f 100644
 --- a/src/shader_recompiler/shader_info.h
 +++ b/src/shader_recompiler/shader_info.h
 @@ -1,6 +1,7 @@
@@ -26178,7 +26170,7 @@ index 26e1cb505..069d56bd4 100644
  
  #pragma once
 diff --git a/src/tests/CMakeLists.txt b/src/tests/CMakeLists.txt
-index 74e5773b0..ac56cf437 100644
+index 6f8e66e95..fd864b178 100644
 --- a/src/tests/CMakeLists.txt
 +++ b/src/tests/CMakeLists.txt
 @@ -1,6 +1,7 @@
@@ -26220,7 +26212,7 @@ index 0118b17c3..93f6cd4fd 100644
  
  #include <atomic>
 diff --git a/src/tests/common/host_memory.cpp b/src/tests/common/host_memory.cpp
-index a2bb47185..4915e941d 100644
+index 24ca67b74..cf5db5c50 100644
 --- a/src/tests/common/host_memory.cpp
 +++ b/src/tests/common/host_memory.cpp
 @@ -1,6 +1,7 @@
@@ -26241,7 +26233,7 @@ index ee44b1f19..faaefd49f 100644
  
  #include <stdexcept>
 diff --git a/src/tests/common/ring_buffer.cpp b/src/tests/common/ring_buffer.cpp
-index f97cc1ece..b6e3bc875 100644
+index 2862e72fd..f36c3a738 100644
 --- a/src/tests/common/ring_buffer.cpp
 +++ b/src/tests/common/ring_buffer.cpp
 @@ -1,3 +1,4 @@
@@ -26268,7 +26260,7 @@ index 25a3d8d9f..42e6ade09 100644
  
  #include <string>
 diff --git a/src/tests/core/internal_network/network.cpp b/src/tests/core/internal_network/network.cpp
-index be330375f..6f5e22df4 100644
+index 902fc08c1..03a13085a 100644
 --- a/src/tests/core/internal_network/network.cpp
 +++ b/src/tests/core/internal_network/network.cpp
 @@ -1,3 +1,4 @@
@@ -26289,7 +26281,7 @@ index bc2c47095..c45ef157a 100644
  
  #include <array>
 diff --git a/src/video_core/CMakeLists.txt b/src/video_core/CMakeLists.txt
-index 907866874..5b9f0e204 100644
+index 85332da37..68af0b1be 100644
 --- a/src/video_core/CMakeLists.txt
 +++ b/src/video_core/CMakeLists.txt
 @@ -1,6 +1,7 @@
@@ -26325,7 +26317,7 @@ index fe89b93c5..533255e00 100644
  
  #include "video_core/buffer_cache/buffer_cache_base.h"
 diff --git a/src/video_core/buffer_cache/buffer_cache.h b/src/video_core/buffer_cache/buffer_cache.h
-index 310e6d70d..672f27e07 100644
+index 63b10df2f..9898440f2 100644
 --- a/src/video_core/buffer_cache/buffer_cache.h
 +++ b/src/video_core/buffer_cache/buffer_cache.h
 @@ -1,6 +1,7 @@
@@ -26337,7 +26329,7 @@ index 310e6d70d..672f27e07 100644
  
  #pragma once
 diff --git a/src/video_core/buffer_cache/buffer_cache_base.h b/src/video_core/buffer_cache/buffer_cache_base.h
-index ac4f4332c..3de5c5627 100644
+index 3d9865bf5..c0c4b2b48 100644
 --- a/src/video_core/buffer_cache/buffer_cache_base.h
 +++ b/src/video_core/buffer_cache/buffer_cache_base.h
 @@ -1,6 +1,7 @@
@@ -26433,7 +26425,7 @@ index 4cbbc834e..a7ce2c198 100644
  
  #pragma once
 diff --git a/src/video_core/control/channel_state.cpp b/src/video_core/control/channel_state.cpp
-index 9c2180ac5..a01db7b1f 100644
+index 85e10ecf8..8e0b6c1b9 100644
 --- a/src/video_core/control/channel_state.cpp
 +++ b/src/video_core/control/channel_state.cpp
 @@ -1,6 +1,7 @@
@@ -26493,7 +26485,7 @@ index 4a95b943b..5bb15f890 100644
  
  #include <algorithm>
 diff --git a/src/video_core/control/scheduler.cpp b/src/video_core/control/scheduler.cpp
-index 864d06a42..a54eb44ba 100644
+index f5b51e97c..d6b7a2994 100644
 --- a/src/video_core/control/scheduler.cpp
 +++ b/src/video_core/control/scheduler.cpp
 @@ -1,6 +1,7 @@
@@ -26550,7 +26542,7 @@ index 3cbcde284..bf90db83e 100644
  
  #pragma once
 diff --git a/src/video_core/dma_pusher.cpp b/src/video_core/dma_pusher.cpp
-index abc0c30a5..8f0058580 100644
+index 3430795da..4312ec238 100644
 --- a/src/video_core/dma_pusher.cpp
 +++ b/src/video_core/dma_pusher.cpp
 @@ -1,6 +1,7 @@
@@ -26562,7 +26554,7 @@ index abc0c30a5..8f0058580 100644
  
  #include <algorithm>
 diff --git a/src/video_core/dma_pusher.h b/src/video_core/dma_pusher.h
-index b7b05dd75..2f19cf417 100644
+index 38ebc3d06..b7d748d30 100644
 --- a/src/video_core/dma_pusher.h
 +++ b/src/video_core/dma_pusher.h
 @@ -1,6 +1,7 @@
@@ -26607,7 +26599,7 @@ index dcd09ac45..7f1a603c2 100644
  
  #pragma once
 diff --git a/src/video_core/engines/engine_upload.cpp b/src/video_core/engines/engine_upload.cpp
-index c0d2d5e5c..0ffdae803 100644
+index 4e2f80204..e4799db59 100644
 --- a/src/video_core/engines/engine_upload.cpp
 +++ b/src/video_core/engines/engine_upload.cpp
 @@ -1,6 +1,7 @@
@@ -26619,7 +26611,7 @@ index c0d2d5e5c..0ffdae803 100644
  
  #include <cstring>
 diff --git a/src/video_core/engines/engine_upload.h b/src/video_core/engines/engine_upload.h
-index 5f86750f7..55a82f938 100644
+index 9ffee1101..8169ce8cb 100644
 --- a/src/video_core/engines/engine_upload.h
 +++ b/src/video_core/engines/engine_upload.h
 @@ -1,3 +1,4 @@
@@ -26652,7 +26644,7 @@ index fd2509035..04a12fd35 100644
  
  #pragma once
 diff --git a/src/video_core/engines/kepler_compute.cpp b/src/video_core/engines/kepler_compute.cpp
-index 9d8d69028..bf5083949 100644
+index 67f6adc2d..5ad914698 100644
 --- a/src/video_core/engines/kepler_compute.cpp
 +++ b/src/video_core/engines/kepler_compute.cpp
 @@ -1,6 +1,7 @@
@@ -26664,7 +26656,7 @@ index 9d8d69028..bf5083949 100644
  
  #include <algorithm>
 diff --git a/src/video_core/engines/kepler_compute.h b/src/video_core/engines/kepler_compute.h
-index b8c2d4282..1605ac020 100644
+index 8e3f1c0e3..6b9d0da37 100644
 --- a/src/video_core/engines/kepler_compute.h
 +++ b/src/video_core/engines/kepler_compute.h
 @@ -1,6 +1,7 @@
@@ -26700,7 +26692,7 @@ index 3f0e68e40..aa0952d17 100644
  
  #pragma once
 diff --git a/src/video_core/engines/maxwell_3d.cpp b/src/video_core/engines/maxwell_3d.cpp
-index bad7e4752..d965784f6 100644
+index d3bea59e2..c8336f9ee 100644
 --- a/src/video_core/engines/maxwell_3d.cpp
 +++ b/src/video_core/engines/maxwell_3d.cpp
 @@ -1,6 +1,7 @@
@@ -26712,7 +26704,7 @@ index bad7e4752..d965784f6 100644
  
  #include <algorithm>
 diff --git a/src/video_core/engines/maxwell_3d.h b/src/video_core/engines/maxwell_3d.h
-index 577966bae..7fd06e76d 100644
+index 0a08d193a..50082613a 100644
 --- a/src/video_core/engines/maxwell_3d.h
 +++ b/src/video_core/engines/maxwell_3d.h
 @@ -1,6 +1,7 @@
@@ -26724,7 +26716,7 @@ index 577966bae..7fd06e76d 100644
  
  #pragma once
 diff --git a/src/video_core/engines/maxwell_dma.cpp b/src/video_core/engines/maxwell_dma.cpp
-index aa4b64161..0b0541799 100644
+index cefc0e598..0e9e13c0f 100644
 --- a/src/video_core/engines/maxwell_dma.cpp
 +++ b/src/video_core/engines/maxwell_dma.cpp
 @@ -1,6 +1,7 @@
@@ -26734,9 +26726,9 @@ index aa4b64161..0b0541799 100644
 +// SPDX-FileCopyrightText: Copyright 2018 yuzu Emulator Project
  // SPDX-License-Identifier: GPL-2.0-or-later
  
- #include <cstdlib>
+ #include <algorithm>
 diff --git a/src/video_core/engines/maxwell_dma.h b/src/video_core/engines/maxwell_dma.h
-index 2b828a529..82ac27459 100644
+index b46209996..8f95c961b 100644
 --- a/src/video_core/engines/maxwell_dma.h
 +++ b/src/video_core/engines/maxwell_dma.h
 @@ -1,6 +1,7 @@
@@ -26760,7 +26752,7 @@ index f7fa60b2b..9e7d1a1ac 100644
  
  #pragma once
 diff --git a/src/video_core/engines/puller.cpp b/src/video_core/engines/puller.cpp
-index 76fe31b3a..35a37ff3f 100644
+index 282d41644..31a854c20 100644
 --- a/src/video_core/engines/puller.cpp
 +++ b/src/video_core/engines/puller.cpp
 @@ -1,6 +1,7 @@
@@ -26772,7 +26764,7 @@ index 76fe31b3a..35a37ff3f 100644
  
  #include <atomic>
 diff --git a/src/video_core/engines/puller.h b/src/video_core/engines/puller.h
-index cb9df4330..aa4497a44 100644
+index e7c74940c..dcaba2b63 100644
 --- a/src/video_core/engines/puller.h
 +++ b/src/video_core/engines/puller.h
 @@ -1,6 +1,7 @@
@@ -26823,7 +26815,7 @@ index f1dc1cdb3..f9bdc516e 100644
  
  #pragma once
 diff --git a/src/video_core/fence_manager.h b/src/video_core/fence_manager.h
-index 11ded9137..b95af6c5f 100644
+index 3943303e3..fa3ef5581 100644
 --- a/src/video_core/fence_manager.h
 +++ b/src/video_core/fence_manager.h
 @@ -1,6 +1,7 @@
@@ -26883,7 +26875,7 @@ index 01daea995..7c58e0df5 100644
  
  #pragma once
 diff --git a/src/video_core/gpu.cpp b/src/video_core/gpu.cpp
-index 1954e6870..e962b3cc8 100644
+index 3ea2d3f10..3af7ee352 100644
 --- a/src/video_core/gpu.cpp
 +++ b/src/video_core/gpu.cpp
 @@ -1,6 +1,7 @@
@@ -26895,7 +26887,7 @@ index 1954e6870..e962b3cc8 100644
  
  #include <algorithm>
 diff --git a/src/video_core/gpu.h b/src/video_core/gpu.h
-index a04ef43d8..55988006d 100644
+index bc9247475..37b1ca12e 100644
 --- a/src/video_core/gpu.h
 +++ b/src/video_core/gpu.h
 @@ -1,6 +1,7 @@
@@ -26907,7 +26899,7 @@ index a04ef43d8..55988006d 100644
  
  #pragma once
 diff --git a/src/video_core/gpu_thread.cpp b/src/video_core/gpu_thread.cpp
-index 3732fcb2c..e2c381747 100644
+index 47be67670..52345ba2c 100644
 --- a/src/video_core/gpu_thread.cpp
 +++ b/src/video_core/gpu_thread.cpp
 @@ -1,6 +1,7 @@
@@ -27198,7 +27190,7 @@ index dcdd4c01e..26d7c86c9 100644
  
  #pragma once
 diff --git a/src/video_core/host1x/syncpoint_manager.cpp b/src/video_core/host1x/syncpoint_manager.cpp
-index e3487c653..8238146de 100644
+index 735ec1cf9..59c69da3f 100644
 --- a/src/video_core/host1x/syncpoint_manager.cpp
 +++ b/src/video_core/host1x/syncpoint_manager.cpp
 @@ -1,6 +1,7 @@
@@ -27208,9 +27200,9 @@ index e3487c653..8238146de 100644
 +// SPDX-FileCopyrightText: 2021 yuzu Emulator Project
  // SPDX-License-Identifier: GPL-3.0-or-later
  
- #include "common/logging.h"
+ #include <algorithm>
 diff --git a/src/video_core/host1x/syncpoint_manager.h b/src/video_core/host1x/syncpoint_manager.h
-index 5c6a34a93..db0457993 100644
+index 85c93c9b9..41de4ddb3 100644
 --- a/src/video_core/host1x/syncpoint_manager.h
 +++ b/src/video_core/host1x/syncpoint_manager.h
 @@ -1,3 +1,4 @@
@@ -27776,7 +27768,7 @@ index c2c933c6e..d213b86ef 100644
  
  #pragma once
 diff --git a/src/video_core/memory_manager.cpp b/src/video_core/memory_manager.cpp
-index 6d5572526..8f1c298ea 100644
+index 34d907eb0..e412cae2d 100644
 --- a/src/video_core/memory_manager.cpp
 +++ b/src/video_core/memory_manager.cpp
 @@ -1,6 +1,7 @@
@@ -27788,7 +27780,7 @@ index 6d5572526..8f1c298ea 100644
  
  #include <algorithm>
 diff --git a/src/video_core/memory_manager.h b/src/video_core/memory_manager.h
-index 6d0a8e1c2..040992b58 100644
+index f4cf12f2b..5803bc3cf 100644
 --- a/src/video_core/memory_manager.h
 +++ b/src/video_core/memory_manager.h
 @@ -1,6 +1,7 @@
@@ -27851,7 +27843,7 @@ index ab1e528a5..d5d21beaa 100644
  
  #pragma once
 diff --git a/src/video_core/query_cache/query_cache.h b/src/video_core/query_cache/query_cache.h
-index 35831830b..3ff671dba 100644
+index 56f48962e..f8bb3f345 100644
 --- a/src/video_core/query_cache/query_cache.h
 +++ b/src/video_core/query_cache/query_cache.h
 @@ -1,6 +1,7 @@
@@ -27905,7 +27897,7 @@ index 3f33c0d78..27d5512e3 100644
  
  #pragma once
 diff --git a/src/video_core/rasterizer_interface.h b/src/video_core/rasterizer_interface.h
-index d862cdbdf..cf67563d0 100644
+index b2ddd2ea0..c297ca8e8 100644
 --- a/src/video_core/rasterizer_interface.h
 +++ b/src/video_core/rasterizer_interface.h
 @@ -1,6 +1,7 @@
@@ -28007,7 +27999,7 @@ index f20872535..fb65a132d 100644
  
  #include <algorithm>
 diff --git a/src/video_core/renderer_opengl/gl_buffer_cache.h b/src/video_core/renderer_opengl/gl_buffer_cache.h
-index b09b05cd3..831ec09f4 100644
+index 01011046b..28bca7e28 100644
 --- a/src/video_core/renderer_opengl/gl_buffer_cache.h
 +++ b/src/video_core/renderer_opengl/gl_buffer_cache.h
 @@ -1,6 +1,7 @@
@@ -28091,7 +28083,7 @@ index 837c9923d..e21b19dcc 100644
  
  #pragma once
 diff --git a/src/video_core/renderer_opengl/gl_graphics_pipeline.cpp b/src/video_core/renderer_opengl/gl_graphics_pipeline.cpp
-index 97c2af7b2..0f1cd008f 100644
+index fda8a555c..d993989aa 100644
 --- a/src/video_core/renderer_opengl/gl_graphics_pipeline.cpp
 +++ b/src/video_core/renderer_opengl/gl_graphics_pipeline.cpp
 @@ -1,6 +1,7 @@
@@ -28103,7 +28095,7 @@ index 97c2af7b2..0f1cd008f 100644
  
  #include <algorithm>
 diff --git a/src/video_core/renderer_opengl/gl_graphics_pipeline.h b/src/video_core/renderer_opengl/gl_graphics_pipeline.h
-index 78a20d02b..4a0dd68a1 100644
+index 8fcb7d93d..fee4cfd41 100644
 --- a/src/video_core/renderer_opengl/gl_graphics_pipeline.h
 +++ b/src/video_core/renderer_opengl/gl_graphics_pipeline.h
 @@ -1,6 +1,7 @@
@@ -28133,7 +28125,7 @@ index ed613ee3c..38118f355 100644
  
  #pragma once
 diff --git a/src/video_core/renderer_opengl/gl_shader_cache.cpp b/src/video_core/renderer_opengl/gl_shader_cache.cpp
-index 505025d91..2252e3406 100644
+index daba7a538..8a376d06b 100644
 --- a/src/video_core/renderer_opengl/gl_shader_cache.cpp
 +++ b/src/video_core/renderer_opengl/gl_shader_cache.cpp
 @@ -1,6 +1,7 @@
@@ -28514,7 +28506,7 @@ index 705a2d9b3..8e97e48c8 100644
  
  #pragma once
 diff --git a/src/video_core/renderer_vulkan/pipeline_helper.h b/src/video_core/renderer_vulkan/pipeline_helper.h
-index 90035dd00..9e938047f 100644
+index 5527cb9f3..cf923d5be 100644
 --- a/src/video_core/renderer_vulkan/pipeline_helper.h
 +++ b/src/video_core/renderer_vulkan/pipeline_helper.h
 @@ -1,6 +1,7 @@
@@ -28739,7 +28731,7 @@ index 26bd0b00b..b55602a3b 100644
  
  #pragma once
 diff --git a/src/video_core/renderer_vulkan/renderer_vulkan.cpp b/src/video_core/renderer_vulkan/renderer_vulkan.cpp
-index f4f57186b..f41eb93df 100644
+index 1a5f181e7..f03efbe22 100644
 --- a/src/video_core/renderer_vulkan/renderer_vulkan.cpp
 +++ b/src/video_core/renderer_vulkan/renderer_vulkan.cpp
 @@ -1,6 +1,7 @@
@@ -28751,7 +28743,7 @@ index f4f57186b..f41eb93df 100644
  
  #include <algorithm>
 diff --git a/src/video_core/renderer_vulkan/renderer_vulkan.h b/src/video_core/renderer_vulkan/renderer_vulkan.h
-index bc1f4d968..65800cd16 100644
+index 542e81d92..afc26a57b 100644
 --- a/src/video_core/renderer_vulkan/renderer_vulkan.h
 +++ b/src/video_core/renderer_vulkan/renderer_vulkan.h
 @@ -1,6 +1,7 @@
@@ -28787,7 +28779,7 @@ index 895b380c3..8ea92ac99 100644
  
  #pragma once
 diff --git a/src/video_core/renderer_vulkan/vk_buffer_cache.cpp b/src/video_core/renderer_vulkan/vk_buffer_cache.cpp
-index bbe89c710..59968f5d8 100644
+index c8749c953..89d0e9808 100644
 --- a/src/video_core/renderer_vulkan/vk_buffer_cache.cpp
 +++ b/src/video_core/renderer_vulkan/vk_buffer_cache.cpp
 @@ -1,6 +1,7 @@
@@ -28799,7 +28791,7 @@ index bbe89c710..59968f5d8 100644
  
  #include <algorithm>
 diff --git a/src/video_core/renderer_vulkan/vk_buffer_cache.h b/src/video_core/renderer_vulkan/vk_buffer_cache.h
-index 38b25c34e..8319d49d8 100644
+index 283e8a5ea..f140aee40 100644
 --- a/src/video_core/renderer_vulkan/vk_buffer_cache.h
 +++ b/src/video_core/renderer_vulkan/vk_buffer_cache.h
 @@ -1,6 +1,7 @@
@@ -28838,7 +28830,7 @@ index de14f3bd0..ec1647f01 100644
  
  #pragma once
 diff --git a/src/video_core/renderer_vulkan/vk_compute_pass.cpp b/src/video_core/renderer_vulkan/vk_compute_pass.cpp
-index 30c31737f..92619b73e 100644
+index 6e6b3f6a2..bf1495f30 100644
 --- a/src/video_core/renderer_vulkan/vk_compute_pass.cpp
 +++ b/src/video_core/renderer_vulkan/vk_compute_pass.cpp
 @@ -1,6 +1,7 @@
@@ -28850,7 +28842,7 @@ index 30c31737f..92619b73e 100644
  
  #include <array>
 diff --git a/src/video_core/renderer_vulkan/vk_compute_pass.h b/src/video_core/renderer_vulkan/vk_compute_pass.h
-index 5a643b22e..bd74f359e 100644
+index 103899dab..a322b0474 100644
 --- a/src/video_core/renderer_vulkan/vk_compute_pass.h
 +++ b/src/video_core/renderer_vulkan/vk_compute_pass.h
 @@ -1,6 +1,7 @@
@@ -28862,7 +28854,7 @@ index 5a643b22e..bd74f359e 100644
  
  #pragma once
 diff --git a/src/video_core/renderer_vulkan/vk_compute_pipeline.cpp b/src/video_core/renderer_vulkan/vk_compute_pipeline.cpp
-index 7d4b1f177..18b588ac9 100644
+index eb316ebfe..7f60a35c2 100644
 --- a/src/video_core/renderer_vulkan/vk_compute_pipeline.cpp
 +++ b/src/video_core/renderer_vulkan/vk_compute_pipeline.cpp
 @@ -1,6 +1,7 @@
@@ -28874,7 +28866,7 @@ index 7d4b1f177..18b588ac9 100644
  
  #include <algorithm>
 diff --git a/src/video_core/renderer_vulkan/vk_compute_pipeline.h b/src/video_core/renderer_vulkan/vk_compute_pipeline.h
-index e9e862465..ac04fc942 100644
+index 513b43f07..44bfc1fc4 100644
 --- a/src/video_core/renderer_vulkan/vk_compute_pipeline.h
 +++ b/src/video_core/renderer_vulkan/vk_compute_pipeline.h
 @@ -1,6 +1,7 @@
@@ -28886,7 +28878,7 @@ index e9e862465..ac04fc942 100644
  
  #pragma once
 diff --git a/src/video_core/renderer_vulkan/vk_descriptor_pool.cpp b/src/video_core/renderer_vulkan/vk_descriptor_pool.cpp
-index 45a62c1b2..e19dabac4 100644
+index 4b7f0b0c7..78933fa0c 100644
 --- a/src/video_core/renderer_vulkan/vk_descriptor_pool.cpp
 +++ b/src/video_core/renderer_vulkan/vk_descriptor_pool.cpp
 @@ -1,6 +1,7 @@
@@ -28898,7 +28890,7 @@ index 45a62c1b2..e19dabac4 100644
  
  #include <algorithm>
 diff --git a/src/video_core/renderer_vulkan/vk_descriptor_pool.h b/src/video_core/renderer_vulkan/vk_descriptor_pool.h
-index e80676e53..821364909 100644
+index 32b7e2d82..5703829f0 100644
 --- a/src/video_core/renderer_vulkan/vk_descriptor_pool.h
 +++ b/src/video_core/renderer_vulkan/vk_descriptor_pool.h
 @@ -1,6 +1,7 @@
@@ -28928,7 +28920,7 @@ index d8b7145ee..606cfd65b 100644
  
  #pragma once
 diff --git a/src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp b/src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp
-index e81d189fa..9a78d31e2 100644
+index 07616cca9..2a6337add 100644
 --- a/src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp
 +++ b/src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp
 @@ -1,6 +1,7 @@
@@ -28940,7 +28932,7 @@ index e81d189fa..9a78d31e2 100644
  
  #include <algorithm>
 diff --git a/src/video_core/renderer_vulkan/vk_graphics_pipeline.h b/src/video_core/renderer_vulkan/vk_graphics_pipeline.h
-index cc29ccdac..cbb4efffc 100644
+index edb8f6c53..2c9554bdb 100644
 --- a/src/video_core/renderer_vulkan/vk_graphics_pipeline.h
 +++ b/src/video_core/renderer_vulkan/vk_graphics_pipeline.h
 @@ -1,6 +1,7 @@
@@ -28952,7 +28944,7 @@ index cc29ccdac..cbb4efffc 100644
  
  #pragma once
 diff --git a/src/video_core/renderer_vulkan/vk_master_semaphore.cpp b/src/video_core/renderer_vulkan/vk_master_semaphore.cpp
-index dca660e09..8fd5e2aa0 100644
+index 64636e4b2..c15942829 100644
 --- a/src/video_core/renderer_vulkan/vk_master_semaphore.cpp
 +++ b/src/video_core/renderer_vulkan/vk_master_semaphore.cpp
 @@ -1,6 +1,7 @@
@@ -28976,7 +28968,7 @@ index 9f58bb7e0..f02ce1369 100644
  
  #pragma once
 diff --git a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp b/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
-index b188c7bff..b01cf47cf 100644
+index 85d001e16..b0315a24b 100644
 --- a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
 +++ b/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
 @@ -1,6 +1,7 @@
@@ -28988,7 +28980,7 @@ index b188c7bff..b01cf47cf 100644
  
  #include <algorithm>
 diff --git a/src/video_core/renderer_vulkan/vk_pipeline_cache.h b/src/video_core/renderer_vulkan/vk_pipeline_cache.h
-index cd2f60884..4e4a9ca76 100644
+index ade0da581..0020f22cf 100644
 --- a/src/video_core/renderer_vulkan/vk_pipeline_cache.h
 +++ b/src/video_core/renderer_vulkan/vk_pipeline_cache.h
 @@ -1,6 +1,7 @@
@@ -29000,7 +28992,7 @@ index cd2f60884..4e4a9ca76 100644
  
  #pragma once
 diff --git a/src/video_core/renderer_vulkan/vk_present_manager.cpp b/src/video_core/renderer_vulkan/vk_present_manager.cpp
-index ea7a5fd34..050c71847 100644
+index 1cf3faea4..de8ed36b4 100644
 --- a/src/video_core/renderer_vulkan/vk_present_manager.cpp
 +++ b/src/video_core/renderer_vulkan/vk_present_manager.cpp
 @@ -1,6 +1,7 @@
@@ -29010,9 +29002,9 @@ index ea7a5fd34..050c71847 100644
 +// SPDX-FileCopyrightText: Copyright 2023 yuzu Emulator Project
  // SPDX-License-Identifier: GPL-2.0-or-later
  
- #include <thread>
+ #include <algorithm>
 diff --git a/src/video_core/renderer_vulkan/vk_present_manager.h b/src/video_core/renderer_vulkan/vk_present_manager.h
-index ac482c925..4445381f4 100644
+index 7991af750..3e00c19c6 100644
 --- a/src/video_core/renderer_vulkan/vk_present_manager.h
 +++ b/src/video_core/renderer_vulkan/vk_present_manager.h
 @@ -1,6 +1,7 @@
@@ -29024,7 +29016,7 @@ index ac482c925..4445381f4 100644
  
  #pragma once
 diff --git a/src/video_core/renderer_vulkan/vk_query_cache.cpp b/src/video_core/renderer_vulkan/vk_query_cache.cpp
-index 69fe786e1..b2c9ed5ae 100644
+index 551626ded..87a738eaf 100644
 --- a/src/video_core/renderer_vulkan/vk_query_cache.cpp
 +++ b/src/video_core/renderer_vulkan/vk_query_cache.cpp
 @@ -1,6 +1,7 @@
@@ -29034,7 +29026,7 @@ index 69fe786e1..b2c9ed5ae 100644
 +// SPDX-FileCopyrightText: Copyright 2023 yuzu Emulator Project
  // SPDX-License-Identifier: GPL-3.0-or-later
  
- #include <cstddef>
+ #include <chrono>
 diff --git a/src/video_core/renderer_vulkan/vk_query_cache.h b/src/video_core/renderer_vulkan/vk_query_cache.h
 index c8dc37948..58286455b 100644
 --- a/src/video_core/renderer_vulkan/vk_query_cache.h
@@ -29048,7 +29040,7 @@ index c8dc37948..58286455b 100644
  
  #pragma once
 diff --git a/src/video_core/renderer_vulkan/vk_rasterizer.cpp b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
-index 20d38b2c9..93e04e973 100644
+index 975fa6fe5..706af7230 100644
 --- a/src/video_core/renderer_vulkan/vk_rasterizer.cpp
 +++ b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
 @@ -1,6 +1,7 @@
@@ -29060,7 +29052,7 @@ index 20d38b2c9..93e04e973 100644
  
  #include <algorithm>
 diff --git a/src/video_core/renderer_vulkan/vk_rasterizer.h b/src/video_core/renderer_vulkan/vk_rasterizer.h
-index 7f79f6abf..a00d17aed 100644
+index 43e28c75d..df8f93425 100644
 --- a/src/video_core/renderer_vulkan/vk_rasterizer.h
 +++ b/src/video_core/renderer_vulkan/vk_rasterizer.h
 @@ -1,6 +1,7 @@
@@ -29117,7 +29109,7 @@ index 4562ba077..a39a3b881 100644
  
  #pragma once
 diff --git a/src/video_core/renderer_vulkan/vk_scheduler.cpp b/src/video_core/renderer_vulkan/vk_scheduler.cpp
-index 7014abf41..b7fefe212 100644
+index 270da5905..f9fa51466 100644
 --- a/src/video_core/renderer_vulkan/vk_scheduler.cpp
 +++ b/src/video_core/renderer_vulkan/vk_scheduler.cpp
 @@ -1,6 +1,7 @@
@@ -29129,7 +29121,7 @@ index 7014abf41..b7fefe212 100644
  
  #include <chrono>
 diff --git a/src/video_core/renderer_vulkan/vk_scheduler.h b/src/video_core/renderer_vulkan/vk_scheduler.h
-index fda3865db..53004c37a 100644
+index 69554ebd9..b570838fa 100644
 --- a/src/video_core/renderer_vulkan/vk_scheduler.h
 +++ b/src/video_core/renderer_vulkan/vk_scheduler.h
 @@ -1,6 +1,7 @@
@@ -29159,7 +29151,7 @@ index 09f17a1e9..2f7c9f25c 100644
  
  #pragma once
 diff --git a/src/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp b/src/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp
-index 6e40b3fe4..1000aed08 100644
+index 03f794531..7b893b950 100644
 --- a/src/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp
 +++ b/src/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp
 @@ -1,6 +1,7 @@
@@ -29171,7 +29163,7 @@ index 6e40b3fe4..1000aed08 100644
  
  #include <algorithm>
 diff --git a/src/video_core/renderer_vulkan/vk_staging_buffer_pool.h b/src/video_core/renderer_vulkan/vk_staging_buffer_pool.h
-index bbbd994cf..e675da5d8 100644
+index 1a8b23d07..63334fb02 100644
 --- a/src/video_core/renderer_vulkan/vk_staging_buffer_pool.h
 +++ b/src/video_core/renderer_vulkan/vk_staging_buffer_pool.h
 @@ -1,6 +1,7 @@
@@ -29207,7 +29199,7 @@ index 62e639b47..2d9ee4c14 100644
  
  #pragma once
 diff --git a/src/video_core/renderer_vulkan/vk_swapchain.cpp b/src/video_core/renderer_vulkan/vk_swapchain.cpp
-index 73f683bdb..afe90d0a0 100644
+index ffa1cab15..0d125809f 100644
 --- a/src/video_core/renderer_vulkan/vk_swapchain.cpp
 +++ b/src/video_core/renderer_vulkan/vk_swapchain.cpp
 @@ -1,6 +1,7 @@
@@ -29219,7 +29211,7 @@ index 73f683bdb..afe90d0a0 100644
  
  #include <algorithm>
 diff --git a/src/video_core/renderer_vulkan/vk_swapchain.h b/src/video_core/renderer_vulkan/vk_swapchain.h
-index 9734ab3ca..652e5d092 100644
+index c5d9bfc0c..3d5587547 100644
 --- a/src/video_core/renderer_vulkan/vk_swapchain.h
 +++ b/src/video_core/renderer_vulkan/vk_swapchain.h
 @@ -1,6 +1,7 @@
@@ -29231,7 +29223,7 @@ index 9734ab3ca..652e5d092 100644
  
  #pragma once
 diff --git a/src/video_core/renderer_vulkan/vk_texture_cache.cpp b/src/video_core/renderer_vulkan/vk_texture_cache.cpp
-index 4080e3026..9555b29b7 100644
+index 115e1b0f1..757a79733 100644
 --- a/src/video_core/renderer_vulkan/vk_texture_cache.cpp
 +++ b/src/video_core/renderer_vulkan/vk_texture_cache.cpp
 @@ -1,6 +1,7 @@
@@ -29243,7 +29235,7 @@ index 4080e3026..9555b29b7 100644
  
  #include <algorithm>
 diff --git a/src/video_core/renderer_vulkan/vk_texture_cache.h b/src/video_core/renderer_vulkan/vk_texture_cache.h
-index af043e3b5..bf230a594 100644
+index e5d0fd3f0..ef9287908 100644
 --- a/src/video_core/renderer_vulkan/vk_texture_cache.h
 +++ b/src/video_core/renderer_vulkan/vk_texture_cache.h
 @@ -1,6 +1,7 @@
@@ -29300,7 +29292,7 @@ index 6295ed33e..742dd4d0b 100644
  
  #include <algorithm>
 diff --git a/src/video_core/renderer_vulkan/vk_update_descriptor.h b/src/video_core/renderer_vulkan/vk_update_descriptor.h
-index 280ed7782..3e1cf9df3 100644
+index 4934765f1..ee7471809 100644
 --- a/src/video_core/renderer_vulkan/vk_update_descriptor.h
 +++ b/src/video_core/renderer_vulkan/vk_update_descriptor.h
 @@ -1,6 +1,7 @@
@@ -29312,7 +29304,7 @@ index 280ed7782..3e1cf9df3 100644
  
  #pragma once
 diff --git a/src/video_core/shader_cache.cpp b/src/video_core/shader_cache.cpp
-index 8e69d279f..f49643438 100644
+index 01d573a12..70217b014 100644
 --- a/src/video_core/shader_cache.cpp
 +++ b/src/video_core/shader_cache.cpp
 @@ -1,6 +1,7 @@
@@ -29324,7 +29316,7 @@ index 8e69d279f..f49643438 100644
  
  #include <algorithm>
 diff --git a/src/video_core/shader_cache.h b/src/video_core/shader_cache.h
-index 9d4204eb6..b8bdc3328 100644
+index 4457cf24b..5aaae6187 100644
 --- a/src/video_core/shader_cache.h
 +++ b/src/video_core/shader_cache.h
 @@ -1,6 +1,7 @@
@@ -29336,7 +29328,7 @@ index 9d4204eb6..b8bdc3328 100644
  
  #pragma once
 diff --git a/src/video_core/shader_environment.cpp b/src/video_core/shader_environment.cpp
-index b0ed72713..40f8188aa 100644
+index 48079ef46..d2962bc16 100644
 --- a/src/video_core/shader_environment.cpp
 +++ b/src/video_core/shader_environment.cpp
 @@ -1,6 +1,7 @@
@@ -29594,7 +29586,7 @@ index ae47353a0..d1728603b 100644
  
  #include "video_core/control/channel_state_cache.inc"
 diff --git a/src/video_core/texture_cache/texture_cache.h b/src/video_core/texture_cache/texture_cache.h
-index a9eaf6472..a180fa0f0 100644
+index e6d1b370d..11cb44759 100644
 --- a/src/video_core/texture_cache/texture_cache.h
 +++ b/src/video_core/texture_cache/texture_cache.h
 @@ -1,6 +1,7 @@
@@ -29606,7 +29598,7 @@ index a9eaf6472..a180fa0f0 100644
  
  #pragma once
 diff --git a/src/video_core/texture_cache/texture_cache_base.h b/src/video_core/texture_cache/texture_cache_base.h
-index 6123e6b09..aabcc1565 100644
+index 4aca9b3e6..7903fdec5 100644
 --- a/src/video_core/texture_cache/texture_cache_base.h
 +++ b/src/video_core/texture_cache/texture_cache_base.h
 @@ -1,6 +1,7 @@
@@ -29630,7 +29622,7 @@ index f3ddf5364..9e541d6af 100644
  
  #pragma once
 diff --git a/src/video_core/texture_cache/util.cpp b/src/video_core/texture_cache/util.cpp
-index 7f7755483..43cee9e0c 100644
+index 001bf0218..d5070f8b6 100644
 --- a/src/video_core/texture_cache/util.cpp
 +++ b/src/video_core/texture_cache/util.cpp
 @@ -1,6 +1,7 @@
@@ -29642,7 +29634,7 @@ index 7f7755483..43cee9e0c 100644
  // SPDX-License-Identifier: GPL-2.0-or-later AND MIT
  
 diff --git a/src/video_core/texture_cache/util.h b/src/video_core/texture_cache/util.h
-index c65dd0e4c..7e20fa864 100644
+index 10b2849e5..901c08486 100644
 --- a/src/video_core/texture_cache/util.h
 +++ b/src/video_core/texture_cache/util.h
 @@ -1,6 +1,7 @@
@@ -29833,7 +29825,7 @@ index 0c682521e..5e940782f 100644
  
  #pragma once
 diff --git a/src/video_core/vulkan_common/vulkan_device.cpp b/src/video_core/vulkan_common/vulkan_device.cpp
-index 81e8b3734..ac3d19357 100644
+index 29baa1e75..23c81e97f 100644
 --- a/src/video_core/vulkan_common/vulkan_device.cpp
 +++ b/src/video_core/vulkan_common/vulkan_device.cpp
 @@ -1,6 +1,7 @@
@@ -29845,7 +29837,7 @@ index 81e8b3734..ac3d19357 100644
  
  #include <algorithm>
 diff --git a/src/video_core/vulkan_common/vulkan_device.h b/src/video_core/vulkan_common/vulkan_device.h
-index 4b8919f55..8ca9c6def 100644
+index 2714d6dd6..10801ab9c 100644
 --- a/src/video_core/vulkan_common/vulkan_device.h
 +++ b/src/video_core/vulkan_common/vulkan_device.h
 @@ -1,6 +1,7 @@
@@ -29857,7 +29849,7 @@ index 4b8919f55..8ca9c6def 100644
  
  #pragma once
 diff --git a/src/video_core/vulkan_common/vulkan_instance.cpp b/src/video_core/vulkan_common/vulkan_instance.cpp
-index 5c85f4784..4321f9b83 100644
+index 0a7b6e647..4e22e43b4 100644
 --- a/src/video_core/vulkan_common/vulkan_instance.cpp
 +++ b/src/video_core/vulkan_common/vulkan_instance.cpp
 @@ -1,6 +1,7 @@
@@ -29899,7 +29891,7 @@ index 4f5b1419b..e1734525e 100644
  
  #pragma once
 diff --git a/src/video_core/vulkan_common/vulkan_memory_allocator.cpp b/src/video_core/vulkan_common/vulkan_memory_allocator.cpp
-index 626b4c127..e68059554 100644
+index 4d9cf4c5d..7aaa7b8ba 100644
 --- a/src/video_core/vulkan_common/vulkan_memory_allocator.cpp
 +++ b/src/video_core/vulkan_common/vulkan_memory_allocator.cpp
 @@ -1,6 +1,7 @@
@@ -29911,7 +29903,7 @@ index 626b4c127..e68059554 100644
  
  #include <algorithm>
 diff --git a/src/video_core/vulkan_common/vulkan_memory_allocator.h b/src/video_core/vulkan_common/vulkan_memory_allocator.h
-index 3d45d9a27..a68516dd4 100644
+index 9d9e099f4..8351b51ae 100644
 --- a/src/video_core/vulkan_common/vulkan_memory_allocator.h
 +++ b/src/video_core/vulkan_common/vulkan_memory_allocator.h
 @@ -1,6 +1,7 @@
@@ -29923,7 +29915,7 @@ index 3d45d9a27..a68516dd4 100644
  
  #pragma once
 diff --git a/src/video_core/vulkan_common/vulkan_surface.cpp b/src/video_core/vulkan_common/vulkan_surface.cpp
-index 8208575d7..8b9dcb4d4 100644
+index 13096a408..eb66f6e4b 100644
 --- a/src/video_core/vulkan_common/vulkan_surface.cpp
 +++ b/src/video_core/vulkan_common/vulkan_surface.cpp
 @@ -1,6 +1,7 @@

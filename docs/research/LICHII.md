@@ -1,18 +1,43 @@
 # Lichii research (reference project)
 
 **Project:** Lichii, https://github.com/zortos293/Lichii (an Eden/yuzu fork with Switch 2 work).
-**Licence:** GPL-3.0-or-later. Since NEXUS 0.8 (development) the NEXUS Engine is based on Lichii
-**build 177** (commit `87d84d513`); before that on build 160 (`2eb5f081c`). Every Lichii change
-up to build 177 is in the NEXUS Engine. Lichii #1544 removed the yuzu Emulator Project's SPDX
-copyright lines from 2,512 files; the NEXUS Engine restores them (engine patch 0018), because
-the GPL requires keeping copyright notices. Nothing here describes a NEXUS change
+**Licence:** GPL-3.0-or-later. Since 17 Nov 2026 (NEXUS 0.8 development) the NEXUS Engine is
+based on Lichii **build 316** (commit `5a66c8959`); before that on build 177 (`87d84d513`, 13 Nov)
+and build 160 (`2eb5f081c`). Every Lichii change up to build 316 is in the NEXUS Engine. Lichii
+#1544 removed the yuzu Emulator Project's SPDX copyright lines from 2,512 files; the NEXUS Engine
+restores them (engine patch 0018), because the GPL requires keeping copyright notices. Checked
+again on build 316: all 2,484 files that carried the yuzu notice at build 160 and still exist
+carry it in the NEXUS Engine. Where Lichii added its own notice since (citron in `friend.cpp`
+and `nifm.cpp`, ScarletNX in `mii_model.cpp`), both are kept. Nothing here describes a NEXUS change
 unless it says so.
 
 Sources examined: the engine fork's local history (tags `build-65` … `build-160`), in particular
 the 30 commits `build-150..build-160` and the OoT-related commits `build-130..build-150`, read
 from their commit messages and diffs.
 
-## Build 160 → 177 (87 commits) - now in the NEXUS Engine
+## Build 177 → 316 (283 commits) - now in the NEXUS Engine
+
+Read from the commit messages and, for the items marked, the diffs. By area: video_core 39,
+vulkan 34, texture_cache 12, shader 11, file_sys 10, core 9, Ocarina-specific 7+, crypto 7,
+loader 5, buffer_cache 4, audio 3.
+
+| Area | What matters for NEXUS |
+|---|---|
+| Ocarina of Time | #1901 stubs gsv command 903, the video finalize OoT sends after its intro movie (a hang candidate in the loading path); #1818/#2010 movie frame pacing; #2012, #1853, #1807 mesh pipeline and compile fixes; #1890 Castle Town device loss above 1x on AMD; #1871/#1875/#1995 output pass recognition |
+| Game start | #1935 (diff read) the CLI registers the booted NSP/XCI so the game gets its NACP; **NEXUS had the same gap and now does the same (engine patch 0022)**. #1912 registers NUP add-on content in the loader; #1920/#1918 NSO loading checks |
+| Shaders and pipelines | #1803 Loading Shaders waits for the last two sessions' pipelines and builds older ones in the background; #1838/#1685 when the driver cache is saved; #1712 cache flush threshold |
+| Memory (handheld) | #1991 an integrated GPU's retention floor rises with its thresholds; #1860 recent images kept under the lowest budget seen lately; #1731 VMA blocks drained on old-age eviction; #1686 device-local memory VMA places in host memory; #1908 a compute upload list that grew forever |
+| Out-of-memory and stability | #1870, #1931, #1963, #1993 degrade or retry instead of aborting when memory runs out; #1938 device loss ends the process cleanly; #1534 buffer join slowdown and crash |
+| Stopping a game | #1932 kernel objects closed before the kernel shuts down (at stop and on failed loads); #1952 the cheat engine stops first |
+| Frame pacing | #2021, #2023, #1779 frame generation and pacing count game frames |
+| Audio | #1847 the UI volume is no longer applied again inside the emulated audio controller at boot. Checked against NEXUS patch 0001 (NEXUS sets its 0-200 % master volume at the sink): compatible, and it removes a double application |
+| Memory detection | Steam Deck installed-RAM detection from udev (tests in `memory_detect.cpp`). Lichii still has no Linux commit room, so NEXUS patch 0020 stays |
+
+Rebase: 21 NEXUS patches re-applied; 2 conflicts, both resolved by keeping both sides (the SPDX
+lines above, and the memory tests). Excluded: nothing deliberately; Lichii's GPU trace replay and
+the CLI's other additions are not used by NEXUS's engine host.
+
+## Build 160 → 177 (87 commits)
 
 Read from the commit messages and diffs (`git log build-160..build-177`). Grouped by area; the
 number is Lichii's pull request.

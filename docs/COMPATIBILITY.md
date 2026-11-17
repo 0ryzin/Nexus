@@ -34,6 +34,12 @@ scenes) and the list below.
     for an NSP/XCI with an update the mismatch could not happen this way.
   - #1413 (GPU thread waiting on kernel locks for sparse blocks), #1512 (syncpoint waits answered
     before the increments were mirrored), #1590 (vi2 timestamp recorders): waits that never end.
+- **Since 17 Nov (engine on build 316):** two more leads are fixed. (1) NEXUS registered only
+  update and DLC files in the engine's content provider, not the booted NSP/XCI itself, so a
+  game started from an NSP or XCI read an empty NACP (its control data, which includes the save
+  data sizes); Lichii fixed the same gap in its CLI (#1935), NEXUS now does too (patch 0022).
+  (2) Lichii #1901 answers command 903 that OoT sends after its intro movie. Neither is proven
+  to be your black screen until the game is run.
 - **NEXUS-side changes (0.8.0):**
   - The optimiser no longer recommends settings for a Switch 2 game that differ from the
     engine's tested configuration: reactive flushing stays **on** (Lichii's desktop default;

@@ -1,7 +1,7 @@
-From f5870cf38f7b016e55aa143faabfa27c7909061f Mon Sep 17 00:00:00 2001
+From 6e990e19d3b3a8f214c6814d8892826f0136d65f Mon Sep 17 00:00:00 2001
 From: NEXUS <nexus@users.noreply.github.com>
 Date: Wed, 11 Nov 2026 17:57:11 +0000
-Subject: [PATCH 11/21] nexus_engine: a host-managed data folder is never
+Subject: [PATCH 11/22] nexus_engine: a host-managed data folder is never
  blocked by other emulators' data
 
 Lichii build-150 (#1253) refuses to create a configuration while data of
@@ -17,6 +17,7 @@ and the Qt frontend keep the upstream behaviour. Tests cover both.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
+(cherry picked from commit f5870cf38f7b016e55aa143faabfa27c7909061f)
 ---
  src/common/fs/path_util.cpp                  | 11 ++++++++++
  src/common/fs/path_util.h                    |  7 ++++++
@@ -25,7 +26,7 @@ Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
  4 files changed, 47 insertions(+)
 
 diff --git a/src/common/fs/path_util.cpp b/src/common/fs/path_util.cpp
-index 7614e9210..9442d2bb5 100644
+index 16886ab50..93fe7b583 100644
 --- a/src/common/fs/path_util.cpp
 +++ b/src/common/fs/path_util.cpp
 @@ -92,6 +92,10 @@ public:

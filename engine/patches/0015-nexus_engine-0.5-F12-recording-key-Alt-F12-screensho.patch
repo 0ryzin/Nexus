@@ -1,7 +1,7 @@
-From 023bcf32ae1ed1debab46932a07efb368facb4fc Mon Sep 17 00:00:00 2001
+From edaa5128811573b12d63521273dc3439c6aadce9 Mon Sep 17 00:00:00 2001
 From: NEXUS <nexus@localhost>
 Date: Thu, 12 Nov 2026 11:34:44 +0000
-Subject: [PATCH 15/21] nexus_engine 0.5: F12 recording key, Alt+F12
+Subject: [PATCH 15/22] nexus_engine 0.5: F12 recording key, Alt+F12
  screenshots, games keep running behind NEXUS Home
 
 - shortcuts with modifiers ("Alt+F12"); a shortcut with modifiers never conflicts with a game key;
@@ -12,6 +12,8 @@ Subject: [PATCH 15/21] nexus_engine 0.5: F12 recording key, Alt+F12
   (device connect/disconnect still pass); nexus_engine_suspend(1) still pauses
 - nexus_engine_screenshot (also while in the background), nexus_engine_window (HWND for capture)
 - status: recordPresses, background
+
+(cherry picked from commit 023bcf32ae1ed1debab46932a07efb368facb4fc)
 ---
  src/nexus_engine/include/nexus_engine.h |  10 ++
  src/nexus_engine/nexus_engine.cpp       | 148 ++++++++++++++++++++++--
