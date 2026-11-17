@@ -163,6 +163,12 @@ body:not(.booting) #boot{display:none}
 .key{display:inline-grid;place-items:center;min-width:1.6em;height:1.6em;padding:0 .35em;border-radius:1em;background:var(--text);color:var(--bg);
   font-weight:700;font-size:.82em}
 .key.kb{border-radius:5px;font-size:.75em;min-width:auto;padding:0 .5em}
+/* controller prompts: the active controller's own button (web/pads.js), drawn as SVG */
+.key.pad-key{background:none;color:var(--text);padding:0;min-width:0;width:1.9em;height:1.9em;font-size:1em}
+.key.pad-key .pad-glyph{width:100%;height:100%;display:block}
+.key.pad-key.inline{width:1.5em;height:1.5em;margin-right:.45em;vertical-align:middle}
+.pad-card.active{box-shadow:inset 0 0 0 2px var(--sel-line)}
+.pad-card h4 .pill{margin-left:.6em;font-size:.7em;vertical-align:middle}
 
 /* ---------- pages ---------- */
 .page{background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(14px)}
@@ -277,12 +283,18 @@ body:not(.booting) #boot{display:none}
 .who-item .avatar{--sz:calc(var(--card)*.62);transition:transform calc(.22s*var(--t)) var(--ease),box-shadow calc(.22s*var(--t)) var(--ease)}
 .who-item span{font-weight:600;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .2s}
 .who-item:hover:not(.focus){background:color-mix(in srgb,var(--surface) 55%,transparent)}
-.who-item.focus{background:color-mix(in srgb,var(--accent) 12%,var(--surface));border-color:color-mix(in srgb,var(--accent) 35%,transparent)}
-.who-item.focus .avatar{transform:scale(1.05);box-shadow:0 0 0 4px var(--bg),0 0 0 8px var(--accent)}
-.who-item.focus span{color:var(--accent-text)}
+/* selection states (one pattern for every picker): selected = persistent accent ring and badge;
+   focus (keyboard / controller) = a ring around the whole card; hover (mouse, which also moves the
+   focus) = a subtle background only. Hovering never makes a card look selected. */
+.who-item.current .avatar{box-shadow:0 0 0 4px var(--bg),0 0 0 8px var(--accent)}
+.who-item.current span{color:var(--accent-text)}
+.who-item.focus{background:var(--hover);border-color:var(--text)}
+.who-item.focus .avatar{transform:scale(1.05)}
+.input-mouse .who-item.focus{border-color:transparent}
+.input-mouse .who-item.focus .avatar{transform:none}
 .who-item .last{position:absolute;top:calc(var(--card)*.07);right:calc(var(--card)*.08);font-size:.68em;font-weight:700;letter-spacing:.04em;
   padding:.15em .55em;border-radius:1em;background:var(--surface2);color:var(--muted)}
-.who-item.focus .last{background:var(--accent);color:var(--accent-ink)}
+.who-item.current .last{background:var(--accent);color:var(--accent-ink)}
 .who-add .avatar{background:var(--surface);border:3px dashed var(--line);box-shadow:none}
 .who-add .avatar svg{fill:var(--muted)}
 .who-hint{color:var(--muted);font-size:.85em;margin:0}
@@ -371,6 +383,11 @@ body:not(.booting) #boot{display:none}
 .gm-list button svg{width:1.25em;height:1.25em;fill:var(--accent);flex:none}
 .gm-list button.danger{color:var(--danger)}.gm-list button.danger svg{fill:var(--danger)}
 .gm-list button.focus{background:var(--surface2);box-shadow:inset 0 0 0 3px var(--accent)}
+.gm-list .gm-sec{font-size:.72em;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:.9em 1.1em .25em}
+.gm-list .gm-l{display:flex;flex-direction:column;gap:.1em}
+.gm-list .gm-l small{color:var(--muted);font-weight:400;font-size:.8em}
+.gm-list button[disabled]{opacity:.55;cursor:default}
+.game-menu{max-height:92vh;overflow:auto}
 
 /* artwork editor */
 .art-top{display:flex;gap:1.2em;align-items:center;margin-bottom:.6em}
@@ -594,8 +611,10 @@ ol.steps li.done::after{content:"  ✓"}
 .wp-row{display:flex;justify-content:center;flex-wrap:wrap;gap:calc(var(--u)*2.2)}
 .wp-user{display:flex;flex-direction:column;align-items:center;gap:.7em;background:none;border:0;color:var(--text);font:inherit;font-size:calc(var(--u)*1.05);cursor:pointer;outline:none;padding:.4em}
 .wp-user .avatar{--sz:calc(var(--u)*7.4);transition:transform calc(.22s*var(--t)) var(--ease),box-shadow calc(.22s*var(--t)) var(--ease)}
-.wp-user.focus .avatar,.wp-user:hover .avatar{transform:scale(1.07);box-shadow:0 0 0 calc(var(--sz)*.05) var(--surface),0 0 0 calc(var(--sz)*.05 + 4px) var(--pc),0 0 26px color-mix(in srgb,var(--pc) 55%,transparent)}
-.wp-user.focus span{color:var(--accent-text);font-weight:600}
+.wp-user.current .avatar{box-shadow:0 0 0 calc(var(--sz)*.05) var(--surface),0 0 0 calc(var(--sz)*.05 + 4px) var(--pc),0 0 26px color-mix(in srgb,var(--pc) 55%,transparent)}
+.wp-user.current span{color:var(--accent-text);font-weight:600}
+.wp-user.focus .avatar{transform:scale(1.07);outline:3px solid var(--text);outline-offset:calc(var(--sz)*.05 + 8px)}
+.wp-user:hover:not(.focus) .avatar,.input-mouse .wp-user.focus .avatar{transform:scale(1.04);outline:0}
 .wp-user.picked .avatar{animation:wpPick calc(.42s*var(--t)) var(--ease) both}
 @keyframes wpPick{40%{transform:scale(1.16)}100%{transform:scale(1.1)}}
 .wp-card.confirmed .wp-user:not(.picked){opacity:.35;transition:opacity calc(.25s*var(--t))}
@@ -662,7 +681,6 @@ ol.steps li.done::after{content:"  ✓"}
 /* selected and hovered states use the accent in both themes, never plain black or white */
 .sw.on,.glyph-grid .avatar.on,.pk-item.on{border-color:var(--sel-line)}
 .who-item:hover:not(.focus){background:var(--hover)}
-.who-item.focus{background:var(--sel-bg)}
 .list-pick button.sel{background:var(--sel-bg)}
 .row:hover:not(.focus){background:var(--hover)}
 .sheet .row:hover:not(.focus){background:var(--hover)}
@@ -688,7 +706,9 @@ option{background:var(--surface);color:var(--text)}
 .sd-user .avatar{--sz:1.9em}
 .sd-user:hover:not(.focus){background:var(--hover)}
 .sd-user.sel{background:var(--sel-bg);border-color:var(--sel-line);font-weight:600}
-.sd-user.focus{box-shadow:0 0 0 3px var(--accent)}
+.sd-user.focus{box-shadow:0 0 0 3px var(--text)}
+.input-mouse .sd-user.focus:not(.sel){box-shadow:none;background:var(--hover)}
+.input-mouse .sd-user.sel.focus{box-shadow:none}
 .sd-actions{display:flex;gap:.6em;flex-wrap:wrap;margin:.8em 0 1.2em}
 .sd-empty{display:flex;flex-direction:column;gap:.4em;align-items:flex-start;padding:1.4em;border-radius:14px;background:var(--surface2);color:var(--muted);margin:.6em 0}
 .sd-empty b{color:var(--text);font-size:1.05em}
@@ -834,3 +854,14 @@ body.game-front *, body.game-front *::before, body.game-front *::after { animati
 /* loading screen: start the game before its shaders have all compiled */
 .lx-skip{position:absolute;right:calc(var(--u)*3 + 9em);bottom:calc(var(--u)*2)}
 .lx-skip[hidden]{display:none}
+
+/* selection states with the mouse (see .who-item): the focus follows the pointer, so in pickers
+   that also show a selected item it looks like a hover, and only .sel looks selected */
+.input-mouse .list-pick button.focus:not(.sel),.input-mouse .cat.focus:not(.sel){box-shadow:none;background:var(--hover)}
+.input-mouse .list-pick button.sel.focus,.input-mouse .cat.sel.focus{box-shadow:none}
+
+/* Manage Mods: a mod's switch with its Details button beside it */
+.mod-row{display:flex;align-items:stretch;gap:.5em}
+.mod-row>.row{flex:1;min-width:0}
+.mod-row>.chip{align-self:center;flex:none}
+.mod-row.warn .rl small{color:var(--warn,#ff9f0a)}

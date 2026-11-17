@@ -79,6 +79,10 @@ function accentTextFor(hex, light) {
 
 // ------------------------------------------------------------------ icons
 const I = {
+  back: 'M15.4 4.6 17 6.2 11.2 12l5.8 5.8-1.6 1.6L8 12Z',
+  more: 'M6 10a2 2 0 1 1 0 4 2 2 0 0 1 0-4Zm6 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4Zm6 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z',
+  puzzle: 'M20.5 11H19V7a2 2 0 0 0-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4a2 2 0 0 0-2 2v3.8h1.5a2.7 2.7 0 0 1 0 5.4H2V20a2 2 0 0 0 2 2h3.8v-1.5a2.7 2.7 0 0 1 5.4 0V22H17a2 2 0 0 0 2-2v-4h1.5a2.5 2.5 0 0 0 0-5Z',
+  download: 'M11 4h2v8.2l3.3-3.3 1.4 1.4L12 16l-5.7-5.7 1.4-1.4 3.3 3.3ZM5 18h14v2H5Z',
   cloud: 'M6.5 19a4.5 4.5 0 0 1-.6-8.96A6.5 6.5 0 0 1 18.3 8.6 5.2 5.2 0 0 1 17.5 19Zm0-2h11a3.2 3.2 0 0 0 .3-6.39l-1.06-.1-.3-1.02A4.5 4.5 0 0 0 7.9 11.2l-.2.95-.97.1A2.5 2.5 0 0 0 6.5 17Z',
   media: 'M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm0 2v10h16V7Zm3 8 3-4 2.2 2.7L15 10l4 5Zm1-6.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Z',
   grid: 'M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z',
@@ -246,6 +250,9 @@ function setInputMode(mode) {
   if (S.lastInput === mode) return;
   S.lastInput = mode;
   document.body.classList.toggle('no-cursor', mode === 'gamepad');
+  // the focus follows the mouse pointer: with the mouse it is shown as a hover, never as a
+  // selection (app.css, "selection states")
+  document.body.classList.toggle('input-mouse', mode === 'mouse');
   renderHints();
 }
 
@@ -297,24 +304,53 @@ function adjust(d) {
   return false;
 }
 
+// Which controller each browser gamepad is (web/pads.js), and the active one for prompts.
+const PadInfo = {
+  update() { S.padInfo = identifyGamepads(S.pads || [], S.enginePads || [], S.padModels || {}); },
+  // the engine's controller list names the model; asked only when controllers change
+  async refreshEngine() {
+    try { const d = await api(`/api/controllers?profile=${encodeURIComponent(S.profile?.id || '')}`); S.enginePads = d.pads || []; }
+    catch { return; }
+    const before = JSON.stringify(S.padInfo || []);
+    this.update();
+    if (JSON.stringify(S.padInfo) !== before) { renderHints(); renderTopbar(); Controllers.refreshList(); }
+  },
+  of(index) { return (S.padInfo || []).find(i => i.index === index); },
+  // the controller whose buttons the prompts show: the one used last, else the chosen one, else the first
+  active() {
+    const pref = S.profile?.controls?.preferredPad;
+    return this.of(S.activePad) || (pref && (S.padInfo || []).find(i => i.key === pref)) || (S.padInfo || [])[0] || null;
+  },
+  matches(gp, prefKey) { const i = this.of(gp.index); return i?.key === prefKey || gp.id === prefKey; },
+  label(index) { const a = this.active(); return padLabelFor(a?.family || 'xbox', index, a?.model); },
+  glyph(index, cls = 'key') { const a = this.active(); const el = h('span', { class: cls + ' pad-key', title: padLabelFor(a?.family || 'xbox', index, a?.model) }); el.innerHTML = padGlyphSVG(a?.family || 'xbox', index, a?.model); return el; },
+};
+
 // Gamepad polling (Gamepad API, standard mapping). Works with XInput, DualShock/DualSense and most HID pads.
 const Pad = {
-  prev: {}, held: {}, repeatAt: {}, connected: [],
+  prev: {}, held: {}, repeatAt: {}, connected: [], rejoin: new Set(),
   mapping() { return (S.profile?.controls?.mapping) || { confirm: 0, back: 1, options: 3, search: 2, prevTab: 4, nextTab: 5, menu: 9, home: 16, view: 8 }; },
   poll() {
     const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
     const ids = pads.map(p => p.index + ':' + p.id).join('|');
     if (ids !== this.connected.join('|')) {
-      const before = this.connected.length;
+      const before = this.connected.length, beforeKeys = new Set((S.padInfo || []).map(i => i.index + ':' + i.name));
+      const gone = (S.padInfo || []).filter(i => !pads.some(p => p.index === i.index));
       this.connected = pads.map(p => p.index + ':' + p.id);
       S.pads = pads.map(p => ({ index: p.index, id: p.id, mapping: p.mapping }));
+      PadInfo.update();
+      // a controller that left: its held buttons are forgotten, so it cannot trigger anything
+      // when it comes back (no duplicate or stuck input)
+      for (const g of gone) { delete this.prev[g.index]; this.rejoin.add(g.index); for (const k of Object.keys(this.repeatAt)) if (k.startsWith(g.index + '')) delete this.repeatAt[k]; if (S.activePad === g.index) S.activePad = null; }
       renderTopbar(); renderHints(); Controllers.refreshList();
-      if (pads.length > before && !document.body.classList.contains('booting')) { Sound.play('connect'); toast(`Controller connected`, I.pad); }
-      if (pads.length < before && !document.body.classList.contains('booting')) { toast(pads.length ? 'A controller was disconnected' : 'Controller disconnected', I.pad); this.prev = {}; this.repeatAt = {}; }
+      const booting = document.body.classList.contains('booting');
+      if (pads.length > before && !booting) { Sound.play('connect'); const n = (S.padInfo || []).find(i => !beforeKeys.has(i.index + ':' + i.name)); toast(`${n?.name || 'Controller'} connected`, I.pad); }
+      if (pads.length < before && !booting) toast(`${gone[0]?.name || 'Controller'} disconnected`, I.pad);
+      PadInfo.refreshEngine(); // the engine's detection names the model (event-driven, not polled)
     }
-    const pref = S.profile?.controls?.preferredPad;
-    const active = pads.filter(p => !pref || p.id === pref);
-    const use = active.length ? active : pads;
+    const prefKey = S.profile?.controls?.preferredPad;
+    const active = prefKey ? pads.filter(p => PadInfo.matches(p, prefKey)) : pads;
+    const use = active.length ? active : pads; // the chosen controller is not connected: any controller works
     const now = performance.now();
     const map = this.mapping();
     const repeatMs = S.profile?.controls?.keyRepeatMs || 140;
@@ -327,15 +363,17 @@ const Pad = {
       const acts = {};
       for (const [a, idx] of Object.entries(map)) acts[a] = b(idx);
       const key = p.index;
-      const prev = this.prev[key] || {};
       const state = { ...dirs, ...acts };
+      // a controller that comes back: buttons already held count only after they are released
+      if (this.rejoin.has(key)) { this.rejoin.delete(key); this.prev[key] = state; continue; }
+      const prev = this.prev[key] || {};
       if (Mapper.listening) {
         for (let i = 0; i < p.buttons.length; i++) if (b(i) && !(prev['b' + i])) { Mapper.capture(i); }
         const raw = {}; for (let i = 0; i < p.buttons.length; i++) raw['b' + i] = b(i);
         this.prev[key] = { ...state, ...raw }; Controllers.liveUpdate(p); continue;
       }
       const any = Object.values(state).some(Boolean);
-      if (any) { setInputMode('gamepad'); this.activeUntil = now + 1500; }
+      if (any) { setInputMode('gamepad'); this.activeUntil = now + 1500; if (S.activePad !== p.index) { S.activePad = p.index; renderHints(); if (S.screen === 'controllers') Controllers.refreshList(); } }
       if (document.body.classList.contains('booting')) { if (any && !Object.values(prev).some(Boolean)) Boot.skip(); this.prev[key] = state; continue; }
       for (const d of ['up', 'down', 'left', 'right']) {
         if (state[d] && !prev[d]) { this.repeatAt[key + d] = now + 380; this.dir(d); }
@@ -772,7 +810,7 @@ const Boot = {
 // ------------------------------------------------------------------ data loading
 async function loadState() {
   const st = await api('/api/state');
-  Object.assign(S, { app: st.app, settings: st.settings, profiles: st.profiles || [], emulator: st.emulator, engine: st.engine || {}, formats: st.formats, scanDirs: st.scanDirs, gamesDir: st.gamesDir, avatarColors: st.avatarColors, avatarGlyphs: st.avatarGlyphs, maxProfiles: st.maxProfiles || 8, library: st.library, features: st.features || {} });
+  Object.assign(S, { app: st.app, settings: st.settings, profiles: st.profiles || [], emulator: st.emulator, engine: st.engine || {}, formats: st.formats, scanDirs: st.scanDirs, gamesDir: st.gamesDir, avatarColors: st.avatarColors, avatarGlyphs: st.avatarGlyphs, padModels: st.padModels || {}, maxProfiles: st.maxProfiles || 8, library: st.library, features: st.features || {} });
   if (S.profile) S.profile = profileById(S.profile.id) || null;
   api('/api/platform').then(pl => { S.platform = pl; }).catch(() => { });
   AccountUI.load().then(() => { if (S.screen === 'home') renderBanner(); });
@@ -847,10 +885,10 @@ function renderHints() {
   const list = $('#hint-list'); if (!list) return;
   const pad = S.lastInput === 'gamepad' || (S.lastInput !== 'keyboard' && S.pads.length);
   const map = Pad.mapping();
-  const lbl = i => ({ 0: 'A', 1: 'B', 2: 'X', 3: 'Y', 4: 'LB', 5: 'RB', 6: 'LT', 7: 'RT', 8: 'View', 9: 'Menu', 10: 'LS', 11: 'RS', 16: 'Home' }[i] ?? ('B' + i));
   const items = [];
   const l = Nav.top();
-  const k = (padIdx, kb) => pad ? h('span', { class: 'key' }, lbl(padIdx)) : h('span', { class: 'key kb' }, kb);
+  // controller prompts show the active controller's own buttons (web/pads.js)
+  const k = (padIdx, kb) => pad ? PadInfo.glyph(padIdx) : h('span', { class: 'key kb' }, kb);
   if (l?.onOptions) items.push([k(map.options, 'X'), 'Options', () => Nav.options()]);
   if (S.screen === 'home' && !l?.dialog) items.push([k(map.menu, 'Esc'), 'Power', () => openPower()]);
   if (l?.onBack && (l.dialog || S.screen !== 'home')) items.push([k(map.back, 'Esc'), 'Back', () => Nav.back()]);
@@ -858,7 +896,9 @@ function renderHints() {
   list.innerHTML = '';
   for (const [key, text, fn] of items) { const e = h('span', { class: 'hint' }, key, text); e.addEventListener('click', fn); list.append(e); }
   const hp = $('#hint-pad'); hp.innerHTML = '';
-  hp.append(svg(I.pad), S.pads.length ? `${S.pads.length} controller${S.pads.length > 1 ? 's' : ''}` : 'Keyboard & mouse');
+  const act = PadInfo.active();
+  hp.append(svg(I.pad), S.pads.length ? (act ? act.name : 'Controller') + (S.pads.length > 1 ? ` (+${S.pads.length - 1})` : '') : 'Keyboard & mouse');
+  hp.title = (S.padInfo || []).map(i => i.name).join(', ');
 }
 
 // ---------- who's playing
@@ -867,7 +907,7 @@ function showWho() {
   const list = $('#who-list'); list.innerHTML = '';
   for (const p of S.profiles) {
     const last = p.id === S.settings.lastProfileId;
-    const b = h('button', { class: 'who-item' + (last ? ' current' : ''), 'data-nav': true, title: p.name }, avatarEl(p), h('span', {}, p.name), last ? h('i', { class: 'last' }, 'LAST') : '');
+    const b = h('button', { class: 'who-item' + (last ? ' current' : ''), 'data-nav': true, title: p.name, 'aria-current': last ? 'true' : null }, avatarEl(p), h('span', {}, p.name), last ? h('i', { class: 'last' }, 'LAST') : '');
     b.addEventListener('click', () => selectProfile(p.id));
     b._profile = p;
     list.append(b);
@@ -1750,35 +1790,64 @@ async function shaderImport(g) {
 }
 
 // ---------- game options menu
-function gameMenu(key) {
+// Grouped so it stays short: playing, the game itself, shaders, then the library actions under
+// "More". Every action of earlier versions is still here (some one level down, under More).
+function gameMenu(key, view = 'main') {
   const g = gameByKey(key); if (!g) return;
   if (Nav.top()?.name === 'gamemenu') Nav.top().close();
   const running = S.playing?.running && S.playing.gameKey === key;
-  const items = [
-    running ? ['resume', 'Resume', I.play] : null,
-    running ? ['close', 'Close Game', I.power] : null,
-    isPlayable(g) && !g.hidden && !running ? ['play', 'Play', I.play] : null,
-    isPlayable(g) ? ['config', 'Configure Game Settings', I.gear] : null,
-    isPlayable(g) && !S.playing?.running ? ['shaders', S.prep?.key === key ? `Preparing Shaders… (${prepLabel(S.prep)})` : 'Prepare Shaders Now', I.chip] : null,
-    isPlayable(g) && !S.playing?.running ? ['shexport', 'Export Shader Data', I.download || I.folder] : null,
-    isPlayable(g) && !S.playing?.running ? ['shimport', 'Import Shader Data…', I.plus] : null,
-    ['art', 'Edit Game Artwork', I.palette],
-    ['info', 'Game Information', I.info],
-    ['open', 'Open Game Location', I.folder],
-    ['refresh', 'Refresh Artwork & Information', I.refresh],
-    g.hidden ? ['restore', 'Restore to Library', I.plus] : ['remove', 'Remove from Library', I.trash],
-  ].filter(Boolean);
+  const idle = isPlayable(g) && !S.playing?.running;
+  const sections = view === 'more' ? [
+    [null, [
+      ['back', 'Back', I.back],
+      ['art', 'Edit Game Artwork', I.palette],
+      ['refresh', 'Refresh Artwork & Information', I.refresh],
+      ['open', 'Open Game Location', I.folder],
+      g.hidden ? ['restore', 'Restore to Library', I.plus] : ['remove', 'Remove from Library', I.trash],
+    ]],
+  ] : [
+    [null, [
+      running ? ['resume', 'Resume', I.play] : null,
+      running ? ['close', 'Close Game', I.power] : null,
+      isPlayable(g) && !g.hidden && !running ? ['play', 'Play', I.play] : null,
+    ]],
+    ['Game', [
+      isPlayable(g) ? ['config', 'Game Settings', I.gear, 'Graphics, controls, updates and per-game options'] : null,
+      isPlayable(g) && g.titleId && g.kind !== 'homebrew' ? ['mods', 'Manage Mods', I.puzzle, modsSummary(g)] : null,
+      ['saves', 'Save Data', I.folder, 'View, back up, import or restore saves'],
+      ['info', 'Game Information', I.info],
+    ]],
+    isPlayable(g) ? ['Shaders', [
+      idle ? ['shaders', S.prep?.key === key ? 'Stop Preparing Shaders' : 'Prepare Shaders Now', I.chip, S.prep?.key === key ? prepLabel(S.prep) : 'Find and convert this game’s shaders before you play'] : null,
+      idle ? ['shexport', 'Export Shader Data', I.download || I.folder, 'For your other devices'] : null,
+      idle ? ['shimport', 'Import Shader Data…', I.plus, 'From your other devices (.nxshaders)'] : null,
+      !idle ? ['', 'Close the game to manage its shaders', I.chip] : null,
+    ]] : null,
+    [null, [['more', 'More…', I.more, 'Artwork, game location, remove from library']]],
+  ];
   const tile = gameTile(g); tile.removeAttribute('data-nav');
-  const btns = items.map(([v, l, ic]) => { const b = h('button', { 'data-nav': true, class: v === 'remove' || v === 'close' ? 'danger' : '' }, svg(ic), h('span', {}, l)); b._v = v; return b; });
-  const box = h('div', { class: 'dialog game-menu' }, h('div', { class: 'gm-head' }, tile, h('div', {}, h('b', {}, g.title), h('small', {}, [g.titleId, g.format.toUpperCase(), g.perGame ? 'Custom settings' : ''].filter(Boolean).join(' · ')))), h('div', { class: 'gm-list' }, btns));
-  const layer = openLayer(box, { name: 'gamemenu', initial: btns[0] });
-  btns.forEach(b => b.addEventListener('click', async () => {
+  const btns = [], list = h('div', { class: 'gm-list' });
+  for (const sec of sections.filter(Boolean)) {
+    const items = sec[1].filter(Boolean); if (!items.length) continue;
+    if (sec[0]) list.append(h('div', { class: 'gm-sec', role: 'presentation' }, sec[0]));
+    for (const [v, l, ic, sub] of items) {
+      const b = h('button', { 'data-nav': v ? true : null, disabled: v ? null : '', class: v === 'remove' || v === 'close' ? 'danger' : '' }, svg(ic), h('span', { class: 'gm-l' }, l, sub ? h('small', {}, sub) : ''));
+      b._v = v; btns.push(b); list.append(b);
+    }
+  }
+  const box = h('div', { class: 'dialog game-menu' }, h('div', { class: 'gm-head' }, tile, h('div', {}, h('b', {}, g.title), h('small', {}, [g.titleId, g.format.toUpperCase(), g.perGame ? 'Custom settings' : ''].filter(Boolean).join(' · ')))), list);
+  const layer = openLayer(box, { name: 'gamemenu', initial: btns.find(b => b._v), onBack: view === 'more' ? () => { layer.close(); gameMenu(key); } : undefined });
+  btns.forEach(b => b._v && b.addEventListener('click', async () => {
     layer.close();
     switch (b._v) {
       case 'play': launchGame(key); break;
       case 'resume': resumeGame(); break;
       case 'close': closeRunningGame(); break;
       case 'config': gameConfig(key); break;
+      case 'mods': ModsUI.open(key); break;
+      case 'saves': saveDataPage(S.profile?.id); break;
+      case 'more': gameMenu(key, 'more'); break;
+      case 'back': gameMenu(key); break;
       case 'shexport': shaderExport(g); break;
       case 'shimport': shaderImport(g); break;
       case 'shaders':
@@ -1795,6 +1864,11 @@ function gameMenu(key) {
       case 'restore': await api(`/api/games/${key}/hidden`, { body: { hidden: false } }); await loadGames(); refreshViews(); toast('Restored to library', I.check); break;
     }
   }));
+}
+// modsSummary: "2 of 3 on" from the library entry (no request while the menu opens)
+function modsSummary(g) {
+  const m = g.mods; if (!m || !m.total) return 'Install and switch mods for this game';
+  return `${m.enabled} of ${m.total} on`;
 }
 
 function gameInfo(key) {
@@ -2231,7 +2305,7 @@ function whoIsPlaying(g) {
     };
     for (const p of S.profiles) {
       const a = avatarEl(p, 'wp-avatar');
-      const b = h('button', { class: 'wp-user', 'data-nav': true, style: { '--pc': p.theme?.accent || 'var(--accent)' } }, a, h('span', {}, p.name));
+      const b = h('button', { class: 'wp-user' + (p.id === S.profile?.id ? ' current' : ''), 'data-nav': true, 'aria-current': p.id === S.profile?.id ? 'true' : null, style: { '--pc': p.theme?.accent || 'var(--accent)' } }, a, h('span', {}, p.name));
       b.addEventListener('click', () => finish(p.id, b));
       row.append(b);
     }
@@ -3407,19 +3481,42 @@ async function enhancementsPanel(box) {
       h('dt', {}, 'Lossless Scaling frame generation'), h('dd', {}, st(en.lossless)),
       h('dt', {}, 'NVIDIA DLSS'), h('dd', {}, st(en.dlss)),
       h('dt', {}, 'AMD FSR 4'), h('dd', {}, st(en.fsr4))));
-    if (en.frameGen.supported && !en.lossless.ready) {
-      box.append(rowButton('Find Lossless Scaling…', { sub: (en.lossless.detail ? en.lossless.detail + '. ' : '') + 'Copies Lossless.dll from your own Lossless Scaling (Steam) into NEXUS. NEXUS never includes it.', onClick: async () => {
-        try { en = await api('/api/enhancements/lossless', { body: {} }); toast('Lossless Scaling ready', I.check); draw(); }
-        catch (e) {
-          if (await confirmDlg('Lossless Scaling not found', e.message + '\n\nChoose Lossless.dll yourself?', 'Choose file')) {
-            try { const r = await api('/api/enhancements/lossless', { body: { pick: true } }); if (!r.cancelled) { en = r; toast('Lossless Scaling ready', I.check); draw(); } } catch (e2) { alertDlg('Could not use that file', e2.message); }
-          }
-        }
-      } }));
-    }
+    if (en.frameGen.supported) { const lb = h('div'); box.append(lb); losslessPanel(lb, async () => { en = await api('/api/enhancements'); draw(); }); }
     if (en.dlss.supported) { const db = h('div'); box.append(db); dlssPanel(db); }
   };
   draw();
+}
+
+// ---------- Lossless Scaling setup (lossless.go, docs/LOSSLESS.md)
+async function losslessPanel(box, changed) {
+  const render = (st, folder) => {
+    box.replaceChildren(h('h3', { class: 'set-h' }, 'Lossless Scaling frame generation'));
+    const pill = { ready: ['ok', 'Ready'], update: ['ok', 'Ready'], found: ['warn', 'Detected'], notfound: ['warn', 'Not found'], invalid: ['bad', 'Cannot be used'], unsupported: ['bad', 'Not supported'] }[st.state] || ['warn', st.state];
+    box.append(h('p', { class: 'lsfg-status' }, h('span', { class: 'pill ' + pill[0] }, pill[1]), ' ', st.message));
+    const f = st.found || st.installed;
+    const where = (label, x) => x ? [h('dt', {}, label), h('dd', {}, `${x.path} · ${fmtBytes(x.size)} · ${fmtDate(x.modified)}${x.machine ? ' · ' + x.machine : ''}${x.valid ? ` · ${x.shaders} shaders checked` : ''}`)] : '';
+    if (st.installed || st.found) box.append(h('dl', { class: 'kv' }, where('In NEXUS', st.installed), st.found && st.found.sha256 !== st.installed?.sha256 ? where('In Lossless Scaling', st.found) : ''));
+    const run = async (body, okMsg) => {
+      try {
+        const r = await api('/api/enhancements/lossless', { body });
+        if (r.cancelled) return;
+        if (r.error) { alertDlg('Lossless Scaling was not set up', r.error); if (r.status) render(r.status, body.path); return; }
+        render(r.status, body.path); toast(okMsg || r.status.message, I.check); changed && changed();
+      } catch (e) { alertDlg('Lossless Scaling was not set up', e.message); }
+    };
+    if (st.state === 'found') box.append(rowButton('Set up Lossless Scaling', { icon: I.check, sub: `NEXUS copies Lossless.dll from ${st.found.path} into its engine folder. Nothing else is changed.`, onClick: () => run({ path: st.found.path }, 'Lossless Scaling integration ready.') }));
+    if (st.state === 'update') box.append(rowButton('Update the copy in NEXUS', { sub: 'Optional. Replaces the Lossless.dll in NEXUS with the one from your Lossless Scaling.', onClick: () => run({ path: st.found.path, replace: true }, 'Lossless Scaling updated.') }));
+    if (st.state !== 'ready' && st.state !== 'update' && st.state !== 'unsupported' || folder) {
+      box.append(rowButton('Locate Lossless Scaling installation…', { icon: I.folder, sub: 'Choose the Lossless Scaling folder, a Steam library or your Steam folder. NEXUS finds the files in it.', onClick: async () => {
+        if (!S.app.native) { const v = await dialog({ title: 'Lossless Scaling folder', text: 'Full path of the Lossless Scaling folder or your Steam folder.', input: { max: 500 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Look there', value: true, primary: true }] }); if (!v) return; render(await api('/api/enhancements/lossless?folder=' + encodeURIComponent(v)), v); return; }
+        const r = await api('/api/enhancements/lossless', { body: { pickFolder: true, locate: true } }); if (!r.cancelled) render(r, true);
+      } }));
+    }
+    if (st.state === 'notfound' && !folder) box.append(h('p', { class: 'note' }, st.libraries?.length ? `Looked in your Steam libraries: ${st.libraries.join(', ')}.` : 'Steam was not found on this PC. If Lossless Scaling is installed elsewhere, locate it.'));
+    box.append(h('p', { class: 'note' }, 'Lossless Scaling is a paid app: you need your own copy (Steam). NEXUS only copies Lossless.dll from your installation on this PC; it never downloads, includes or shares it.'));
+  };
+  box.replaceChildren(h('p', { class: 'note' }, 'Looking for Lossless Scaling…'));
+  try { render(await api('/api/enhancements/lossless')); } catch (e) { box.replaceChildren(h('p', { class: 'note warn' }, e.message)); }
 }
 
 // ---------- Performance Monitor: the in-game bar (a Windows overlay window) and its live preview
@@ -3751,24 +3848,31 @@ const Controllers = {
     left.append(h('h3', { class: 'set-h' }, 'Controllers in NEXUS menus'));
     if (!S.pads.length) left.append(h('div', { class: 'pad-card' }, h('h4', {}, 'No controller active in the menus yet'), h('small', {}, 'Press any button on a controller to use it in NEXUS menus. Xbox, PlayStation and most USB/Bluetooth pads work. Keyboard: arrows to move, Enter = OK, Esc = Back, X = Options.')));
     for (const p of S.pads) {
-      const card = h('div', { class: 'pad-card', dataset: { pad: p.index } }, h('h4', {}, `Player ${p.index + 1}`), h('small', {}, p.id),
+      const info = PadInfo.of(p.index) || {};
+      const card = h('div', { class: 'pad-card' + (PadInfo.active()?.index === p.index ? ' active' : ''), dataset: { pad: p.index } }, h('h4', {}, info.name || 'Controller', PadInfo.active()?.index === p.index && S.pads.length > 1 ? h('span', { class: 'pill ok' }, 'In use') : ''), h('small', {}, `Slot ${p.index + 1}${info.exact === false && info.family === 'xbox' ? ' \u00b7 connected through XInput: the exact model is shown when only one Xbox controller is connected' : ''}`),
         h('div', { class: 'pad-btns' }, Array.from({ length: 17 }, (_, i) => h('span', { dataset: { b: i } }, i))),
         h('div', { class: 'axes' }, h('div', { class: 'stick', dataset: { s: 0 } }, h('i')), h('div', { class: 'stick', dataset: { s: 1 } }, h('i'))));
       left.append(card);
     }
-    const padChoices = [{ v: '', l: 'Any controller' }, ...S.pads.map(p => ({ v: p.id, l: `Player ${p.index + 1}: ${p.id.slice(0, 40)}` }))];
-    if (c.preferredPad && !S.pads.some(p => p.id === c.preferredPad)) padChoices.push({ v: c.preferredPad, l: c.preferredPad.slice(0, 40) + ' (disconnected)' });
-    left.append(rowChoice('Controller for NEXUS menus', padChoices, c.preferredPad || '', v => ctlPatch({ preferredPad: v })));
+    // the controller for NEXUS menus: kept per user (and across restarts) by the controller's
+    // identity, so it is found again when it reconnects
+    const infos = S.padInfo || [];
+    const padChoices = [{ v: '', l: 'Any controller' }, ...infos.map(i => ({ v: i.key, l: `${i.name} (slot ${i.index + 1})` }))];
+    const prefOn = infos.some(i => i.key === c.preferredPad) || S.pads.some(p => p.id === c.preferredPad);
+    if (c.preferredPad && !prefOn) padChoices.push({ v: c.preferredPad, l: `${c.preferredPadName || 'Chosen controller'} (not connected: any controller works until it is back)` });
+    const curPref = infos.find(i => i.key === c.preferredPad) ? c.preferredPad : (infos.find(i => S.pads.find(p => p.index === i.index)?.id === c.preferredPad)?.key || c.preferredPad || '');
+    left.append(rowChoice('Controller for NEXUS menus', padChoices, curPref, v => ctlPatch({ preferredPad: v, preferredPadName: infos.find(i => i.key === v)?.name || '' }),
+      infos.length > 1 ? 'Only this controller moves around NEXUS menus. In games, players are set below.' : ''));
     left.append(rowToggle('Vibration', c.vibration, v => { ctlPatch({ vibration: v }); if (v) setTimeout(() => Pad.rumble(250, .8), 100); }));
     left.append(rowRange('Repeat speed', { min: 60, max: 300, step: 20, value: c.keyRepeatMs || 140, fmt: v => v + ' ms', onChange: (v, commit) => { if (commit) ctlPatch({ keyRepeatMs: v }); } }));
 
     right.append(h('h3', { class: 'set-h' }, 'NEXUS button mapping'));
-    right.append(rowChoice('Confirm button', [{ v: 'south', l: 'Bottom (Xbox style)' }, { v: 'east', l: 'Right (Nintendo style)' }], c.confirmButton, v => {
+    right.append(rowChoice('Confirm button', [{ v: 'south', l: `Bottom (${PadInfo.label(0)})` }, { v: 'east', l: `Right (${PadInfo.label(1)})` }], c.confirmButton, v => {
       const m = { ...c.mapping }; if (v === 'east') { m.confirm = 1; m.back = 0; } else { m.confirm = 0; m.back = 1; }
       ctlPatch({ confirmButton: v, mapping: m });
     }));
     const ACT = [['confirm', 'OK / Select'], ['back', 'Back'], ['options', 'Options'], ['search', 'Search'], ['prevTab', 'Previous tab'], ['nextTab', 'Next tab'], ['menu', 'Power menu'], ['home', 'Home']];
-    for (const [a, l] of ACT) right.append(rowButton(l, { value: `Button ${c.mapping?.[a] ?? '—'}`, sub: '', onClick: () => Mapper.start(a, l) }));
+    for (const [a, l] of ACT) { const idx = c.mapping?.[a]; const r = rowButton(l, { value: idx == null ? '\u2014' : PadInfo.label(idx), sub: '', onClick: () => Mapper.start(a, l) }); if (idx != null) r.querySelector('.rv').prepend(PadInfo.glyph(idx, 'key inline')); right.append(r); }
     right.append(rowButton('Reset mapping', { onClick: () => ctlPatch({ confirmButton: 'south', mapping: { confirm: 0, back: 1, options: 3, search: 2, prevTab: 4, nextTab: 5, menu: 9, home: 16, view: 8 } }) }));
     right.append(h('h3', { class: 'set-h' }, 'In-game controls'));
     const ips = S.emulator?.inputProfiles || [];
@@ -3876,7 +3980,7 @@ const Mapper = {
     m[a] = i;
     this.listening = null; this.layer?.close();
     Pad.prev = {}; // avoid the press triggering an action
-    setTimeout(() => ctlPatch({ mapping: m }).then(() => toast(`Mapped to button ${i}`, I.check)), 150);
+    setTimeout(() => ctlPatch({ mapping: m }).then(() => toast(`Mapped to ${PadInfo.label(i)}`, I.check)), 150);
   },
   cancel() { this.listening = null; this.layer?.close(); },
 };
@@ -4299,32 +4403,101 @@ async function gameContentPanel(body, g, which, redraw) {
     }
     return;
   }
-  body.append(h('p', { class: 'note' }, 'A mod is a folder with romfs, exefs, romfs_ext or cheats inside (or .pchtxt / .ips patches), or a ZIP of one. NEXUS installs it for this game only; a mod made for another game is refused. Switched-off mods stay installed.'));
-  const addMod = async pickHow => {
-    try {
-      let r;
-      if (!S.app.native && pickHow === 'zip') { const f = await pickFile('.zip,application/zip'); if (!f) return; r = await api(`/api/games/${g.key}/mods/add?name=${encodeURIComponent(f.name)}`, { body: new Blob([f], { type: 'application/zip' }) }); }
-      else if (!S.app.native) { const v = await dialog({ title: 'Mod folder', text: 'Full path of the mod folder on this PC.', input: { value: '', max: 500 }, buttons: [{ label: 'Cancel', value: null }, { label: 'OK', value: true, primary: true }] }); if (!v) return; r = await api(`/api/games/${g.key}/mods/add`, { body: { path: v } }); }
-      else r = await api(`/api/games/${g.key}/mods/add`, { body: { pick: pickHow } });
-      if (r?.cancelled) return;
-      toast(`Installed: ${r.added.join(', ')}`, I.check); redraw();
-    } catch (e) { alertDlg('That mod was not installed', e.message); }
-  };
-  body.append(rowButton('Add a mod folder…', { icon: I.plus, onClick: () => addMod('folder') }));
-  body.append(rowButton('Add a mod from a ZIP…', { icon: I.plus, onClick: () => addMod('zip') }));
-  if (!d.mods.length) body.append(h('p', { class: 'note' }, 'No mods installed for this game.'));
-  for (const m of d.mods) {
-    body.append(rowToggle(m.name, m.enabled, async v => {
-      try { await api(`/api/games/${g.key}/mods/toggle`, { body: { name: m.name, on: v } }); } catch (e) { alertDlg('Could not change it', e.message); redraw(); }
-    }, `${(m.contents || []).join(', ') || 'files'} · ${fmtBytes(m.bytes)}${m.enabled ? '' : ' · off'}`));
-    body.append(rowButton(`Remove ${m.name}`, { danger: true, sub: 'Moves the mod to the Recycle Bin.', onClick: async () => {
-      if (await confirmDlg(`Remove ${m.name}?`, 'The mod is moved to the Recycle Bin.', 'Remove', true)) {
-        try { await api(`/api/games/${g.key}/mods/remove`, { body: { name: m.name, confirm: true } }); redraw(); } catch (e) { alertDlg('Could not remove it', e.message); }
-      }
-    } }));
-  }
-  body.append(rowButton('Open the mods folder', { sub: d.modsDir, onClick: () => api('/api/app/open-folder', { body: { which: 'enginedata' } }).catch(() => { }) }));
+  await ModsUI.build(body, g.key, redraw);
 }
+
+// ---------- Manage Mods (mods.go, docs/MODS.md): one game's installed and built-in mods
+const MOD_CAT = { fps: 'Frame rate', performance: 'Performance', resolution: 'Resolution', visual: 'Visual', gameplay: 'Gameplay', other: 'Other' };
+const ModsUI = {
+  open(key) {
+    const g = gameByKey(key); if (!g) return;
+    sheet(`Mods: ${g.title}`, (body, layer, rebuild) => { this.build(body, key, rebuild); });
+  },
+  async build(body, key, redraw) {
+    const g = gameByKey(key);
+    let d;
+    try { d = await api(`/api/games/${encodeURIComponent(key)}/mods`); } catch (e) { body.append(h('p', { class: 'note warn' }, e.message)); return; }
+    const kv = h('dl', { class: 'kv' },
+      h('dt', {}, 'Game'), h('dd', {}, `${d.title} (${d.titleId})${d.version ? ' · version ' + d.version : ''}`),
+      h('dt', {}, 'Game build'), h('dd', {}, d.buildId ? d.buildId : 'Not known yet: play the game once and NEXUS checks code mods against it'));
+    body.append(kv);
+    if (!d.canChange) body.append(h('p', { class: 'note warn' }, 'The game is running: mods can be switched, and take effect the next time it starts. Installing and removing needs the game closed.'));
+    if (d.busy) body.append(h('p', { class: 'note' }, `Working: ${d.busy}…`));
+    const addMod = async pickHow => {
+      try {
+        let r;
+        if (!S.app.native && pickHow === 'zip') { const f = await pickFile('.zip,application/zip'); if (!f) return; r = await api(`/api/games/${key}/mods/add?name=${encodeURIComponent(f.name)}`, { body: new Blob([f], { type: 'application/zip' }) }); }
+        else if (!S.app.native) { const v = await dialog({ title: 'Mod folder', text: 'Full path of the mod folder on this PC.', input: { value: '', max: 500 }, buttons: [{ label: 'Cancel', value: null }, { label: 'OK', value: true, primary: true }] }); if (!v) return; r = await api(`/api/games/${key}/mods/add`, { body: { path: v } }); }
+        else r = await api(`/api/games/${key}/mods/add`, { body: { pick: pickHow } });
+        if (r?.cancelled) return;
+        toast(`Installed: ${r.added.join(', ')}`, I.check); redraw();
+      } catch (e) { alertDlg('That mod was not installed', e.message); }
+    };
+    body.append(h('h3', { class: 'set-h' }, 'Install'));
+    body.append(rowButton('Import a mod from a ZIP…', { icon: I.plus, disabled: !d.canChange, onClick: () => addMod('zip') }));
+    body.append(rowButton('Import a mod folder…', { icon: I.folder, disabled: !d.canChange, sub: 'A folder with romfs, exefs, romfs_ext or cheats inside, or .pchtxt / .ips patches. Mods for another game are refused; the game’s own files are never changed.', onClick: () => addMod('folder') }));
+
+    body.append(h('h3', { class: 'set-h' }, `Installed mods${d.mods.length ? ` (${d.mods.filter(m => m.enabled).length} of ${d.mods.length} on)` : ''}`));
+    if (!d.mods.length) body.append(h('p', { class: 'note' }, 'No mods installed for this game.'));
+    for (const m of d.mods) body.append(this.row(key, m, redraw, d));
+
+    if (d.builtin.length) {
+      body.append(h('h3', { class: 'set-h' }, 'Built into the NEXUS engine'));
+      body.append(h('p', { class: 'note' }, 'Patches made for this game that come with the NEXUS engine. They only apply to the game build they were made for. Switch one off if you want the game’s own behaviour.'));
+      for (const m of d.builtin) body.append(this.row(key, m, redraw, d));
+    }
+    body.append(rowButton('Open the mods folder', { sub: d.modsDir, onClick: () => api('/api/app/open-folder', { body: { which: 'enginedata' } }).catch(() => { }) }));
+  },
+  // one mod: switch, status line, and its information on OK
+  row(key, m, redraw, d) {
+    const name = m.meta?.name || m.name;
+    const bits = [];
+    if (m.meta?.version) bits.push('v' + m.meta.version);
+    if (m.meta?.author && !m.builtin) bits.push('by ' + m.meta.author);
+    if (m.meta?.category) bits.push(MOD_CAT[m.meta.category] || m.meta.category);
+    if (!m.builtin) bits.push(m.files ? `${m.files} file${m.files === 1 ? '' : 's'}` : (m.contents || []).join(', '), fmtBytes(m.bytes));
+    const warn = [];
+    if (m.compat?.state === 'mismatch') warn.push('Not for this game build');
+    if (m.conflicts?.length) warn.push('Conflicts with ' + m.conflicts.join(', '));
+    if (m.missing?.length) warn.push('Needs ' + m.missing.map(x => x.replace(' (built-in)', '')).join(', '));
+    if (m.applied?.startsWith('skipped')) warn.push('Last start: ' + m.applied.replace('skipped: ', 'skipped (') + ')');
+    const sub = [bits.filter(Boolean).join(' · '), m.applied === 'applied' && m.enabled ? 'Applied at the last start' : '', warn.join(' · ')].filter(Boolean).join(' — ');
+    const wrap = h('div', { class: 'mod-row' + (warn.length ? ' warn' : '') });
+    const t = rowToggle(name, m.enabled, async v => {
+      try { await api(`/api/games/${encodeURIComponent(key)}/mods/toggle`, { body: { name: m.name, on: v } }); redraw(); }
+      catch (e) { alertDlg('Could not change it', e.message); redraw(); }
+    }, sub);
+    wrap.append(t);
+    const info = h('button', { class: 'chip', 'data-nav': true }, 'Details');
+    info.addEventListener('click', () => this.details(key, m, redraw, d));
+    wrap.append(info);
+    return wrap;
+  },
+  async details(key, m, redraw, d) {
+    const meta = m.meta || {};
+    const lines = [
+      meta.description || (m.builtin ? '' : 'This mod has no description (a nexus-mod.json in its folder can give one).'),
+      '',
+      `Status: ${m.enabled ? 'on' : 'off'}${m.applied ? ' · last start: ' + m.applied : ''}`,
+      meta.version ? `Version: ${meta.version}` : '', meta.author ? `Author: ${meta.author}` : '',
+      meta.category ? `Category: ${MOD_CAT[meta.category] || meta.category}` : '',
+      meta.gameVersion ? `For game version: ${meta.gameVersion}` : '',
+      `Compatibility: ${m.compat?.note || ''}`,
+      m.buildIds?.length ? `Game builds: ${m.buildIds.join(', ')}` : '',
+      meta.requires?.length ? `Needs: ${meta.requires.join(', ')}${m.missing?.length ? ' (not on: ' + m.missing.join(', ') + ')' : ''}` : '',
+      m.conflicts?.length ? `Conflicts: replaces the same game files as ${m.conflicts.join(', ')}. Only one of them takes effect; switch one off.` : '',
+      !m.builtin ? `Contents: ${(m.contents || []).join(', ')} · ${m.files} file(s) · ${fmtBytes(m.bytes)}` : 'Part of the NEXUS engine; it cannot be removed, only switched off.',
+      meta.website ? `Website: ${meta.website}` : '',
+    ].filter((x, i) => x !== '' || i === 1).join('\n').trim();
+    const buttons = [{ label: 'Close', value: null, primary: true }];
+    if (!m.builtin && d.canChange) buttons.unshift({ label: 'Remove', value: 'remove', danger: true });
+    const v = await dialog({ title: meta.name || m.name, pre: lines, buttons });
+    if (v === 'remove' && await confirmDlg(`Remove ${m.name}?`, 'The mod is moved to the Recycle Bin. The game’s files and your saves are not touched.', 'Remove', true)) {
+      try { await api(`/api/games/${encodeURIComponent(key)}/mods/remove`, { body: { name: m.name, confirm: true } }); toast('Mod removed', I.check); redraw(); }
+      catch (e) { alertDlg('Could not remove it', e.message); }
+    }
+  },
+};
 
 // ---------- remembered controllers (Controllers screen)
 async function controllerList(box) {
@@ -4336,8 +4509,8 @@ async function controllerList(box) {
   const chosen = d.pads.filter(p => p.player).sort((a, b) => a.player - b.player).map(p => p.key);
   const setPlayers = async keys => { try { await api('/api/controllers/players', { body: { profileId: S.profile.id, keys } }); Controllers.refreshList(); } catch (e) { alertDlg('Could not change it', e.message); } };
   for (const p of d.pads) {
-    const name = p.nickname || p.name || p.label;
-    const status = [p.label, p.connected ? 'connected' : `not connected · last seen ${fmtAgo(p.lastSeen)}`, p.serial ? `serial ${p.serial}` : ''].filter(Boolean).join(' · ');
+    const name = p.nickname || p.label || p.name; // the model (padmodels.go), not the driver's name
+    const status = [p.nickname ? p.label : '', p.connected ? 'connected' : `not connected · last seen ${fmtAgo(p.lastSeen)}`, p.serial ? `serial ${p.serial}` : ''].filter(Boolean).join(' · ');
     const card = h('div', { class: 'pad-card known' + (p.player ? ' chosen' : '') + (p.connected ? '' : ' off') },
       h('h4', {}, p.player ? h('span', { class: 'pl-badge' }, `Player ${p.player}`) : '', name), h('small', {}, status));
     const btns = h('div', { class: 'sd-gbtns' });
