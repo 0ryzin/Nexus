@@ -14,14 +14,18 @@ HZ = os.sysconf("SC_CLK_TCK")
 FAKE_PAD = """
 window.__pads = [];
 navigator.getGamepads = () => window.__pads;
-window.__connectPad = () => {
-  window.__pads = [{ index: 0, id: 'Scripted controller (STANDARD GAMEPAD)', mapping: 'standard', connected: true,
-    buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })), axes: [0, 0, 0, 0] }];
+const __pad = (index, id) => ({ index, id, mapping: 'standard', connected: true,
+  buttons: Array.from({ length: 18 }, () => ({ pressed: false, value: 0 })), axes: [0, 0, 0, 0] });
+window.__connectPad = (id = 'Scripted controller (STANDARD GAMEPAD)') => {
+  window.__pads = [__pad(0, id)];
   window.dispatchEvent(new Event('gamepadconnected'));
 };
+// more controllers: __addPad(index, id), __removePad(index)
+window.__addPad = (index, id) => { window.__pads = window.__pads.filter(p => p.index !== index).concat([__pad(index, id)]); window.dispatchEvent(new Event('gamepadconnected')); };
+window.__removePad = index => { window.__pads = window.__pads.filter(p => p.index !== index); window.dispatchEvent(new Event('gamepaddisconnected')); };
 window.__disconnectPad = () => { window.__pads = []; window.dispatchEvent(new Event('gamepaddisconnected')); };
-window.__press = async (i, ms = 90) => {
-  const b = window.__pads[0].buttons[i]; b.pressed = true; b.value = 1;
+window.__press = async (i, ms = 90, pad = 0) => {
+  const b = window.__pads.find(p => p.index === pad).buttons[i]; b.pressed = true; b.value = 1;
   await new Promise(r => setTimeout(r, ms)); b.pressed = false; b.value = 0;
   await new Promise(r => setTimeout(r, ms));
 };

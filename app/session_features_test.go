@@ -140,7 +140,7 @@ func TestControllersRemembered(t *testing.T) {
 		}
 		if p.Type == "ps5" {
 			ps = p.Key
-			if p.Label != "PlayStation controller (DualSense)" {
+			if p.Label != "PlayStation 5 Controller (DualSense)" || p.Family != "playstation" {
 				t.Fatal(p.Label)
 			}
 		}

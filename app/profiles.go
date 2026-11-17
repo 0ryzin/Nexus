@@ -42,9 +42,10 @@ type Controls struct {
 	ConfirmButton string         `json:"confirmButton"` // south | east  (east = Nintendo-style A on the right)
 	Mapping       map[string]int `json:"mapping"`       // action -> standard gamepad button index
 	Vibration     bool           `json:"vibration"`
-	PreferredPad  string         `json:"preferredPad"`    // gamepad id string, "" = any
-	EmuInput      string         `json:"emuInputProfile"` // Lichii input profile name passed with -i
-	EmuUser       int            `json:"emuUserIndex"`    // -1 = leave Lichii's current user
+	PreferredPad  string         `json:"preferredPad"`               // the menu controller's key (web/pads.js; older: gamepad id), "" = any
+	PreferredName string         `json:"preferredPadName,omitempty"` // its name, shown while it is not connected
+	EmuInput      string         `json:"emuInputProfile"`            // Lichii input profile name passed with -i
+	EmuUser       int            `json:"emuUserIndex"`               // -1 = leave Lichii's current user
 	KeyRepeatMs   int            `json:"keyRepeatMs"`
 	// GameLayout: this user's controller layout in games (see controls.go).
 	GameLayout GameLayout `json:"gameLayout"`

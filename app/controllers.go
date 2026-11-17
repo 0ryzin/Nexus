@@ -24,6 +24,7 @@ type KnownPad struct {
 	GUID      string      `json:"guid"`
 	Port      int         `json:"port"`
 	Serial    string      `json:"serial,omitempty"`
+	Path      string      `json:"path,omitempty"`
 	Name      string      `json:"name"`
 	Nickname  string      `json:"nickname,omitempty"`
 	Type      string      `json:"type"`
@@ -36,7 +37,9 @@ type KnownPad struct {
 
 type PadView struct {
 	KnownPad
-	Label     string `json:"label"`     // type in words
+	Label     string `json:"label"` // the model in words (padmodels.go)
+	Model     string `json:"model"`
+	Family    string `json:"family"`    // button prompts: xbox | playstation | nintendo | steam | generic
 	Connected bool   `json:"connected"` // connected now
 	Player    int    `json:"player"`    // 1… in the user's order, 0 = not chosen
 }
@@ -79,29 +82,7 @@ func padKey(p PadInfo) string {
 }
 
 func padLabel(typ string, vendor, product int) string {
-	if vendor == 0x28DE && (product == 0x1205 || product == 0x1206) {
-		return "Steam Deck controls"
-	}
-	switch typ {
-	case "xbox360":
-		return "Xbox 360 controller"
-	case "xboxone":
-		return "Xbox controller"
-	case "ps3":
-		return "PlayStation 3 controller"
-	case "ps4":
-		return "PlayStation controller (DualShock 4)"
-	case "ps5":
-		return "PlayStation controller (DualSense)"
-	case "switch-pro":
-		return "Nintendo Switch Pro Controller"
-	case "joycon-left", "joycon-right", "joycon-pair":
-		return "Joy-Con"
-	}
-	if vendor == 0x057E {
-		return "Nintendo-style controller"
-	}
-	return "Game controller"
+	return identifyPad(vendor, product, typ, "", "").Name
 }
 
 // Detect asks the engine for the connected controllers and remembers new ones. During a game the
@@ -135,6 +116,7 @@ func (c *ControllerStore) Detect() ([]PadInfo, error) {
 			c.app.Log.Printf("controllers: new controller %q (%s)", p.Name, p.Type)
 		}
 		kp.GUID, kp.Port, kp.Serial, kp.Name, kp.Type, kp.Vendor, kp.Product, kp.LastSeen = p.GUID, p.Port, p.Serial, p.Name, p.Type, p.Vendor, p.Product, now
+		kp.Path = p.Path
 		changed = true
 	}
 	if changed {
@@ -155,7 +137,8 @@ func (c *ControllerStore) List(profileID string) ([]PadView, string) {
 	order := c.doc.Profiles[profileID]
 	out := []PadView{}
 	for k, kp := range c.doc.Known {
-		v := PadView{KnownPad: *kp, Label: padLabel(kp.Type, kp.Vendor, kp.Product), Connected: connected[k]}
+		pm := identifyPad(kp.Vendor, kp.Product, kp.Type, kp.Path, kp.Name)
+		v := PadView{KnownPad: *kp, Label: pm.Name, Model: pm.Model, Family: pm.Family, Connected: connected[k]}
 		for i, ok := range order {
 			if ok == k {
 				v.Player = i + 1
