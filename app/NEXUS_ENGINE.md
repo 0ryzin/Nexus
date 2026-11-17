@@ -1,5 +1,26 @@
 # The NEXUS engine: investigation, architecture, status and plan
 
+## NEXUS Engine 0.8.0 (in development): Lichii build 316, patches 0018-0023
+
+Base: Lichii `build-316` (`5a66c8959`), 23 NEXUS patches. Interface version stays 2; the additions
+below are optional exports that NEXUS looks up by name (older engine builds simply lack them).
+
+| Patch | What |
+|---|---|
+| 0018 | Keeps the yuzu Emulator Project copyright notices Lichii #1544 removed (2,484 files on build 316) |
+| 0019 | Build on Lichii's `lichii_cmd` paths and `LICHII_*` CMake options |
+| 0020 | Linux commit room for the texture cache's host-memory cap (`common/linux_commit_room.h`) |
+| 0021 | Shader status for NEXUS (`video_core/nexus_shader_status.h`): `"shaders"` in the status JSON |
+| 0022 | The booted NSP/XCI is registered in the content provider (port of Lichii #1935): games get their NACP |
+| 0023 | Shader preparation: `nexus_engine_prepare_shaders`, `nexus_engine_prepare_cancel`, `nexus_engine_skip_precache`; load stage `"precache"`; `"prepare"` in the status JSON |
+
+`nexus_engine_prepare_shaders(json)`: `{"game", "dataDir", "configFile", "titleId": "<hex>",
+"contents": [...], "force": false}`; 0 started, -1 a game or preparation runs, -2 bad request. It
+runs Lichii's shader precache builder (`video_core/shader_warm`) on its own thread and never at the
+same time as a session (`nexus_engine_start` returns -1 meanwhile). Status: `"prepare": {"state":
+"running|done|current|failed|stopped", "titleId", "stage", "done", "total", "archives", "programs",
+"skipped", "seconds", "error"}`. See docs/SHADERS.md.
+
 ## 0. NEXUS Engine 0.5.0 (NEXUS 0.4.0): patch 0015 — recording key, background sessions
 
 Same upstream base as 0.4.0 (Lichii build-160, commit 2eb5f081c); the NEXUS patch series is now

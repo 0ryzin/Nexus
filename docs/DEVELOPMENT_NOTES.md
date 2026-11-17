@@ -59,3 +59,14 @@ Build 177 result (13 Nov): 20 patches apply; CI built the engine on Windows and 
 tests.exe (1375 cases), config_tests, profile_import_tests and the interface smoke test.
 Patch 0020 (`src/common/linux_commit_room.h`) is NEXUS's own: Linux commit room for the
 texture cache's host-memory cap. Parsing is header-only so its tests run on Windows CI too.
+
+## Interface tests and measurements (0.8.0)
+
+- `app/tools/uitest/controller_close.py` and `shader_progress.py` run the real interface in Chrome
+  (Playwright) against a NEXUS build with the stand-in engine; the controller is scripted through
+  the Gamepad API (standard mapping), so the interface's own input path is used. Both run in the
+  Linux CI job. Shared helpers: `app/tools/perf/nexus_harness.py`.
+- `app/tools/perf/idle_baseline.py` (idle cost per screen), `nav_soak.py` (growth over many screen
+  changes). Linux and headless Chrome: compare builds, do not quote as Windows figures.
+- Windows-only Go tests with real windows (`window_windows_test.go`) run in the Windows CI gate.
+
