@@ -20,6 +20,9 @@ scenes) and the list below.
 ## Known issues
 
 ### The Legend of Zelda: Ocarina of Time (Switch 2 edition, 0400486024DEC000) - black screen after loading a save
+- **17 Nov, 14:39 session:** the save loaded and the game ran for 8 minutes. Closing it then
+  crashed inside the NVIDIA driver through OBS's capture hook (docs/CRASHES.md). Every start had
+  rebuilt the shader precache: fixed in engine patch 0028 (docs/PERFORMANCE.md).
 - **17 Nov report: NEXUS closes completely after "Load existing save"** (black screen, then no
   NEXUS, no message). Logs read, cause most likely Lichii #2041 (ported as patch 0025), not
   confirmed; crash reporting added so a repeat leaves a dump. Details and what was and was not

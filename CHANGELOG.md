@@ -57,6 +57,34 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
 - Shader work on the loading screen and in *Prepare Shaders Now* shows the remaining time,
   estimated from measured throughput only ("Calculating remaining time..." until there is enough
   data; "Waiting: no progress" when it stalls; "Shader preparation complete." when done).
+- **Loading: the boot shader precache no longer starts over.** When it was skipped with *Start
+  now* (or the game closed during it), its work was forgotten, and Ocarina of Time rebuilt 4,671
+  programs at every start (82–513 s on the user's PC). The engine now keeps what it built, and the
+  next start builds only the rest. The new loading time is not measured yet (docs/PERFORMANCE.md).
+- **Controllers are named by model** (vendor and product IDs), not as "Xbox 360 Controller":
+  Xbox Series X|S, Xbox One/One S/Elite, DualShock 4, DualSense (Edge), Switch Pro, Joy-Con, Steam
+  Deck. Unknown ones get a generic name. Not tested with physical controllers (docs/CONTROLLERS.md).
+- **Button prompts follow the controller in use** (Xbox, PlayStation, Nintendo, generic), drawn as
+  icons that name the physical button NEXUS reads. They change when another controller is used.
+- Controllers connecting or disconnecting are announced by name. A button held while a controller
+  reconnects does nothing. The **controller for NEXUS menus** can be chosen per user and is kept
+  across restarts.
+- **Manage Mods** (a game's Options menu): import a ZIP or folder, switch on or off, remove (to the
+  Recycle Bin), details, compatibility with the game's build, conflicts, requirements, and what the
+  engine applied at the last start. Mods are layered over the game by the engine; game files are
+  never changed. The engine's built-in Ocarina of Time patches are listed for the game build
+  they are made for (docs/MODS.md).
+- **Lossless Scaling setup**: finds Steam from the registry and every Steam library (any drive),
+  finds Lossless Scaling's folder from its app manifest, and checks Lossless.dll's shaders before
+  copying. Identical files are not copied again; a working copy is replaced only when you choose.
+  *Locate Lossless Scaling installation…* accepts the app's, a library's or Steam's folder
+  (docs/LOSSLESS.md).
+- The game menu is grouped (Play; Game: settings, mods, save data, information; Shaders; More…).
+- Profile pickers: the selected profile keeps its accent ring; hovering another one only lightens
+  it; keyboard and controller focus is a separate outline.
+- NEXUS tries WebView2 again when it fails to start (it ended NEXUS once right after a crash). The
+  engine's play-time and TAS folders are created (the engine logged errors without them).
+- CI also publishes the engine's link map, so crash reports can be read.
 
 ## 0.6.0 — test build (pre-release)
 

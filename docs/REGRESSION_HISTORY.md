@@ -140,6 +140,27 @@ Newest first.
 
 ## 0.7.0 (in development)
 
+### Ocarina of Time: about 100 s (once 10 min) before the title screen at every start (17 Nov)
+- **Problem:** every start of Ocarina of Time built the shader precache again, until *Start now*.
+- **Diagnosis:** the user's engine logs (two sessions). "Shader precache: 4671 of 4794 compute
+  programs to build" both times, although 4,141 had been built the first time. The `.done`
+  marker was written only when the precache finished; there was no partial record.
+- **Files:** engine `video_core/renderer_vulkan/vk_pipeline_cache.cpp` (PrecacheShaders),
+  `video_core/shader_warm/shader_warm_builder.*` (patch 0028).
+- **Fix:** `<precache>.partial` with the built programs' key hashes, under the marker's stamp.
+- **Tests:** engine `ShaderPrecache: progress of an unfinished precache is kept for the same
+  stamp`. **Loading time on the user's PC not measured yet.**
+
+### Controllers shown as "Xbox 360 Controller" (17 Nov)
+- **Problem:** an Xbox Series X controller was shown as an Xbox 360 controller in NEXUS menus.
+- **Diagnosis:** the menus used the browser Gamepad API's name, which is "Xbox 360 Controller"
+  for every XInput device. The engine (SDL) saw `045E:0B12` (`controllers.json` on the PC).
+- **Files:** `app/padmodels.go`, `app/controllers.go`, `app/web/pads.js`, `app/web/app.js`.
+- **Fix:** names from vendor and product IDs. Browser pads matched to the engine's list; prompts
+  per controller family.
+- **Tests:** `padmodels_test.go`, `tools/uitest/pads_test.js`, `controller_prompts.py`.
+  **Not tested with physical controllers.**
+
 ### Ocarina of Time: NEXUS closed without a message after "Load existing save" (17 Nov)
 - **Problem:** menu fine (about 150 FPS); loading a save gave a black screen, then the whole of
   NEXUS closed with no dialog, no report and no dump.
