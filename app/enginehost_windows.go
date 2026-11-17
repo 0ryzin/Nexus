@@ -22,6 +22,7 @@ type dllEngine struct {
 	reveal, controllers                                              *syscall.Proc // engine 0.4 (optional)
 	background, screenshot, window                                   *syscall.Proc // engine 0.5 (optional)
 	amiibo                                                           *syscall.Proc // engine 0.6 (optional)
+	prepare, prepareCancel, skipPrecache                             *syscall.Proc // engine 0.8 (optional)
 }
 
 func loadEngineHost(dir string) (EngineHost, error) {
@@ -51,6 +52,9 @@ func loadEngineHost(dir string) (EngineHost, error) {
 	e.screenshot, _ = d.FindProc("nexus_engine_screenshot")
 	e.window, _ = d.FindProc("nexus_engine_window")
 	e.amiibo, _ = d.FindProc("nexus_engine_amiibo")
+	e.prepare, _ = d.FindProc("nexus_engine_prepare_shaders")
+	e.prepareCancel, _ = d.FindProc("nexus_engine_prepare_cancel")
+	e.skipPrecache, _ = d.FindProc("nexus_engine_skip_precache")
 	if v, _, _ := e.apiVersion.Call(); int32(v) != engineAPIVersion {
 		return nil, fmt.Errorf("this engine build uses interface version %d; NEXUS needs %d", int32(v), engineAPIVersion)
 	}
@@ -148,6 +152,32 @@ func (e *dllEngine) Window() uintptr {
 	}
 	h, _, _ := e.window.Call()
 	return h
+}
+
+func (e *dllEngine) PrepareShaders(req PrepRequest) int {
+	if e.prepare == nil {
+		return -3
+	}
+	b, _ := json.Marshal(req)
+	p, err := syscall.BytePtrFromString(string(b))
+	if err != nil {
+		return -2
+	}
+	r, _, _ := e.prepare.Call(uintptr(unsafe.Pointer(p)))
+	runtime.KeepAlive(p)
+	return int(int32(r))
+}
+
+func (e *dllEngine) CancelPrepare() {
+	if e.prepareCancel != nil {
+		_, _, _ = e.prepareCancel.Call()
+	}
+}
+
+func (e *dllEngine) SkipPrecache() {
+	if e.skipPrecache != nil {
+		_, _, _ = e.skipPrecache.Call()
+	}
 }
 
 func (e *dllEngine) Amiibo(path string) int {

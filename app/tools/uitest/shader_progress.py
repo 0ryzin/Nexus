@@ -23,6 +23,23 @@ async def main():
         pg = await b.new_page(viewport={"width": 1280, "height": 760})
         await enter(pg)
         await pg.evaluate("launchGame(S.games.find(isPlayable).key, true)")
+        # 1. shader preparation before the engine starts, then the boot precache with "Start now"
+        prep_seen, skip_seen = [], False
+        for _ in range(80):
+            t, skip = await pg.evaluate("[document.querySelector('.lx-status')?.textContent || '', !!document.querySelector('.lx-skip:not([hidden])')]")
+            label = t.split(':')[0].rstrip('…')
+            if label and (not prep_seen or prep_seen[-1] != label):
+                prep_seen.append(label)
+            skip_seen |= skip and label.startswith("Compiling")
+            if SHOTS and label.startswith("Compiling") and not os.path.exists(os.path.join(SHOTS, "loading-precache.png")):
+                await pg.screenshot(path=os.path.join(SHOTS, "loading-precache.png"))
+            if label.startswith("Building shaders"):
+                break
+            await pg.wait_for_timeout(100)
+        wanted = ["Finding shaders in the game’s files", "Converting the shader programs", "Compiling the game’s shaders"]
+        in_order = all(w in prep_seen for w in wanted) and [prep_seen.index(w) for w in wanted] == sorted(prep_seen.index(w) for w in wanted)
+        print(f"{'PASS' if in_order and skip_seen else 'FAIL'} preparation stages {prep_seen}; Start now shown during compiling: {skip_seen}")
+        ok &= in_order and skip_seen
         await pg.wait_for_function("document.querySelector('.lx-shaders')?.textContent.includes('ready from the shader cache')", timeout=20000)
         seen = []
         for _ in range(8):
@@ -32,7 +49,7 @@ async def main():
             await pg.wait_for_timeout(350)
         nums = [int(re.sub(r"\D", "", t.split("ready")[0]) or 0) for _, t in seen if t]
         grew = nums == sorted(nums) and nums[-1] > nums[0]
-        measured = any(re.search(r"Preparing shaders: \d+ of \d+", s or "") for s, _ in seen)
+        measured = any(re.search(r"Building shaders from earlier sessions: [\d,]+ of [\d,]+", s or "") for s, _ in seen)
         print(f"{'PASS' if grew and measured else 'FAIL'} loading screen: bar {[s for s, _ in seen][:2]}, shader line {seen[-1][1]!r}")
         ok &= grew and measured
         await pg.wait_for_function("S.playing && S.playing.phase === 'playing'", timeout=20000)

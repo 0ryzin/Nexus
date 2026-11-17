@@ -8,7 +8,8 @@ NEXUS Engine (a GPL-3.0 fork of Lichii build 316, itself based on Eden/yuzu; bui
 
 1. Read `docs/DEVELOPMENT_NOTES.md` (how the pieces fit, where things live, how to build and test).
 2. Read `docs/REGRESSION_HISTORY.md` for earlier fixes in the same area.
-3. For a game problem, read `docs/COMPATIBILITY.md`; for speed, `docs/PERFORMANCE.md`.
+3. For a game problem, read `docs/COMPATIBILITY.md`; for speed, `docs/PERFORMANCE.md`; for
+   shaders and their caches, `docs/SHADERS.md`.
 4. For engine questions, `app/NEXUS_ENGINE.md` (ABI, patches) and `docs/research/` (what the
    reference projects Lichii and Fritchii changed and why).
 5. Investigate (logs, source, history) before changing code. Do not guess.

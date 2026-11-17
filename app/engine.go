@@ -40,6 +40,8 @@ type RunState struct {
 	// LoadDone/LoadTotal: measured progress of the current stage (shaders), when the engine has it
 	LoadDone  uint64 `json:"loadDone,omitempty"`
 	LoadTotal uint64 `json:"loadTotal,omitempty"`
+	// Prep: while Stage is "prepare", the shader preparation's own stage and counts
+	Prep *PrepStatus `json:"prep,omitempty"`
 	// Shaders: while starting, the engine's shader status (cleared when the game plays; the
 	// performance bar samples it from then on, so state events do not follow every build)
 	Shaders *ShaderStatus `json:"shaders,omitempty"`
@@ -56,8 +58,9 @@ type RunState struct {
 const engineID = "nexus"
 
 type Emulator struct {
-	app *App
-	mu  sync.Mutex
+	app  *App
+	mu   sync.Mutex
+	prep shaderPrep // shader preparation (shaderprep.go)
 
 	state   RunState
 	host    EngineHost
@@ -240,6 +243,9 @@ func (e *Emulator) writeSessionConfig(g *Game, pr *Profile) (string, error) {
 			ini.Set("Controls", "player_0_profile_name", input)
 		}
 	}
+	// shader preparation (shaderprep.go): with it on, the engine builds the compute programs found
+	// in the game's files before the game starts (precache_shaders: 0 Off, 2 Always)
+	ini.SetSetting("Renderer", "precache_shaders", map[bool]string{true: "2", false: "0"}[s.Emulator.PrepareShaders])
 	// "Match my display": the Switch 2 frame-rate limit follows the refresh rate of the display
 	match := s.Engine["graphics.fps_match_display"]
 	if g != nil {
@@ -461,12 +467,27 @@ func (e *Emulator) Launch(g *Game, profileID string) error {
 		e.app.Saves.Tidy(profileID)
 		req.SaveFolders = e.app.Saves.SaveFolders(profileID)
 	}
-	if err := host.Start(req); err != nil {
-		return &LaunchError{Code: "start-failed", Message: "The NEXUS engine could not start the game.", Detail: err.Error()}
-	}
 	st := RunState{Running: true, Phase: "starting", Stage: "preparing", Started: nowUnix(), ProfileID: profileID, Mode: "game",
 		GameKey: g.Key, Title: g.Title, Emulator: engineID, EmuName: "NEXUS", Volume: vol}
-	e.app.Profiles.RecordLaunch(profileID, g.Key, g.Title)
+	// shader preparation first (shaderprep.go), when on and the engine build can
+	if sp, ok := host.(ShaderPreparer); ok && s.Emulator.PrepareShaders && g.TitleID != "" && e.PreparingKey() == "" {
+		st.Stage = "prepare"
+		e.setState(st)
+		go e.prepareThenStart(host, sp, g, req, st)
+		return nil
+	}
+	if err := e.startEngine(host, req, st); err != nil {
+		return &LaunchError{Code: "start-failed", Message: "The NEXUS engine could not start the game.", Detail: err.Error()}
+	}
+	return nil
+}
+
+// startEngine starts the session in the engine and follows it.
+func (e *Emulator) startEngine(host EngineHost, req EngineRequest, st RunState) error {
+	if err := host.Start(req); err != nil {
+		return err
+	}
+	e.app.Profiles.RecordLaunch(st.ProfileID, st.GameKey, st.Title)
 	e.setState(st)
 	go e.monitor(host, st)
 	return nil
@@ -517,8 +538,8 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 		}
 		if st.Phase == "starting" {
 			stage := map[string]string{"starting": "loading", "loading": "loading", "running": "starting"}[es.State]
-			if es.LoadStage == "shaders" {
-				stage = "shaders"
+			if es.LoadStage == "shaders" || es.LoadStage == "precache" {
+				stage = es.LoadStage
 			}
 			if stage != "" && (stage != st.Stage || es.LoadDone != st.LoadDone || es.LoadTotal != st.LoadTotal || shaderStatusChanged(st.Shaders, es.Shaders)) {
 				st.Stage, st.LoadDone, st.LoadTotal, st.Shaders = stage, es.LoadDone, es.LoadTotal, es.Shaders
@@ -712,6 +733,9 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 func (e *Emulator) Stop(force bool) error {
 	if !e.State().Running {
 		return errors.New("Nothing is running.")
+	}
+	if st := e.State(); st.Stage == "prepare" && e.cancelPrep() {
+		return nil // the launch ends when the preparation has stopped (prepareThenStart)
 	}
 	h, err := e.Host()
 	if err != nil {

@@ -1704,6 +1704,22 @@ $('#lib-refresh').addEventListener('click', () => rescan());
 async function rescan() { try { await api('/api/library/scan', { body: {} }); toast('Scanning game folders…', I.grid); } catch (e) { toast(e.message, I.warn); } }
 
 // ---------- game details sheet
+// ---------- shader preparation on Home ("shaders.prepare" events, shaderprep.go)
+const PREP_WORDS = { 'Reading game files': 'reading the game’s files', 'Extracting shaders': 'finding shaders', Converting: 'converting', Writing: 'saving' };
+function prepLabel(p) {
+  const w = PREP_WORDS[p?.stage] || 'starting';
+  return p?.total ? `${w} ${p.done} of ${p.total}` : w;
+}
+function onShaderPrep(p) {
+  if (p.state === 'running') { S.prep = { key: p.gameKey, stage: p.stage, done: p.done, total: p.total }; return; }
+  S.prep = null;
+  const n = v => Number(v || 0).toLocaleString();
+  if (p.state === 'done') toast(`${p.title}: ${n(p.programs)} shader programs found and prepared. They are compiled the next time the game starts.`, I.check, 7000);
+  else if (p.state === 'current') toast(`${p.title}: shaders are already prepared.`, I.check);
+  else if (p.state === 'stopped') toast(`${p.title}: shader preparation stopped.`, I.chip);
+  else if (p.state === 'failed') toast(`${p.title}: shaders could not be prepared. ${p.error || ''}`, I.warn, 8000);
+}
+
 // ---------- game options menu
 function gameMenu(key) {
   const g = gameByKey(key); if (!g) return;
@@ -1714,6 +1730,7 @@ function gameMenu(key) {
     running ? ['close', 'Close Game', I.power] : null,
     isPlayable(g) && !g.hidden && !running ? ['play', 'Play', I.play] : null,
     isPlayable(g) ? ['config', 'Configure Game Settings', I.gear] : null,
+    isPlayable(g) && !S.playing?.running ? ['shaders', S.prep?.key === key ? `Preparing Shaders… (${prepLabel(S.prep)})` : 'Prepare Shaders Now', I.chip] : null,
     ['art', 'Edit Game Artwork', I.palette],
     ['info', 'Game Information', I.info],
     ['open', 'Open Game Location', I.folder],
@@ -1731,6 +1748,12 @@ function gameMenu(key) {
       case 'resume': resumeGame(); break;
       case 'close': closeRunningGame(); break;
       case 'config': gameConfig(key); break;
+      case 'shaders':
+        if (S.prep?.key === key) { api('/api/shaders/prepare/cancel', { body: {} }).catch(() => { }); break; }
+        api(`/api/games/${encodeURIComponent(key)}/prepare-shaders`, { body: {} })
+          .then(() => toast(`Preparing shaders for ${g.title} in the background`, I.chip))
+          .catch(e => toast(e.message, I.warn));
+        break;
       case 'art': artEditor(key); break;
       case 'info': gameInfo(key); break;
       case 'open': api(`/api/games/${key}/reveal`, { body: {} }).catch(e => toast(e.message, I.warn)); break;
@@ -2228,7 +2251,11 @@ function launchArt(g, cls) {
 // engine's real progress steps, then the game. One design for every game for now.
 const Launch = {
   busy: false, el: null, key: null, t0: 0,
-  STAGES: { preparing: ['Preparing your session', 0], loading: ['Loading the game', 1], shaders: ['Preparing shaders', 1], starting: ['Starting', 2] },
+  // stages: prepare = finding and converting the game's shaders in its files (before the engine
+  // starts), precache = compiling them (engine boot), shaders = building the pipelines earlier
+  // sessions recorded. Each is a different kind of work, so each has its own words.
+  STAGES: { prepare: ['Preparing shaders', 0], preparing: ['Preparing your session', 0], loading: ['Loading the game', 1], precache: ['Compiling the game’s shaders', 1], shaders: ['Building shaders from earlier sessions', 1], starting: ['Starting', 2] },
+  PREP: { 'Reading game files': 'Reading the game’s files', 'Extracting shaders': 'Finding shaders in the game’s files', Converting: 'Converting the shader programs', Writing: 'Saving the prepared shaders' },
   // the selected icon on Home: a press, a bright pulse and a zoom toward the viewer, in place
   tileAnimation(key) {
     const tile = S.screen === 'home' && S.anim !== 'off' ? $$('#tiles .tile').find(t => t._game?.key === key) : null;
@@ -2253,7 +2280,10 @@ const Launch = {
       h('div', { class: 'lx-brand' }, h('span', { class: 'lx-mark' }), 'NEXUS'));
     const cancel = h('button', { class: 'btn lx-cancel', 'data-nav': true }, 'Cancel');
     cancel.addEventListener('click', () => this.cancel());
-    el.append(cancel);
+    // while the game's shaders compile before it starts: start now, the rest compiles when used
+    const skip = h('button', { class: 'btn lx-skip', 'data-nav': true, hidden: true, title: 'The shaders not compiled yet are compiled when the game first uses them (they may stutter once). The next start finishes them.' }, 'Start now');
+    skip.addEventListener('click', () => { skip.disabled = true; api('/api/emulator/skip-precache', { body: {} }).catch(() => { }); });
+    el.append(skip, cancel);
     document.body.append(el); this.el = el;
     // the loading screen takes the controls while it is up (nothing behind it reacts)
     // close: goHome closes every dialog layer, the loading screen included (it had none: goHome threw)
@@ -2266,9 +2296,12 @@ const Launch = {
   },
   update(st) {
     const el = this.el; if (!el || !st) return;
-    const [label, idx] = this.STAGES[st.stage] || this.STAGES.preparing;
-    // a determinate bar only when the engine measures progress (the shader cache); never invented
-    const measured = st.stage === 'shaders' && st.loadTotal > 0;
+    let [label, idx] = this.STAGES[st.stage] || this.STAGES.preparing;
+    if (st.stage === 'prepare' && st.prep?.stage) label = this.PREP[st.prep.stage] || st.prep.stage;
+    // a determinate bar only when the engine measures progress (a count with a known total);
+    // never invented: reading the game's files has no total, so it shows no bar
+    const measured = (st.stage === 'shaders' || st.stage === 'precache' || st.stage === 'prepare') && st.loadTotal > 0;
+    const skip = $('.lx-skip', el); if (skip) skip.hidden = st.stage !== 'precache';
     $('.lx-status', el).textContent = measured ? `${label}: ${(st.loadDone || 0).toLocaleString()} of ${st.loadTotal.toLocaleString()}` : label + '…';
     const bar = $('.lx-bar', el); bar.classList.toggle('measured', measured);
     if (measured) bar.firstChild.style.width = `${Math.min(100, Math.round((st.loadDone || 0) / st.loadTotal * 100))}%`; else bar.firstChild.style.width = '';
@@ -3170,6 +3203,8 @@ const Panels = {
     } }));
     p.append(rowToggle('Controller Share / Capture button takes screenshots', es.captureButton !== false, v => saveSettings({ emulator: { captureButton: v } }), 'The Xbox Share button, the Switch Pro Controller\u2019s Capture button or a similar button.'));
     p.append(rowToggle('Fade into the game', es.fadeIn !== false, v => saveSettings({ emulator: { fadeIn: v } }), 'The loading screen fades out and the game fades in. Turn off if the game window stays dark or flickers with your graphics driver.'));
+    p.append(rowToggle('Prepare shaders before playing', es.prepareShaders !== false, v => saveSettings({ emulator: { prepareShaders: v } }),
+      'Before a game starts, NEXUS finds the shader programs in the game’s own files and compiles them, so they do not stutter the first time they appear. The first start of a game takes longer (once per game, and again after a graphics driver update); later starts are quick. Graphics effects the game has never shown on any of your devices are still compiled the first time they appear, and then kept.'));
     p.append(rowToggle('Start games in full screen', es.fullscreen, v => saveSettings({ emulator: { fullscreen: v } }), 'The game window belongs to NEXUS; when the game ends you are back on the NEXUS home screen.'));
     p.append(rowToggle('Quit shortcut: hold View + Menu', es.quitCombo, v => saveSettings({ emulator: { quitCombo: v } }), 'Hold Back + Start for 2 seconds on an XInput controller to close the game.'));
     p.append(rowButton('Save Data…', { sub: 'Every user has their own saves.', onClick: () => selectCat('savedata', true) }));
@@ -3833,6 +3868,7 @@ function connectEvents() {
         break;
       case 'launch.reveal': if (Launch.el) Launch.enter(); break;
       case 'launch.warning': toast(m.data.message, I.warn, 9000); break;
+      case 'shaders.prepare': onShaderPrep(m.data); break;
       case 'media.added':
         toast(`Screenshot saved${m.data.title ? ' · ' + m.data.title : ''}`, I.media, 2200);
         if (S.screen === 'media') { await Media.load(); Media.render(); }

@@ -1,7 +1,7 @@
 From 89f6586f32a6355efc4848548682f86fd8cbbae4 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 11 Nov 2026 00:11:29 +0000
-Subject: [PATCH 05/22] nexus_engine: interface 2 - suspend/resume for NEXUS
+Subject: [PATCH 05/23] nexus_engine: interface 2 - suspend/resume for NEXUS
  Home; package in the NEXUS Engine folder layout with app-local VC++ runtime
  and licences
 

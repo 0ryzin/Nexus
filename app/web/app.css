@@ -828,3 +828,7 @@ input.am-filter:focus,input.am-filter.focus{border-color:var(--accent)}
 
 /* a game is in front of NEXUS: nothing animates behind it (syncGameInFront) */
 body.game-front *, body.game-front *::before, body.game-front *::after { animation-play-state: paused !important; }
+
+/* loading screen: start the game before its shaders have all compiled */
+.lx-skip{position:absolute;right:calc(var(--u)*3 + 9em);bottom:calc(var(--u)*2)}
+.lx-skip[hidden]{display:none}

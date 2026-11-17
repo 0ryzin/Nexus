@@ -87,6 +87,9 @@ type EmulatorSettings struct {
 	ScreenshotKey string `json:"screenshotKey"` // default Alt+F12 (F12 records, Settings › Recording)
 	CaptureButton bool   `json:"captureButton"`
 	FadeIn        bool   `json:"fadeIn"`
+	// PrepareShaders: before a game starts, find its shaders in its files and compile them
+	// (shaderprep.go). On by default.
+	PrepareShaders bool `json:"prepareShaders"`
 	// HomeAction: what NEXUS Home does to the game: "background" keeps it running (muted, no
 	// input) behind NEXUS, "pause" pauses it.
 	HomeAction string `json:"homeAction"`
@@ -127,7 +130,7 @@ func DefaultSettings() GlobalSettings {
 	s.Engine = map[string]string{"graphics.gpu": gpuAuto}
 	s.Updates = UpdateSettings{AutoCheck: true, Repo: defaultReleaseRepo}
 	s.Emulator = EmulatorSettings{Fullscreen: true, QuitCombo: true, ManageSaves: true, WhoPlays: "several", HomeKey: "Shift+H", HomeButton: true,
-		FullscreenKey: "F11", ScreenshotKey: "Alt+F12", CaptureButton: true, FadeIn: true, HomeAction: "background", Overrides: map[string]string{}}
+		FullscreenKey: "F11", ScreenshotKey: "Alt+F12", CaptureButton: true, FadeIn: true, PrepareShaders: true, HomeAction: "background", Overrides: map[string]string{}}
 	return s
 }
 

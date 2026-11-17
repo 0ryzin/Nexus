@@ -29,6 +29,12 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
 - Controller: close a game kept on Home from its Options menu, the Power menu or the Home banner.
   Fixed Home trapping the controller when pressed during the loading screen's fade, and the loading
   screen waiting forever when a game started quickly.
+- Shaders are prepared before a game plays (Settings › Game sessions, on by default): NEXUS finds
+  the shader programs in the game's own files, and the engine compiles them before the game starts
+  (once per game and driver; *Start now* skips). A game's Options menu has *Prepare Shaders Now*.
+  See docs/SHADERS.md for what is and is not prepared in advance. Not measured with a game yet.
+- Engine on Lichii build 316 (283 upstream changes, several for Ocarina of Time); games from NSP/XCI
+  files now get their control data (NACP).
 - Shaders: the loading screen and the performance bar show pipelines ready from the cache, builds
   compiling now, background preparation and new ones this session.
 - NEXUS Account: keeps synchronising with a game kept on Home, after sleep and when NEXUS comes to

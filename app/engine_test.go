@@ -53,6 +53,8 @@ func newTestApp(t *testing.T, nlib string) (*App, string) {
 		t.Fatal(err)
 	}
 	app.Settings.Update(func(s *GlobalSettings) { s.Library.NlibURL = nlib })
+	// tests start the engine straight away; shaders_prep_test.go turns preparation on itself
+	app.Settings.Update(func(g *GlobalSettings) { g.Emulator.PrepareShaders = false })
 	return app, root
 }
 

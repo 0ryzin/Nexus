@@ -518,6 +518,28 @@ func (s *Server) routes() {
 		writeJSON(w, true)
 	})
 	// the loading screen has faded out: show the game window (engine 0.4)
+	// shader preparation (shaderprep.go)
+	m.HandleFunc("POST /api/games/{key}/prepare-shaders", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Force bool }
+		_ = readBody(r, &b)
+		g, ok := a.Library.Get(r.PathValue("key"))
+		if !ok {
+			writeErr(w, 404, errors.New("No such game."))
+			return
+		}
+		if err := a.Emu.PrepareShadersNow(&g, b.Force); err != nil {
+			writeErr(w, 409, err)
+			return
+		}
+		writeJSON(w, true)
+	})
+	m.HandleFunc("POST /api/shaders/prepare/cancel", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, a.Emu.cancelPrep())
+	})
+	m.HandleFunc("POST /api/emulator/skip-precache", func(w http.ResponseWriter, r *http.Request) {
+		a.Emu.SkipPrecache()
+		writeJSON(w, true)
+	})
 	m.HandleFunc("POST /api/emulator/reveal", func(w http.ResponseWriter, r *http.Request) {
 		if st := a.Emu.State(); st.Running {
 			if h, err := a.Emu.Host(); err == nil {

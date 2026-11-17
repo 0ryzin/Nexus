@@ -58,6 +58,7 @@ type dlEngine struct {
 	// controls, app lifecycle and memory pressure
 	setSurface, touch, lifecycle, trimMemory unsafe.Pointer
 	amiibo                                   unsafe.Pointer // engine 0.6 (optional)
+	prepare, prepareCancel, skipPrecache     unsafe.Pointer // engine 0.8 (optional)
 }
 
 // openDLEngine loads the engine library at path and checks its interface version.
@@ -93,6 +94,9 @@ func openDLEngine(path string) (*dlEngine, error) {
 	e.setSurface, e.touch = sym("nexus_engine_set_surface"), sym("nexus_engine_touch")
 	e.lifecycle, e.trimMemory = sym("nexus_engine_lifecycle"), sym("nexus_engine_trim_memory")
 	e.amiibo = sym("nexus_engine_amiibo")
+	e.prepare = sym("nexus_engine_prepare_shaders")
+	e.prepareCancel = sym("nexus_engine_prepare_cancel")
+	e.skipPrecache = sym("nexus_engine_skip_precache")
 	if v := int32(C.nx_call_i32_void(e.apiVersion)); v != engineAPIVersion {
 		return nil, fmt.Errorf("this engine build uses interface version %d; NEXUS needs %d", v, engineAPIVersion)
 	}
@@ -187,6 +191,28 @@ func (e *dlEngine) Controllers() ([]PadInfo, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+func (e *dlEngine) PrepareShaders(req PrepRequest) int {
+	if e.prepare == nil {
+		return -3
+	}
+	b, _ := json.Marshal(req)
+	cs := C.CString(string(b))
+	defer C.free(unsafe.Pointer(cs))
+	return int(C.nx_call_i32_str(e.prepare, cs))
+}
+
+func (e *dlEngine) CancelPrepare() {
+	if e.prepareCancel != nil {
+		C.nx_call_void_void(e.prepareCancel)
+	}
+}
+
+func (e *dlEngine) SkipPrecache() {
+	if e.skipPrecache != nil {
+		C.nx_call_void_void(e.skipPrecache)
+	}
 }
 
 func (e *dlEngine) Amiibo(path string) int {

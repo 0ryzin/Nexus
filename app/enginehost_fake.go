@@ -28,6 +28,11 @@ type fakeEngine struct {
 	samples []int16 // last audio buffer "played"
 	reveal  bool
 	readyAt time.Time
+	// shader preparation (ShaderPreparer): titles whose precache file was "built", and a skip
+	prepared  map[string]bool
+	precached map[string]bool // boot precache finished (the real engine's marker)
+	prepStop  chan bool
+	skip      bool
 }
 
 func newFakeEngine() *fakeEngine { return &fakeEngine{st: EngineStatus{State: "idle"}, volume: 100} }
@@ -50,7 +55,8 @@ func (f *fakeEngine) Start(req EngineRequest) error {
 		return errors.New("the engine refused the launch request")
 	}
 	f.req, f.volume = req, req.Volume
-	f.st = EngineStatus{State: "starting", Volume: req.Volume}
+	f.st = EngineStatus{State: "starting", Volume: req.Volume, Prepare: f.st.Prepare}
+	f.skip = false
 	fakeLast = f
 	f.stop = make(chan bool, 1)
 	go f.run(req)
@@ -70,6 +76,34 @@ func (f *fakeEngine) run(req EngineRequest) {
 			*s = EngineStatus{State: "error", Code: "config", Message: "session configuration missing"}
 		})
 		return
+	}
+	// like the real engine: the boot precache before the game starts, when the session config asks
+	// for it (precache_shaders = 2) and the title was prepared; "Start now" skips the rest
+	if cfg, _ := os.ReadFile(req.ConfigFile); bytes.Contains(cfg, []byte("precache_shaders=2")) && f.wasPrepared(req) && !f.wasPrecached(req) {
+		const total = 120
+		finished := true
+		for i := uint64(0); i <= total; i += 8 {
+			f.mu.Lock()
+			skip := f.skip
+			f.mu.Unlock()
+			if skip {
+				finished = false
+				break
+			}
+			f.set(func(s *EngineStatus) {
+				s.State, s.LoadStage, s.LoadDone, s.LoadTotal = "starting", "precache", i, total
+			})
+			time.Sleep(60 * time.Millisecond)
+		}
+		if finished {
+			f.mu.Lock()
+			if f.precached == nil {
+				f.precached = map[string]bool{}
+			}
+			f.precached[req.Game] = true
+			f.mu.Unlock()
+		}
+		f.set(func(s *EngineStatus) { s.LoadStage, s.LoadDone, s.LoadTotal = "", 0, 0 })
 	}
 	// development: a loading phase (NEXUS_FAKE_LOAD) and an engine exception with upstream wording
 	if d, err := time.ParseDuration(os.Getenv("NEXUS_FAKE_LOAD")); err == nil && d > 0 {
@@ -386,4 +420,87 @@ func fakeShaders(cached, compiled, building, background uint64) *ShaderStatus {
 	q, r, bq := building+background, min(building, 2), background
 	q -= min(q, r)
 	return &ShaderStatus{FromCache: cached, Compiled: compiled, Queued: &q, Running: &r, BackgroundQueued: &bq, Failed: &zero}
+}
+
+// ---- ShaderPreparer: the real engine's stages and states, on a short timer
+
+func (f *fakeEngine) wasPrecached(req EngineRequest) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.precached[req.Game]
+}
+
+func (f *fakeEngine) wasPrepared(req EngineRequest) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.prepared[req.Game]
+}
+
+func (f *fakeEngine) PrepareShaders(req PrepRequest) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.st.State == "starting" || f.st.State == "running" || f.st.State == "stopping" ||
+		f.st.Prepare != nil && f.st.Prepare.State == "running" {
+		return -1
+	}
+	if req.Game == "" || req.TitleID == "" || req.TitleID == "0" || req.DataDir == "" || req.ConfigFile == "" {
+		return -2
+	}
+	if f.prepared == nil {
+		f.prepared = map[string]bool{}
+	}
+	if f.prepared[req.Game] && !req.Force {
+		f.st.Prepare = &PrepStatus{State: "current", TitleID: req.TitleID, Programs: 96}
+		return 0
+	}
+	f.st.Prepare = &PrepStatus{State: "running", TitleID: req.TitleID}
+	f.prepStop = make(chan bool, 1)
+	stop := f.prepStop
+	go func() {
+		begin := time.Now()
+		stages := []struct {
+			name  string
+			total uint64
+		}{{"Reading game files", 0}, {"Extracting shaders", 12}, {"Converting", 96}, {"Writing", 1}}
+		for _, st := range stages {
+			steps := max(st.total, 1)
+			for i := uint64(0); i <= steps; i += max(steps/6, 1) {
+				select {
+				case <-stop:
+					f.set(func(s *EngineStatus) { s.Prepare.State, s.Prepare.Stage = "stopped", "" })
+					return
+				default:
+				}
+				f.set(func(s *EngineStatus) {
+					s.Prepare.Stage, s.Prepare.Done, s.Prepare.Total = st.name, min(i, st.total), st.total
+				})
+				time.Sleep(time.Duration(400/(steps/max(steps/6, 1)+1)) * time.Millisecond) // each stage ~0.4 s (real ones take seconds)
+			}
+		}
+		f.mu.Lock()
+		f.prepared[req.Game] = true
+		delete(f.precached, req.Game) // a new precache file: its marker no longer matches
+		f.mu.Unlock()
+		f.set(func(s *EngineStatus) {
+			s.Prepare = &PrepStatus{State: "done", TitleID: req.TitleID, Archives: 12, Programs: 96, Skipped: 1, Seconds: time.Since(begin).Seconds()}
+		})
+	}()
+	return 0
+}
+
+func (f *fakeEngine) CancelPrepare() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.prepStop != nil {
+		select {
+		case f.prepStop <- true:
+		default:
+		}
+	}
+}
+
+func (f *fakeEngine) SkipPrecache() {
+	f.mu.Lock()
+	f.skip = true
+	f.mu.Unlock()
 }

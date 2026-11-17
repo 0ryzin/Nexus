@@ -30,6 +30,41 @@ type EngineHost interface {
 	Amiibo(path string) int
 }
 
+// ShaderPreparer is engine 0.8's shader preparation (optional: older engine builds lack it).
+// PrepareShaders builds a game's shader precache file from its own files while no game runs:
+// 0 started, -1 busy (a game or a preparation runs), -2 bad request, -3 not in this build.
+type ShaderPreparer interface {
+	PrepareShaders(req PrepRequest) int
+	CancelPrepare()
+	// SkipPrecache: while the boot precache runs, start the game now (the rest is built when
+	// the game first uses it).
+	SkipPrecache()
+}
+
+// PrepRequest asks the engine to prepare a game's shaders (nexus_engine_prepare_shaders).
+type PrepRequest struct {
+	Game       string   `json:"game"`
+	DataDir    string   `json:"dataDir"`
+	ConfigFile string   `json:"configFile"`
+	TitleID    string   `json:"titleId"`
+	Contents   []string `json:"contents,omitempty"`
+	Force      bool     `json:"force,omitempty"`
+}
+
+// PrepStatus is the engine's report of the last shader preparation.
+type PrepStatus struct {
+	State    string  `json:"state"` // running | done | current | failed | stopped
+	TitleID  string  `json:"titleId"`
+	Stage    string  `json:"stage,omitempty"` // Reading game files | Extracting shaders | Converting | Writing
+	Done     uint64  `json:"done"`
+	Total    uint64  `json:"total"` // 0: unknown
+	Archives uint64  `json:"archives,omitempty"`
+	Programs uint64  `json:"programs,omitempty"` // compute programs in the precache file
+	Skipped  uint64  `json:"skipped,omitempty"`
+	Seconds  float64 `json:"seconds,omitempty"`
+	Error    string  `json:"error,omitempty"`
+}
+
 // PadInfo is one connected game controller as the engine (SDL) sees it.
 type PadInfo struct {
 	GUID    string `json:"guid"`
@@ -153,8 +188,10 @@ type EngineStatus struct {
 	FullscreenPresses uint64 `json:"fullscreenPresses,omitempty"` // F11 while embedded
 	Amiibo            string `json:"amiibo,omitempty"`            // none | scanning | placed
 	// engine 0.8: shaders and pipelines of this session (nexus_shader_status.h)
-	Shaders       *ShaderStatus `json:"shaders,omitempty"`
-	KeyboardMoves string        `json:"keyboardMoves,omitempty"` // "R H -> E": default keys freed for shortcuts
+	Shaders *ShaderStatus `json:"shaders,omitempty"`
+	// engine 0.8: the last shader preparation (nexus_engine_prepare_shaders)
+	Prepare       *PrepStatus `json:"prepare,omitempty"`
+	KeyboardMoves string      `json:"keyboardMoves,omitempty"` // "R H -> E": default keys freed for shortcuts
 }
 
 // EngineBuildInfo is nexus_engine_info plus what NEXUS knows about the installed build.

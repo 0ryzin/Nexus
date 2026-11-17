@@ -38,3 +38,15 @@ GitHub release pages themselves could not be read from this environment.
 
 No Fritchii code was added to NEXUS. Where an idea was used, the NEXUS change says so in its
 comment and commit message.
+
+## Shader preparation ("Preparing shaders"), studied 17 Nov from `fritchii-v5.8.4`
+
+Fritchii's preparation is Lichii #895 (not in Lichii's main line) with Fritchii's own tooling:
+game-file extraction of every shader program (`core/file_sys/nx2_shader_extract`), a static fact
+oracle, render-state prediction from recorded sessions (Python), per-game recipes without game code
+(`video_core/nx2_recipe`) assembled with the player's own files (`nx2_precompile`), and a boot step
+that builds every predicted pipeline once into the driver's cache. Details and what NEXUS does
+instead: `docs/SHADERS.md`. NEXUS did not copy this code; it uses Lichii's own shader precache
+(compute programs from the game files) through a new engine interface (patch 0023). Render-state
+prediction and recipes are not in NEXUS.
+
