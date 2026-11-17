@@ -972,3 +972,28 @@ body.home-bg-color #wallpaper{background:var(--home-bg)!important}
 .lp-cards{grid-template-columns:repeat(4,1fr);align-items:end}.lp-cards i{height:100%}.lp-cards i:nth-child(2){outline:2px solid var(--accent)}
 .lp-grid{grid-template-columns:repeat(4,1fr);grid-template-rows:1fr 1fr}.lp-grid i:first-child{grid-row:span 2}
 @media (max-width:900px){.layout-pick{grid-template-columns:1fr}}
+
+/* ---- Settings: groups, search, changed markers, advanced sections (refinement, 17 Nov) ---- */
+.set-crumb{font-size:.72em;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700;margin:.3em 0 -.2em}
+.set-search{margin:0 .9em .5em .4em;flex:none}
+.set-search input{width:100%;min-width:0}
+.set-search:focus-within,.set-search.focus{border-color:var(--accent)}
+.set-cats .cat-group:first-of-type{margin-top:.6em}
+.row .chg{display:inline-block;margin-left:.6em;padding:0 .5em;border-radius:1em;font-size:.68em;font-weight:600;line-height:1.7;vertical-align:.12em;
+  color:var(--accent-text);background:color-mix(in srgb,var(--accent) 16%,transparent)}
+.row .chg[hidden]{display:none}
+.row.found{animation:set-found 1.8s ease-out}
+@keyframes set-found{0%,35%{background:color-mix(in srgb,var(--accent) 22%,transparent)}100%{background:transparent}}
+.anim-off .row.found{animation:none;outline:2px solid var(--accent)}
+.adv-head .rv{color:var(--accent-text);font-weight:600}
+.adv-body{border-left:2px solid var(--line);margin:0 0 .6em .5em;padding-left:.7em}
+/* GitHub connection status */
+.conn-state{display:inline-flex;align-items:center;gap:.45em;font-weight:600}
+.conn-state::before{content:"";width:.6em;height:.6em;border-radius:50%;background:currentColor}
+.conn-state.connected,.conn-state.syncing{color:var(--ok)}
+.conn-state.reconnecting,.conn-state.problem{color:var(--warn)}
+.conn-state.expired{color:var(--danger)}
+.conn-state.notconnected{color:var(--muted)}
+.acct-actions{display:flex;flex-wrap:wrap;gap:.5em;margin:.2em 0 1em}
+.tb-acct.expired svg{fill:var(--danger)}
+.tb-acct.offline svg{fill:var(--warn)}

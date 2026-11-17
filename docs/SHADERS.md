@@ -57,7 +57,7 @@ title's shader folder. Lichii's own frontends offer it by hand. NEXUS uses it au
 | **2. Compile before the game starts** | With *Prepare shaders before playing* on, NEXUS sets `precache_shaders = Always`: at boot the engine translates and compiles every program of that file before the game runs (*Compiling the game's shaders*, n of m). A marker remembers it per driver, device and SPIR-V variant, so it runs again only after a driver or engine change, or if it was skipped. *Start now* skips the rest; the next start finishes it. | Lichii's precache, NEXUS turns it on |
 | **3. Earlier sessions' pipelines** | Graphics and compute pipelines the game used before (on this PC, or brought from another device, see below) are built at *Building shaders from earlier sessions* (n of m). Lichii #1803: the last two sessions' pipelines before play, older ones in the background. | Lichii |
 
-Settings › Game sessions › *Prepare shaders before playing* (on by default). A game's Options menu
+Settings › Shader management › *Prepare shaders before playing* (on by default). A game's Options menu
 has *Prepare Shaders Now*, which runs step 1 in the background on Home while no game runs.
 
 ### What still happens while playing
@@ -126,7 +126,7 @@ Safety:
 
 Settings:
 
-- *Game sessions & saves › Shader cache* shows the cache, its games and sizes, and *Share shaders
+- *Shader management › Shader cache* shows the cache, its games and sizes, and *Share shaders
   with other NEXUS users on this PC* (on by default).
 - Off: the user's own folder, as before.
 - A portable NEXUS (portable.txt) always keeps its own, so nothing is left in a PC's ProgramData.

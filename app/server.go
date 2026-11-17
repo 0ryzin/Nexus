@@ -264,6 +264,8 @@ func (s *Server) routes() {
 		}
 		writeJSON(w, st)
 	})
+	// the defaults, so Settings can mark what the user has changed (never written anywhere)
+	m.HandleFunc("GET /api/settings/defaults", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, DefaultSettings()) })
 	m.HandleFunc("POST /api/settings/reset", func(w http.ResponseWriter, r *http.Request) {
 		st, err := a.Settings.Update(func(g *GlobalSettings) {
 			keep := g.LastProfileID

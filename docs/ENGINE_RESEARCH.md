@@ -50,7 +50,7 @@ This is performance priority 1. **Implemented in 0.5.0.**
     - software rasterisers are never chosen;
     - the option *Integrated graphics (longer battery life)* picks the integrated GPU instead.
   - It writes the device's index into the session configuration, and logs the choice.
-  - It is per game and global, in *Emulation settings › Graphics card*.
+  - It is per game and global, in *Graphics & emulation › Graphics card*.
   - This is stronger than the export approach: it does not depend on a vendor driver honouring an
     export, and the user can choose.
 - **Tests.** Selection rules (`TestChooseVulkanDevice`), structure parsing

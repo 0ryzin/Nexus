@@ -77,7 +77,7 @@ scenes) and the list below.
 - **Remaining candidates (NEXUS host):** the game window starting hidden and inside the NEXUS
   window (patches 0010-0017), the per-user save folder (`Data Storage/save_directory`), applets
   answered by the engine's default front ends (no Qt dialogs).
-- **Next test (needs the game):** start OoT once with *Settings › Game sessions › Game window ›
+- **Next test (needs the game):** start OoT once with *Settings › Playing games › Advanced › Game window ›
   Separate window*; if it still stops, send `System/Engine/log/eden_log.txt` (or the file
   *Open diagnostic log* shows) from the attempt. The log shows the last service calls, shader
   and pipeline activity and whether the cores are still running.

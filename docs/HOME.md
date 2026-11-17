@@ -53,7 +53,7 @@ every user of this NEXUS. Layout and organisation belong to the user.
 
 Everything in *Organisation* and *Look* is stored in the user's profile: one user's Cards and
 folders never change another user's Home. Play time, saves, controls and the theme were already
-per user. *Ask who's playing* (*Game sessions & saves*; by default whenever there is more than
+per user. *Ask who's playing a game* (*Playing games*; by default whenever there is more than
 one user) chooses the user when a game starts.
 
 ## Controller

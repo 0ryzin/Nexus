@@ -1568,9 +1568,9 @@ function homeDockItems() {
     { id: 'controllers', label: 'Controllers', icon: I.pad, color: '#30d158', run: () => Controllers.show() },
     { id: 'home', label: 'Home screen', icon: I.palette, color: '#bf5af2', run: () => showSettings('home') },
     { id: 'themes', label: 'Themes', icon: I.palette, color: '#ff6ac1', run: () => showSettings('appearance') },
-    { id: 'shaders', label: 'Shaders', icon: I.chip, color: '#5e5ce6', run: () => showSettings('emulator') },
+    { id: 'shaders', label: 'Shaders', icon: I.chip, color: '#5e5ce6', run: () => showSettings('shaders') },
     { id: 'perf', label: 'Performance', icon: I.chip, color: '#ff9f0a', run: () => showSettings('perf') },
-    { id: 'emulation', label: 'System & Emulation', icon: I.chip, color: '#64d2ff', run: () => showSettings('sysfiles') },
+    { id: 'emulation', label: 'Graphics & Emulation', icon: I.chip, color: '#64d2ff', run: () => showSettings('emusettings') },
     { id: 'settings', label: 'System Settings', icon: I.gear, color: 'var(--muted)', run: () => showSettings() },
     { id: 'power', label: 'Power', icon: I.power, color: 'var(--muted)', run: () => openPower() },
   ];
@@ -2130,7 +2130,7 @@ function settingRows(container, view, section, { mode, engine, save }) {
       }
       if (!cap.perGame) {
         const [gv] = effValue(view, id, engine, false);
-        container.append(infoRow(st.label, nlabel(st, gv), (cap.note || '') + ' Change it in Settings › Emulation settings.', 'unavail'));
+        container.append(infoRow(st.label, nlabel(st, gv), (cap.note || '') + ' Change it in Settings › Graphics & emulation.', 'unavail'));
         continue;
       }
       const [gv, gsrc] = effValue(view, id, engine, false);
@@ -2244,7 +2244,7 @@ async function gameConfig(key, startSection = 'general') {
     }
     if (section === 'updates' || section === 'mods') { const cb = h('div'); body.append(cb); gameContentPanel(cb, g, section, () => drawBody()); return; }
     if (!view.perGameOk) { body.append(h('p', { class: 'note warn' }, view.perGameReason)); return; }
-    const note = { enhance: 'Applies only to this game. Frame generation suits games that already run at a steady frame rate.', graphics: 'Applies only to this game. “Use global” follows Settings › Emulation settings.', advanced: 'For advanced users. If a game misbehaves, use Restore defaults on the General page.',
+    const note = { enhance: 'Applies only to this game. Frame generation suits games that already run at a steady frame rate.', graphics: 'Applies only to this game. “Use global” follows Settings › Graphics & emulation.', advanced: 'For advanced users. If a game misbehaves, use Restore defaults on the General page.',
       audio: '', controls: '', system: '' }[section];
     if (note) body.append(h('p', { class: 'note' }, note));
     if (section === 'enhance') { const eb = h('div'); body.append(eb); enhancementsPanel(eb); }
@@ -2588,15 +2588,38 @@ $('#play-close').addEventListener('click', async () => {
 });
 
 // ---------- settings
+// Settings are grouped the way people look for them (refinement brief, 17 Nov). Category ids
+// are kept from earlier versions so links and shortcuts keep working; CAT_ALIAS sends the ids of
+// categories that were merged to their new place.
 const CATS = [
-  ['account', 'NEXUS Account'], ['appearance', 'Appearance'], ['home', 'Home screen'], ['startup', 'Startup'], ['library', 'Game library'], ['controllers', 'Controllers'], ['users', 'Users'], ['savedata', 'Save Data'], ['system', 'System'], ['updates', 'Updates'],
-  ['-', 'System & Emulation'], ['engine', 'NEXUS Engine'], ['sysfiles', 'System files'], ['emusettings', 'Emulation settings'], ['emulator', 'Game sessions & saves'], ['amiibo', 'Amiibo'], ['recording', 'Screen recording'], ['perf', 'Performance Monitor'],
+  ['-', 'General'], ['general', 'General'], ['users', 'Users'],
+  ['-', 'Personalisation'], ['appearance', 'Appearance'], ['home', 'Home screen'],
+  ['-', 'Games'], ['library', 'Game library'], ['emulator', 'Playing games'], ['savedata', 'Save data'], ['amiibo', 'Amiibo'], ['recording', 'Screen recording'],
+  ['-', 'Controllers'], ['controllers', 'Controllers'],
+  ['-', 'Graphics & performance'], ['emusettings', 'Graphics & emulation'], ['shaders', 'Shader management'], ['perf', 'Performance monitor'],
+  ['-', 'Accounts & cloud'], ['account', 'NEXUS Account & GitHub'],
+  ['-', 'Advanced'], ['engine', 'NEXUS Engine'], ['sysfiles', 'System files'], ['system', 'Storage & data'],
+  ['-', 'About'], ['updates', 'Updates'], ['about', 'About NEXUS'],
 ];
+const CAT_ALIAS = { startup: 'general' };
 const NAVCATS = () => catList().filter(c => c[0] !== '-' && c[0] !== 'controllers');
 // NEXUS Sync appears only when the experimental Device Linking feature is switched on
-const catList = () => S.features?.deviceLink ? [...CATS, ['sync', 'Local Sync (experimental)']] : CATS;
-function showSettings(cat = 'appearance') {
+const catList = () => {
+  if (!S.features?.deviceLink) return CATS;
+  const i = CATS.findIndex(c => c[0] === 'account');
+  return [...CATS.slice(0, i + 1), ['sync', 'Local Sync (experimental)'], ...CATS.slice(i + 1)];
+};
+// the group a category belongs to (shown above the panel's title)
+function catGroup(id) {
+  let g = '';
+  for (const [c, l] of catList()) { if (c === '-') g = l; else if (c === id) return g; }
+  return '';
+}
+function catLabel(id) { return (catList().find(c => c[0] === id) || [])[1] || ''; }
+function showSettings(cat = 'general', opts = {}) {
+  cat = CAT_ALIAS[cat] || cat;
   const cats = $('#set-cats'); cats.innerHTML = '';
+  cats.append(settingsSearchBox());
   for (const [id, label] of catList()) {
     if (id === '-') { cats.append(h('div', { class: 'cat-group' }, label)); continue; }
     const b = h('button', { class: 'cat' + (id === cat ? ' sel' : ''), 'data-nav': true }, label);
@@ -2605,17 +2628,21 @@ function showSettings(cat = 'appearance') {
     b.addEventListener('navfocus', () => { if (S.lastInput !== 'mouse' && id !== 'controllers') selectCat(id, false); });
     cats.append(b);
   }
-  selectCat(cat, false);
-  show('settings', { initial: $$('.cat', cats).find(b => b._cat === cat) });
+  selectCat(cat, false).then(() => { if (opts.find) settingsReveal(opts.find); });
+  show('settings', { initial: opts.find ? null : $$('.cat', cats).find(b => b._cat === cat) });
 }
 let curCat = 'appearance';
 let catToken = 0;
 async function selectCat(id, focusPanel) {
+  id = CAT_ALIAS[id] || id;
   curCat = id;
   const tok = ++catToken;
   $$('#set-cats .cat').forEach(b => b.classList.toggle('sel', b._cat === id));
+  $('#set-cats .cat.sel')?.scrollIntoView({ block: 'nearest' });
   const panel = $('#set-panel'); panel.innerHTML = ''; panel.scrollTop = 0;
   const fresh = h('div');
+  const grp = catGroup(id);
+  if (grp && grp !== catLabel(id)) fresh.append(h('div', { class: 'set-crumb' }, grp));
   const r = (Panels[id] || (() => { }))(fresh);
   panel.replaceChildren(...fresh.childNodes);
   if (r?.then) { const holder = h('div'); await r; if (tok !== catToken) return; panel.append(...fresh.childNodes); void holder; }
@@ -2625,6 +2652,8 @@ async function rebuildPanel() {
   const panel = $('#set-panel'); const items = Nav.items(panel); const idx = items.indexOf(Nav.cur);
   const scroll = panel.scrollTop;
   const fresh = h('div');
+  const grp = catGroup(curCat);
+  if (grp && grp !== catLabel(curCat)) fresh.append(h('div', { class: 'set-crumb' }, grp));
   await Panels[curCat](fresh);   // build off-screen (some panels load data first), then swap in
   panel.replaceChildren(...fresh.childNodes); panel.scrollTop = scroll;
   if (idx >= 0) { const n = Nav.items(panel); Nav.setFocus(n[Math.min(idx, n.length - 1)], { silent: true, scroll: false }); }
@@ -2854,7 +2883,8 @@ const AmiiboUI = {
   },
   filter: { q: '', kind: 'all' },
   async panel(p) {
-    const st = await this.load().catch(() => ({ list: [] }));
+    const st = await this.load().catch(() => ({ list: [] })) || {};
+    st.list = st.list || []; // an empty library arrives as null
     const es = S.settings.emulator || {};
     p.append(h('h2', {}, 'Amiibo'), h('p', { class: 'note' }, 'When a game asks you to scan an amiibo, NEXUS shows this library and gives the game the one you choose. Import dumps of your own amiibo, or create a NEXUS virtual amiibo for use in NEXUS only. NEXUS includes no amiibo data.'));
     p.append(rowChoice('When a game scans for an amiibo', [{ v: '', l: 'Show the amiibo library' }, { v: 'off', l: 'Do nothing' }], es.amiiboPrompt || '', v => saveSettings({ emulator: { amiiboPrompt: v } })));
@@ -2982,14 +3012,41 @@ const AccountUI = {
     ['library', 'Game library', 'Names you gave games, hidden games, artwork choices and each game’s controller layout.'],
     ['prefs', 'NEXUS preferences', 'Sounds, the start-up animation, shortcut keys and what Home does.'],
     ['amiibo', 'Amiibo library', 'Names, details and owners of your amiibo, and NEXUS virtual amiibo. Imported amiibo dumps stay on the device you imported them on.'],
-    ['emulation', 'Emulation settings', 'Global and per-game emulation settings. Off by default: a Steam Deck and a gaming PC usually need different settings. The graphics card choice never synchronises.'],
+    ['emulation', 'Graphics & emulation settings', 'Global and per-game emulation settings. Off by default: a Steam Deck and a gaming PC usually need different settings. The graphics card choice never synchronises.'],
   ],
   async load() { this.st = await api('/api/account').catch(() => this.st); this.top(); return this.st; },
   update(st) {
     this.st = st; this.top();
     if (S.screen === 'settings' && curCat === 'account' && !this._editing) rebuildPanel();
   },
-  label(st = this.st) { if (!st) return ''; return st.state === 'synced' && st.lastSync ? `Synced ${this.ago(st.lastSync)}` : this.STATE[st.state] || st.state; },
+  // the GitHub connection on its own (account.go Status.Connection), apart from synchronisation
+  CONN: { connected: 'Connected', notconnected: 'Not connected', reconnecting: 'Reconnecting…', expired: 'Authentication expired', problem: 'Temporary connection problem', syncing: 'Synchronisation in progress' },
+  label(st = this.st) { if (!st) return ''; if (st.connection === 'expired') return 'Reconnect GitHub'; return st.state === 'synced' && st.lastSync ? `Synced ${this.ago(st.lastSync)}` : this.STATE[st.state] || st.state; },
+  connCard(st) {
+    const conn = st.connection || (st.signedIn ? 'connected' : 'notconnected');
+    const who = st.provider === 'github' ? 'GitHub' : 'NEXUS account service';
+    const detail = {
+      connected: st.renewable ? `NEXUS renews the sign-in with ${who} by itself.` : `Signed in with ${who}.`,
+      syncing: 'Sending and receiving changes now.',
+      reconnecting: `Renewing the sign-in with ${who}…`,
+      problem: `${who} cannot be reached just now. You stay connected; NEXUS tries again by itself.`,
+      expired: `${who} no longer accepts NEXUS’s sign-in on this device. Your data on this device is untouched. Reconnect to continue synchronising.`,
+      notconnected: 'Not connected on this device.',
+    }[conn];
+    return h('div', { class: 'acct-card' },
+      h('div', { class: 'acct-ic' }, svg(I.cloud)),
+      h('div', {}, h('b', {}, st.displayName || st.email || who), st.email ? h('span', {}, st.email + (st.provider === 'github' ? ' on GitHub' : '')) : null,
+        h('span', { class: 'conn-state ' + conn }, this.CONN[conn] || conn), h('span', {}, detail)));
+  },
+  async test() {
+    const r = await api('/api/account/test', { body: {} }).catch(e => ({ ok: false, error: e.message }));
+    if (r.ok) toast(`Connected as ${r.login} · answered in ${r.ms} ms` + (r.renews ? ` · renews itself` : ''), I.check, 4000);
+    else alertDlg('Test connection', r.error);
+    await this.load(); if (S.screen === 'settings' && curCat === 'account') rebuildPanel();
+  },
+  async disconnect() {
+    if (await confirmDlg('Disconnect GitHub on this device?', 'This device stops synchronising and leaves your device list, and NEXUS forgets the sign-in here. Your users, saves, play time and amiibo stay on this device. Connect again at any time.', 'Disconnect', true)) this.run(() => api('/api/account/signout', { body: {} }), 'Disconnected');
+  },
   ago(t) { const d = Math.max(0, Date.now() / 1000 - t); return d < 60 ? 'just now' : d < 3600 ? `${Math.round(d / 60)} min ago` : d < 86400 ? `${Math.round(d / 3600)} h ago` : new Date(t * 1000).toLocaleDateString(); },
   // top bar: always shows whether you are signed in
   top() {
@@ -2997,8 +3054,10 @@ const AccountUI = {
     const st = this.st;
     el.hidden = false;
     el.className = 'tb-item tb-acct ' + st.state;
-    el.replaceChildren(svg(I.cloud), h('span', {}, st.signedIn ? this.label() : 'Not signed in'));
-    el.title = st.signedIn ? `NEXUS Account: ${st.email} · ${this.label()}` : 'NEXUS Account: not signed in. Click to set up.';
+    const expired = st.connection === 'expired';
+    if (expired) el.className += ' expired';
+    el.replaceChildren(svg(I.cloud), h('span', {}, st.signedIn || expired ? this.label() : 'Not signed in'));
+    el.title = expired ? `GitHub no longer accepts NEXUS’s sign-in (${st.email}). Click to reconnect.` : st.signedIn ? `NEXUS Account: ${st.email} · ${this.label()}` : 'NEXUS Account: not signed in. Click to set up.';
     el.onclick = () => showSettings('account');
   },
   // a row for Users / User settings
@@ -3035,7 +3094,7 @@ const AccountUI = {
     const status = h('p', { class: 'note' }, 'Waiting for you to approve NEXUS on GitHub…');
     const openBtn = h('button', { 'data-nav': true, class: 'primary' }, 'Open github.com/login/device');
     const cancel = h('button', { 'data-nav': true }, 'Cancel');
-    const box = h('div', { class: 'dialog' }, h('div', { class: 'd-body' }, h('h2', {}, 'Sign in with GitHub'),
+    const box = h('div', { class: 'dialog' }, h('div', { class: 'd-body' }, h('h2', {}, 'Connect to GitHub'),
       h('ol', { class: 'steps' }, h('li', {}, 'On this PC, your phone or any computer, open github.com/login/device and sign in to GitHub.'), h('li', {}, 'Enter this code:')),
       h('div', { class: 'pair-code' }, v.userCode),
       h('ol', { class: 'steps', start: 3 }, h('li', {}, 'Approve “NEXUS”. NEXUS only gets access to Gists, where it keeps your sync data in a private Gist.')),
@@ -3161,11 +3220,19 @@ const AccountUI = {
   },
   async panel(p) {
     const st = await this.load() || {};
-    p.append(h('h2', {}, 'NEXUS Account'));
+    p.append(h('h2', {}, 'NEXUS Account & GitHub'));
     if (!st.signedIn) {
       p.append(h('p', { class: 'note' }, st.provider === 'github' ? 'Your NEXUS account keeps your users, play time, settings and amiibo the same on all your devices: this PC, another PC and, later, a Steam Deck. It uses your free GitHub account: sign in with GitHub on each device. Everything in NEXUS works without an account.' : 'A NEXUS account lets you use the same users, settings and amiibo on several devices. Sign in on each device, or link a device with a one-time code. Everything in NEXUS works without an account.'));
-      if (st.ended) p.append(h('p', { class: 'banner-inline warn' }, st.ended));
-      p.append(infoRow('Account', 'Not signed in', `This device: ${st.deviceName} (${this.PLAT[st.platform] || st.platform})`));
+      if (st.connection === 'expired') {
+        p.append(this.connCard(st));
+        if (st.provider === 'github') {
+          p.append(rowButton('Reconnect to GitHub', { icon: I.cloud, sub: `Sign in again as ${st.email}. This device keeps its place in your device list and its synchronisation state.`, onClick: () => this.githubSignIn() }));
+          p.append(rowButton('Disconnect', { sub: 'Forget the GitHub connection on this device.', onClick: () => this.disconnect() }));
+          return;
+        }
+        p.append(h('p', { class: 'banner-inline warn' }, st.ended));
+      } else if (st.ended) p.append(h('p', { class: 'banner-inline warn' }, st.ended));
+      p.append(infoRow(st.provider === 'github' ? 'GitHub connection' : 'Account', st.provider === 'github' ? 'Not connected' : 'Not signed in', `This device: ${st.deviceName} (${this.PLAT[st.platform] || st.platform})`));
       if (st.linking) {
         p.append(infoRow('Linking this device', 'Waiting for approval', `Approve this device on your signed-in device (account ${st.linking.account}).`));
         p.append(rowButton('Cancel linking', { onClick: () => this.run(() => api('/api/account/link/cancel', { body: {} })) }));
@@ -3177,13 +3244,12 @@ const AccountUI = {
       }
       const need = fn => () => st.available ? fn() : this.unavailable();
       if (st.provider === 'github') {
-        p.append(rowButton('Sign in with GitHub', { icon: I.cloud, sub: 'Use your free GitHub account as your NEXUS account. NEXUS shows a code; you enter it at github.com/login/device. Do the same on your other PCs and your Steam Deck to link them. Your sync data is kept in a private Gist in your GitHub account; no NEXUS server is involved.', onClick: () => this.githubSignIn() }));
+        p.append(rowButton('Connect to GitHub', { icon: I.cloud, sub: 'Use your free GitHub account as your NEXUS account. NEXUS shows a code; you enter it at github.com/login/device. Do the same on your other PCs and your Steam Deck to link them. Your sync data is kept in a private Gist in your GitHub account; no NEXUS server is involved.', onClick: () => this.githubSignIn() }));
         p.append(h('p', { class: 'note' }, 'No GitHub account yet? Create one for free at github.com, then come back here.'));
-        p.append(h('h3', {}, 'Advanced'));
-        p.append(rowButton('Use a self-hosted NEXUS account service', { value: st.custom ? st.server : 'Off', sub: 'Only if you run your own NEXUS account service (docs/ACCOUNTS.md).', onClick: async () => {
+        advancedSection(p, 'Advanced', box => box.append(rowButton('Use a self-hosted NEXUS account service', { value: st.custom ? st.server : 'Off', sub: 'Only if you run your own NEXUS account service (docs/ACCOUNTS.md).', onClick: async () => {
           const v = await dialog({ title: 'Account service address', text: 'Leave empty to use GitHub.', input: { value: st.custom ? st.server : '', placeholder: 'https://accounts.example.org', max: 200 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Save', value: true, primary: true }] });
           if (v !== null) this.run(() => api('/api/account/server', { body: { server: v } }), 'Saved');
-        } }));
+        } })), { sub: 'A self-hosted account service instead of GitHub.' });
         return;
       }
 
@@ -3199,10 +3265,14 @@ const AccountUI = {
       return;
     }
     // signed in
-    p.append(h('div', { class: 'acct-card' },
-      h('div', { class: 'acct-ic' }, svg(I.cloud)),
-      h('div', {}, h('b', {}, st.displayName || st.email), h('span', {}, st.email), h('span', { class: 'acct-state ' + st.state }, this.label())),
-    ));
+    p.append(this.connCard(st));
+    const acts = h('div', { class: 'acct-actions', 'data-row': 'strict' });
+    const act = (label, fn, opts = {}) => { const b = h('button', { class: 'btn' + (opts.primary ? ' primary' : ''), 'data-nav': true, disabled: opts.disabled || undefined }, label); b.addEventListener('click', fn); acts.append(b); };
+    act('Synchronise now', () => this.run(() => api('/api/account/sync', { body: {} }), null), { primary: true, disabled: !st.syncOn });
+    act('Test connection', () => this.test());
+    if (st.provider === 'github') act('Reconnect', () => this.githubSignIn());
+    act('Disconnect', () => this.disconnect());
+    p.append(acts);
     p.append(infoRow('This device', st.deviceName, this.PLAT[st.platform] || st.platform));
     p.append(infoRow('Synchronisation', this.STATE[st.state] || st.state, [st.lastSync ? `Last synchronised ${this.ago(st.lastSync)}.` : 'Not synchronised yet.', st.pending ? `${st.pending} change(s) on this device not sent yet.` : '', st.lastError && st.state !== 'synced' ? st.lastError : ''].filter(Boolean).join(' ')));
     if (st.holdUploads) {
@@ -3212,7 +3282,6 @@ const AccountUI = {
       p.append(rowButton(`Send this device's data to ${st.email}`, { icon: I.cloud, onClick: async () => { if (await confirmDlg('Send this device’s data?', `Users, library details and preferences on this device are added to ${st.email}. Items that differ on both sides ask for your choice; nothing is overwritten.`, 'Send')) this.run(() => api('/api/account/hold', { body: { send: true } }), 'This device’s data will be sent'); } }));
       p.append(rowButton('Keep this device’s data here', { sub: 'Only changes you make from now on are sent.', onClick: () => this.run(() => api('/api/account/hold', { body: { send: false } }), 'Kept on this device') }));
     }
-    p.append(rowButton('Synchronise now', { icon: I.refresh, disabled: !st.syncOn, onClick: () => this.run(() => api('/api/account/sync', { body: {} }), null) }));
     p.append(rowToggle('Synchronise this device', st.syncOn, v => this.run(() => api('/api/account/sync/settings', { body: { on: v } })), 'Off: this device keeps its changes to itself and receives nothing until you switch it on again.'));
     if (st.conflicts?.length) {
       p.append(h('h3', {}, `Needs your choice (${st.conflicts.length})`));
@@ -3239,12 +3308,12 @@ const AccountUI = {
         const n = await dialog({ title: 'Name of this device', input: { value: st.deviceName, max: 60 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Save', value: true, primary: true }] });
         if (n && n.trim()) this.run(() => api('/api/account/update', { body: { deviceName: n.trim() } }), 'Saved');
       } }));
-      p.append(rowButton('Name, picture and password', { value: 'On GitHub', sub: 'Your GitHub account is your NEXUS account.', onClick: () => api('/api/app/open-link', { body: { which: 'github-settings' } }) }));
-      p.append(rowButton('Revoke NEXUS on GitHub', { sub: 'Signs every device out for good: github.com › Settings › Applications.', onClick: () => api('/api/app/open-link', { body: { which: 'github-apps' } }) }));
-      p.append(infoRow('Sign-in on this device', 'Stored safely', `Kept with ${st.tokenStorage}.`));
-      p.append(rowButton('Sign out on this device', { danger: true, sub: 'Your users, saves and amiibo stay on this device.', onClick: async () => {
-        if (await confirmDlg('Sign out?', 'This device stops synchronising and leaves your device list. Nothing on this device is deleted.', 'Sign out', true)) this.run(() => api('/api/account/signout', { body: {} }), 'Signed out');
-      } }));
+      p.append(infoRow('Sign-in on this device', 'Stored safely', `Kept with ${st.tokenStorage}.` + (st.renewable ? ' GitHub’s sign-ins last eight hours; NEXUS renews them by itself, so you stay connected.' : '')));
+      advancedSection(p, 'Advanced', box => {
+        box.append(rowButton('Name, picture and password', { value: 'On GitHub', sub: 'Your GitHub account is your NEXUS account.', onClick: () => api('/api/app/open-link', { body: { which: 'github-settings' } }) }));
+        box.append(rowButton('Revoke NEXUS on GitHub', { sub: 'Signs every device out for good: github.com › Settings › Applications.', onClick: () => api('/api/app/open-link', { body: { which: 'github-apps' } }) }));
+      }, { sub: 'Your GitHub account settings, and revoking NEXUS on every device.' });
+      p.append(rowButton('Disconnect on this device', { danger: true, sub: 'Your users, saves and amiibo stay on this device.', onClick: () => this.disconnect() }));
       return;
     }
     p.append(rowButton('Your name', { value: st.displayName, onClick: async () => {
@@ -3283,24 +3352,40 @@ const Panels = {
     p.append(rowChoice('Home transition', [{ v: 'zoom', l: 'Zoom' }, { v: 'fade', l: 'Fade' }, { v: 'slide', l: 'Slide' }, { v: 'off', l: 'Off' }], th.homeTransition || 'zoom', v => { themePatch({ homeTransition: v }).then(() => { if (v !== 'off') { const pv = $('#set-panel .ht-demo'); pv && (pv.classList.remove('ht-' + v), void pv.offsetWidth, pv.classList.add('ht-' + v)); } }); },
       'How the Home screen appears when you press Home, including from a game (what the game does meanwhile is set in Emulation › Home button).'));
     wallpaperSettings(p, th);
-    p.append(h('h3', {}, 'Home'));
-    p.append(rowChoice('Home screen order', SORTS, S.profile?.sort || 'recent', v => patchProfile(S.profile.id, { sort: v })));
-    p.append(rowToggle('Interface sounds', S.settings.sound?.enabled, v => saveSettings({ sound: { enabled: v } })));
-    p.append(rowRange('Sound volume', { min: 0, max: 100, step: 10, value: Math.round((S.settings.sound?.volume ?? .7) * 100), fmt: v => v + '%', onChange: (v, commit) => { S.settings.sound.volume = v / 100; if (commit) { saveSettings({ sound: { volume: v / 100 } }); Sound.play('select'); } } }));
+    p.append(h('h3', {}, 'More'));
+    p.append(rowButton('Home screen layout, order and shortcuts…', { sub: 'Classic, Cards or Grid, widgets, folders and pages.', onClick: () => selectCat('home', true) }));
+    p.append(rowButton('Startup animation and sounds…', { sub: 'In General. They apply to every user.', onClick: () => selectCat('general', true) }));
   },
-  startup(p) {
+  general(p) {
+    p.append(h('h2', {}, 'General'), h('p', { class: 'note' }, 'How NEXUS starts, sounds and fills the screen. These apply to every user on this PC.'));
+    p.append(h('h3', {}, 'Startup'));
+    startupRows(p);
+    p.append(h('h3', {}, 'Display'));
+    p.append(changedMark(rowToggle('Full screen', S.system?.fullscreen ?? S.settings.display?.fullscreen, async v => { const r = await api('/api/app/fullscreen', { body: { on: v } }); if (S.system) S.system.fullscreen = r.fullscreen; }, 'NEXUS fills the screen when it starts. F11 also switches.'), 'display.fullscreen'));
+    p.append(h('h3', {}, 'Sounds'));
+    p.append(changedMark(rowToggle('Interface sounds', S.settings.sound?.enabled, v => saveSettings({ sound: { enabled: v } }).then(rebuildPanel)), 'sound.enabled'));
+    p.append(changedMark(rowRange('Sound volume', { min: 0, max: 100, step: 10, value: Math.round((S.settings.sound?.volume ?? .7) * 100), fmt: v => v + '%', onChange: (v, commit) => { S.settings.sound.volume = v / 100; if (commit) { saveSettings({ sound: { volume: v / 100 } }); Sound.play('select'); } } }), 'sound.volume'));
+    p.append(h('p', { class: 'note' }, 'Game sound has its own volume, in Playing games and while playing.'));
+  },
+  startup(p) { this.general(p); },
+};
+function startupRows(p) {
+  {
     const st = S.settings.startup || {};
-    p.append(h('h2', {}, 'Startup'), h('p', { class: 'note' }, 'The power-on animation shown when NEXUS starts. Applies to all users.'));
-    p.append(rowToggle('Play startup animation', st.enabled, v => saveSettings({ startup: { enabled: v } })));
-    p.append(rowSwatches('Background colour', BOOT_COLORS, st.color, c => saveSettings({ startup: { color: c } }).then(rebuildPanel)));
-    p.append(rowChoice('Length', [{ v: 'standard', l: 'Standard' }, { v: 'short', l: 'Short' }], st.style, v => saveSettings({ startup: { style: v } })));
-    p.append(rowToggle('Startup sound', st.sound, v => saveSettings({ startup: { sound: v } })));
-    p.append(rowToggle('Ask who is playing at every start', S.settings.askProfileOnStart, v => saveSettings({ askProfileOnStart: v })));
+    p.append(h('p', { class: 'note' }, st.enabled ? `The power-on animation when NEXUS starts lasts ${st.style === 'short' ? 'about 3' : 'about 4'} seconds; Home is prepared meanwhile. Press any key or button to skip it.` : 'No power-on animation: Home appears as soon as NEXUS has loaded.'));
+    p.append(changedMark(rowToggle('Play startup animation', st.enabled, v => saveSettings({ startup: { enabled: v } }).then(rebuildPanel), 'Off: Home appears as soon as NEXUS has loaded.'), 'startup.enabled'));
+    if (st.enabled) {
+      p.append(changedMark(rowChoice('Length', [{ v: 'standard', l: 'Standard' }, { v: 'short', l: 'Short' }], st.style, v => saveSettings({ startup: { style: v } }).then(rebuildPanel)), 'startup.style'));
+      p.append(changedMark(rowToggle('Startup sound', st.sound, v => saveSettings({ startup: { sound: v } }).then(rebuildPanel)), 'startup.sound'));
+      p.append(rowSwatches('Background colour', BOOT_COLORS, st.color, c => saveSettings({ startup: { color: c } }).then(rebuildPanel)));
+      const prev = h('div', { class: 'boot-preview', style: { background: st.color } });
+      prev.append(h('div', { class: 'bp-logo', style: { background: luminance(st.color) > .55 ? '#141414' : '#fff' } })); p.append(prev);
+    }
     p.append(rowButton('Preview startup animation', { onClick: () => setTimeout(() => Boot.preview(), 300) }));
-    const prev = h('div', { class: 'boot-preview', style: { background: st.color } });
-    prev.append(h('div', { class: 'bp-logo', style: { background: luminance(st.color) > .55 ? '#141414' : '#fff' } })); p.append(prev);
-    p.append(h('p', { class: 'note' }, 'Press any key or button to skip the animation.'));
-  },
+    p.append(changedMark(rowToggle('Choose the user when NEXUS starts', S.settings.askProfileOnStart, v => saveSettings({ askProfileOnStart: v }).then(rebuildPanel), 'On: “Who’s playing?” at every start. Off: NEXUS opens with the last user.'), 'askProfileOnStart'));
+  }
+}
+Object.assign(Panels, {
   library(p) {
     const lib = S.settings.library || {};
     p.append(h('h2', {}, 'Game library'));
@@ -3312,8 +3397,8 @@ const Panels = {
     p.append(rowButton('Add a folder…', { icon: I.plus, onClick: () => addLibraryDir() }));
     p.append(rowButton('Scan for games now', { sub: S.library?.lastScan ? `Last scan ${fmtAgo(S.library.lastScan)} · ${S.library.count} file(s)` : '', onClick: () => rescan() }));
     if (S.library?.errors?.length) p.append(h('p', { class: 'note warn' }, S.library.errors.slice(0, 5).join('\n')));
-    p.append(rowToggle('Include sub-folders', lib.recursive, v => saveSettings({ library: { recursive: v } })));
-    p.append(rowToggle('Scan when NEXUS starts', lib.scanOnStart, v => saveSettings({ library: { scanOnStart: v } })));
+    p.append(changedMark(rowToggle('Include sub-folders', lib.recursive, v => saveSettings({ library: { recursive: v } })), 'library.recursive'));
+    p.append(changedMark(rowToggle('Scan when NEXUS starts', lib.scanOnStart, v => saveSettings({ library: { scanOnStart: v } })), 'library.scanOnStart'));
     p.append(h('h3', {}, 'Formats'));
     p.append(h('p', { class: 'note' }, 'All of these are opened by the NEXUS engine (checked against its file loader). Updates and DLC in these folders are applied automatically when you start the base game.'));
     for (const f of S.formats || []) {
@@ -3321,8 +3406,8 @@ const Panels = {
       p.append(rowToggle(`.${f.ext.toUpperCase()}`, on, v => { const set = new Set(S.settings.library.formats); v ? set.add(f.ext) : set.delete(f.ext); saveSettings({ library: { formats: [...set] } }); }, f.label));
     }
     p.append(h('h3', {}, 'Artwork & names'));
-    p.append(rowToggle('Read game info with prod.keys', lib.readKeysForIds, v => saveSettings({ library: { readKeysForIds: v } }), 'Decrypts game headers locally with your own keys to read the real title, version and icon. Nothing leaves your PC.'));
-    p.append(rowToggle('Download missing artwork', lib.onlineArtwork, v => saveSettings({ library: { onlineArtwork: v } }), 'Looks up the Title ID on the Nlib database (api.nlib.cc) when a game has no icon of its own. Only the Title ID is sent. Images are checked and saved locally.'));
+    p.append(changedMark(rowToggle('Read game info with prod.keys', lib.readKeysForIds, v => saveSettings({ library: { readKeysForIds: v } }), 'Decrypts game headers locally with your own keys to read the real title, version and icon. Nothing leaves your PC.'), 'library.readKeysForIds'));
+    p.append(changedMark(rowToggle('Download missing artwork', lib.onlineArtwork, v => saveSettings({ library: { onlineArtwork: v } }), 'Looks up the Title ID on the Nlib database (api.nlib.cc) when a game has no icon of its own. Only the Title ID is sent. Images are checked and saved locally.'), 'library.onlineArtwork'));
     p.append(rowButton('Artwork database', { value: hostName(lib.nlibUrl) || 'Off', sub: 'Nlib API address. Leave empty to disable.', onClick: async () => {
       const v = await dialog({ title: 'Nlib API address', input: { value: lib.nlibUrl || '', max: 200 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Default', value: 'https://api.nlib.cc' }, { label: 'Save', value: true, primary: true }] });
       if (v === null || v === undefined) return; await saveSettings({ library: { nlibUrl: v.trim() } }); rebuildPanel();
@@ -3342,28 +3427,29 @@ const Panels = {
     p.append(rowButton('Clear downloaded artwork', { danger: true, sub: 'Removes the offline copies. Your own artwork and the built-in artwork are kept; games re-download on Refresh.', onClick: async () => {
       if (await confirmDlg('Clear the artwork database?', 'Downloaded artwork will be fetched again when needed. Artwork you chose is not affected.', 'Clear', true)) { await api('/api/artwork-db/clear', { body: {} }); toast('Artwork database cleared', I.check); rebuildPanel(); }
     } }));
+    moveToAdvanced(p, ['Artwork database', 'Extra artwork providers', 'Downloaded artwork', 'Clear downloaded artwork'], { sub: 'Where missing artwork comes from, and the offline copies.' });
   },
   engine(p) { return renderEngine(p); },
   emusettings(p) { renderEmuSettings(p); },
   sysfiles(p) { renderSystemFiles(p); },
   emulator(p) {
     const es = S.settings.emulator || {};
-    p.append(h('h2', {}, 'Game sessions & saves'), h('p', { class: 'note' }, 'How NEXUS runs games and keeps each user’s saves. Graphics, audio and system options are in Emulation settings; keys and firmware in System files.'));
+    p.append(h('h2', {}, 'Playing games'), h('p', { class: 'note' }, 'How NEXUS starts and runs games, and the keys and buttons you use while playing. Graphics, audio and system options are in Graphics & emulation; shader preparation and the shared cache in Shader management.'));
     p.append(rowVolume('Game volume', +(S.settings.engine?.['audio.volume'] ?? 100), sendVolume, '0% is silent, 100% is the game’s own level, up to 200% boosts quiet games (a soft limiter prevents harsh clipping). Also adjustable while playing.'));
-    p.append(rowChoice('Ask who\u2019s playing', [{ v: 'several', l: 'When there is more than one user' }, { v: 'always', l: 'Always' }, { v: 'never', l: 'Never (the current user plays)' }], es.whoPlays || 'several', v => saveSettings({ emulator: { whoPlays: v } }), 'Before a game starts, NEXUS asks which user is playing. Play time, saves and controller layout belong to that user.'));
+    p.append(changedMark(rowChoice('Ask who\u2019s playing a game', [{ v: 'several', l: 'When there is more than one user' }, { v: 'always', l: 'Always' }, { v: 'never', l: 'Never (the current user plays)' }], es.whoPlays || 'several', v => saveSettings({ emulator: { whoPlays: v } }), 'Before a game starts, NEXUS asks which user is playing. Play time, saves and controller layout belong to that user.'), 'emulator.whoPlays'));
     p.append(h('h3', {}, 'NEXUS Home while playing'));
     p.append(rowButton('Home key', { value: es.homeKey || 'Off', sub: 'Press it in a game to go back to NEXUS Home; the game keeps running. Standard: Shift+H, so H alone stays a game control. A single key that is one of the game\u2019s controls stays with the game.', onClick: async () => {
       const k = await captureKey({ mods: true }); if (k === undefined) return;
       saveSettings({ emulator: { homeKey: k } }).then(rebuildPanel);
     } }));
-    p.append(rowChoice('When you press Home in a game', [{ v: 'background', l: 'Keep the game running (muted)' }, { v: 'pause', l: 'Pause the game' }], es.homeAction || 'background', v => saveSettings({ emulator: { homeAction: v } }),
-      'Keep running: the game carries on in the background without sound and ignores your controls until you choose Resume (a green dot shows it is running). Pause: the game stops where it is. Either way one press of Home is one trip to NEXUS Home.'));
-    p.append(rowToggle('Controller Home button', es.homeButton !== false, v => saveSettings({ emulator: { homeButton: v } }), 'The Xbox Guide button, the PlayStation button or a controller\u2019s Home button takes you straight to NEXUS Home (the game never sees it). Choose Resume Game to go back. If Steam or Windows uses the button for itself, use the Home key instead.'));
+    p.append(changedMark(rowChoice('When you press Home in a game', [{ v: 'background', l: 'Keep the game running (muted)' }, { v: 'pause', l: 'Pause the game' }], es.homeAction || 'background', v => saveSettings({ emulator: { homeAction: v } }),
+      'Keep running: the game carries on in the background without sound and ignores your controls until you choose Resume (a green dot shows it is running). Pause: the game stops where it is. Either way one press of Home is one trip to NEXUS Home.'), 'emulator.homeAction'));
+    p.append(changedMark(rowToggle('Controller Home button', es.homeButton !== false, v => saveSettings({ emulator: { homeButton: v } }), 'The Xbox Guide button, the PlayStation button or a controller\u2019s Home button takes you straight to NEXUS Home (the game never sees it). Choose Resume Game to go back. If Steam or Windows uses the button for itself, use the Home key instead.'), 'emulator.homeButton'));
     p.append(h('h3', {}, 'While playing'));
-    p.append(rowChoice('Pause a game left in the background after', [{ v: 5, l: '5 minutes' }, { v: 15, l: '15 minutes' }, { v: 30, l: '30 minutes' }, { v: 60, l: '1 hour' }, { v: 0, l: 'Never' }], es.backgroundMinutes ?? 15, v => saveSettings({ emulator: { backgroundMinutes: v } }),
-      'A game kept running behind NEXUS Home is paused after this long, so a forgotten game stops using your processor and graphics card. Resume continues where it was.'));
-    p.append(rowChoice('Game window', [{ v: 'inside', l: 'Inside NEXUS' }, { v: 'separate', l: 'Separate window' }], es.gameWindow || 'inside', v => saveSettings({ emulator: { gameWindow: v } }),
-      'Inside NEXUS: the game is drawn in the NEXUS window, and the fullscreen key switches that window between full screen and its previous size. Separate window: the game opens in a window of its own (use this if a game shows a black picture inside NEXUS). Applies from the next game.'));
+    p.append(changedMark(rowChoice('Pause a game left in the background after', [{ v: 5, l: '5 minutes' }, { v: 15, l: '15 minutes' }, { v: 30, l: '30 minutes' }, { v: 60, l: '1 hour' }, { v: 0, l: 'Never' }], es.backgroundMinutes ?? 15, v => saveSettings({ emulator: { backgroundMinutes: v } }),
+      'A game kept running behind NEXUS Home is paused after this long, so a forgotten game stops using your processor and graphics card. Resume continues where it was.'), 'emulator.backgroundMinutes'));
+    p.append(changedMark(rowChoice('Game window', [{ v: 'inside', l: 'Inside NEXUS' }, { v: 'separate', l: 'Separate window' }], es.gameWindow || 'inside', v => saveSettings({ emulator: { gameWindow: v } }),
+      'Inside NEXUS: the game is drawn in the NEXUS window, and the fullscreen key switches that window between full screen and its previous size. Separate window: the game opens in a window of its own (use this if a game shows a black picture inside NEXUS). Applies from the next game.'), 'emulator.gameWindow'));
     p.append(rowButton('Fullscreen / window key', { value: es.fullscreenKey || 'Off', sub: 'Switches the game between full screen and a window without stopping it. If the key is one of the game\u2019s controls, it stays with the game.', onClick: async () => {
       const k = await captureKey(); if (k === undefined) return;
       saveSettings({ emulator: { fullscreenKey: k } }).then(rebuildPanel);
@@ -3373,15 +3459,14 @@ const Panels = {
       if (k && k.toLowerCase() === (S.settings.recording?.key || '').toLowerCase()) { alertDlg('That shortcut is taken', `${k} starts and stops recordings. Choose another key for screenshots.`); return; }
       saveSettings({ emulator: { screenshotKey: k } }).then(rebuildPanel);
     } }));
-    p.append(rowToggle('Controller Share / Capture button takes screenshots', es.captureButton !== false, v => saveSettings({ emulator: { captureButton: v } }), 'The Xbox Share button, the Switch Pro Controller\u2019s Capture button or a similar button.'));
-    p.append(rowToggle('Fade into the game', es.fadeIn !== false, v => saveSettings({ emulator: { fadeIn: v } }), 'The loading screen fades out and the game fades in. Turn off if the game window stays dark or flickers with your graphics driver.'));
-    p.append(rowToggle('Prepare shaders before playing', es.prepareShaders !== false, v => saveSettings({ emulator: { prepareShaders: v } }),
-      'Before a game starts, NEXUS finds the shader programs in the game’s own files and compiles them, so they do not stutter the first time they appear. The first start of a game takes longer (once per game, and again after a graphics driver update); later starts are quick. Graphics effects the game has never shown on any of your devices are still compiled the first time they appear, and then kept.'));
-    const sc = h('div'); p.append(sc); sharedCachePanel(sc);
-    p.append(rowToggle('Start games in full screen', es.fullscreen, v => saveSettings({ emulator: { fullscreen: v } }), 'The game window belongs to NEXUS; when the game ends you are back on the NEXUS home screen.'));
-    p.append(rowToggle('Quit shortcut: hold View + Menu', es.quitCombo, v => saveSettings({ emulator: { quitCombo: v } }), 'Hold Back + Start for 2 seconds on an XInput controller to close the game.'));
+    p.append(changedMark(rowToggle('Controller Share / Capture button takes screenshots', es.captureButton !== false, v => saveSettings({ emulator: { captureButton: v } }), 'The Xbox Share button, the Switch Pro Controller\u2019s Capture button or a similar button.'), 'emulator.captureButton'));
+    p.append(changedMark(rowToggle('Fade into the game', es.fadeIn !== false, v => saveSettings({ emulator: { fadeIn: v } }), 'The loading screen fades out and the game fades in. Turn off if the game window stays dark or flickers with your graphics driver.'), 'emulator.fadeIn'));
+    p.append(rowButton('Shader management…', { sub: 'Prepare shaders before playing, and the shader cache shared by all users of this PC.', onClick: () => selectCat('shaders', true) }));
+    p.append(changedMark(rowToggle('Start games in full screen', es.fullscreen, v => saveSettings({ emulator: { fullscreen: v } }), 'The game window belongs to NEXUS; when the game ends you are back on the NEXUS home screen.'), 'emulator.fullscreen'));
+    p.append(changedMark(rowToggle('Quit shortcut: hold View + Menu', es.quitCombo, v => saveSettings({ emulator: { quitCombo: v } }), 'Hold Back + Start for 2 seconds on an XInput controller to close the game.'), 'emulator.quitCombo'));
     p.append(rowButton('Save Data…', { sub: 'Every user has their own saves.', onClick: () => selectCat('savedata', true) }));
     p.append(rowButton('Keys and firmware…', { sub: 'Install or replace prod.keys and firmware.', onClick: () => selectCat('sysfiles', true) }));
+    moveToAdvanced(p, ['Game window', 'Fade into the game', 'Quit shortcut: hold View + Menu', 'Pause a game left in the background after'], { sub: 'The game window, fading in, the quit shortcut and pausing a forgotten game.' });
   },
   async recording(p) { await renderRecordingSettings(p); },
   users(p) {
@@ -3398,18 +3483,11 @@ const Panels = {
     p.append(rowButton('Open archived data', { onClick: () => api('/api/app/open-folder', { body: { which: 'archived' } }) }));
   },
   system(p) {
-    p.append(h('h2', {}, 'System'));
-    p.append(h('dl', { class: 'kv' },
-      h('dt', {}, 'Console'), h('dd', {}, S.app.model || 'NEXUS'),
-      h('dt', {}, 'NEXUS version'), h('dd', {}, S.app.version),
-      h('dt', {}, 'NEXUS engine'), h('dd', {}, S.engine?.installed ? (S.engine.info?.version || S.engine.active) : 'Not installed'),
-      h('dt', {}, 'Program folder'), h('dd', {}, S.app.root || ''),
-      h('dt', {}, 'Your data'), h('dd', {}, (S.app.data || '') + (S.app.portable ? '  (portable mode)' : ''))));
+    p.append(h('h2', {}, 'Storage & data'));
     p.append(h('p', { class: 'note' }, S.app.portable ? 'Portable mode (portable.txt next to NEXUS.exe): your data is stored inside the NEXUS folder. Back it up before deleting the folder.' :
       'Your users, saves, settings and artwork are stored in your Windows user folder, not in the NEXUS program folder. You can delete or replace the NEXUS folder to update it without losing anything. The engine’s keys, firmware, shader caches and console data are kept in NEXUS data\\Engine.'));
     p.append(rowButton('Open my NEXUS data folder', { onClick: () => api('/api/app/open-folder', { body: { which: 'data' } }) }));
     p.append(rowButton('Open engine data folder', { sub: S.emulator?.dataDir || '', onClick: () => api('/api/app/open-folder', { body: { which: 'enginedata' } }) }));
-    p.append(rowToggle('Full screen', S.system.fullscreen ?? S.settings.display?.fullscreen, async v => { const r = await api('/api/app/fullscreen', { body: { on: v } }); S.system.fullscreen = r.fullscreen; }, 'F11 also toggles full screen.'));
     p.append(h('h3', {}, 'Storage'));
     const holder = h('div', {}, h('p', { class: 'note' }, 'Measuring…'));
     p.append(holder);
@@ -3421,7 +3499,7 @@ const Panels = {
       holder.append(bar, h('dl', { class: 'kv' }, parts.map(([n, v, c]) => [h('dt', {}, h('span', { style: { color: c } }, '● '), n), h('dd', {}, fmtBytes(v.bytes))]),
         h('dt', {}, 'Free space'), h('dd', {}, `${fmtBytes(s.disk.free)} of ${fmtBytes(s.disk.total)}`)));
     }).catch(() => { holder.textContent = 'Storage information unavailable.'; });
-    p.append(h('h3', {}, 'Storage & data'));
+    p.append(h('h3', {}, 'Folders'));
     p.append(rowButton('Open Games folder', { sub: S.gamesDir || '', onClick: () => api('/api/app/open-folder', { body: { which: 'games' } }) }));
     p.append(rowButton('Open Saves folder', { sub: 'A folder per user (“ID - Name”), with a folder per game inside.', onClick: () => api('/api/app/open-folder', { body: { which: 'saves' } }) }));
     p.append(rowButton('Open Profiles folder', { onClick: () => api('/api/app/open-folder', { body: { which: 'profiles' } }) }));
@@ -3435,14 +3513,25 @@ const Panels = {
     p.append(rowButton('Reset NEXUS settings', { sub: 'Restores startup, sound, library and game session settings. Users, saves and game folders are kept.', onClick: async () => {
       if (await confirmDlg('Reset settings?', 'Users, saves and game folders are kept.', 'Reset', true)) { S.settings = await api('/api/settings/reset', { body: {} }); rebuildPanel(); toast('Settings reset', I.check); }
     } }));
+  },
+  about(p) {
+    p.append(h('h2', {}, 'About NEXUS'));
+    p.append(h('dl', { class: 'kv' },
+      h('dt', {}, 'Console'), h('dd', {}, S.app.model || 'NEXUS'),
+      h('dt', {}, 'NEXUS version'), h('dd', {}, S.app.version),
+      h('dt', {}, 'NEXUS engine'), h('dd', {}, S.engine?.installed ? (S.engine.info?.version || S.engine.active) : 'Not installed'),
+      h('dt', {}, 'Program folder'), h('dd', {}, S.app.root || ''),
+      h('dt', {}, 'Your data'), h('dd', {}, (S.app.data || '') + (S.app.portable ? '  (portable mode)' : ''))));
+    p.append(rowButton('Where your data is kept…', { sub: 'Folders, storage and maintenance.', onClick: () => selectCat('system', true) }));
     p.append(h('h3', {}, 'Updates'));
-    p.append(h('p', { class: 'note' }, 'NEXUS and its engine update together (Settings › Updates): the update is checked before it is installed, and the previous version comes back if the new one does not start. Your data is never touched.'));
+    p.append(h('p', { class: 'note' }, 'NEXUS and its engine update together: the update is checked before it is installed, and the previous version comes back if the new one does not start. Your data is never touched.'));
+    p.append(rowButton('Check for updates…', { onClick: () => selectCat('updates', true) }));
     if (S.platform?.readiness) p.append(...readinessRows(S.platform));
     p.append(h('h3', {}, 'Legal'));
     p.append(h('p', { class: 'note' }, 'NEXUS is independent software, not affiliated with or endorsed by Nintendo. NEXUS and its engine are free software under the GPL-3.0-or-later. The NEXUS Engine still contains code from open-source Switch emulation projects; their names, licences and notices are acknowledged in the Licences folder, and the complete source code is in the Source folder. NEXUS does not include games, keys or firmware: use only content you legally own.'));
     p.append(rowButton('Licences and acknowledgements', { sub: 'Open the Licences folder: NEXUS, the NEXUS Engine and every third-party component.', onClick: () => api('/api/app/open-folder', { body: { which: 'licences' } }).catch(e => toast(e.message, I.warn)) }));
   },
-};
+});
 // ---------- hardware information and "Optimise for my device"
 const NA = h => h === undefined || h === null || h === '' || h === 0 ? 'Not detected' : h;
 function fmtMB(mb) { return mb ? (mb >= 1024 ? `${(mb / 1024).toFixed(mb >= 10240 ? 0 : 1)} GB` : `${mb} MB`) : 'Not detected'; }
@@ -3596,7 +3685,7 @@ async function perfToggleGame(key, on) {
 function perfOn(key) { const pm = S.settings.perfMonitor || {}; return pm.mode === 'all' || (pm.mode === 'selected' && (pm.games || []).includes(key)); }
 async function renderPerfSettings(p) {
   const pm = S.settings.perfMonitor || {};
-  p.append(h('h2', {}, 'Performance Monitor'), h('p', { class: 'note' }, 'A thin strip over the game\u2019s picture while you play, in the style of a handheld\u2019s performance overlay. It stays on the picture when you move or resize the window or press F11, and hides when the game is minimised or closed. Every value is measured on this PC; what cannot be measured shows N/A. It needs borderless fullscreen or a window (exclusive fullscreen covers it).'));
+  p.append(h('h2', {}, 'Performance monitor'), h('p', { class: 'note' }, 'A thin strip over the game\u2019s picture while you play, in the style of a handheld\u2019s performance overlay. It stays on the picture when you move or resize the window or press F11, and hides when the game is minimised or closed. Every value is measured on this PC; what cannot be measured shows N/A. It needs borderless fullscreen or a window (exclusive fullscreen covers it).'));
   const preview = h('div', { class: 'perf-preview hud ' + (pm.position === 'bottom' ? 'bottom' : 'top') + (pm.layout === 'fps' ? ' fps' : ''), style: { '--hud-bg': `rgba(14,15,18,${(pm.opacity || 80) / 100})`, fontSize: `${(pm.scale || 100) / 100}em` } }, 'Measuring\u2026');
   p.append(h('div', { class: 'perf-stage' }, preview));
   const save = async patch => { await saveSettings({ perfMonitor: patch }); rebuildPanel(); };
@@ -3685,7 +3774,7 @@ async function linkEnterCode() {
 // ---------- global emulation settings
 let emuSection = 'graphics';
 async function renderEmuSettings(p) {
-  p.append(h('h2', {}, 'Emulation settings'), h('p', { class: 'note' }, 'Global settings for every game. A game can override any of them in its Configure Game Settings. Settings the engine cannot apply are shown as not available, never as a control that does nothing.'));
+  p.append(h('h2', {}, 'Graphics & emulation'), h('p', { class: 'note' }, 'Global settings for every game. A game can override any of them in its Configure Game Settings. Settings the engine cannot apply are shown as not available, never as a control that does nothing.'));
   const holder = h('div'); p.append(holder);
   let view;
   try { view = await api('/api/engine-settings'); } catch (e) { holder.append(h('p', { class: 'note warn' }, e.message)); return; }
@@ -3835,7 +3924,7 @@ async function renderEngine(p) {
     h('dt', {}, 'Data folder'), h('dd', {}, e.dataDir || '')));
   if (!e.installed && e.problem) p.append(h('p', { class: 'note warn' }, e.problem));
   if (!e.vcRuntime) p.append(h('p', { class: 'note warn' }, 'The Microsoft Visual C++ runtime the engine needs was not found (it normally ships in NEXUS\\Engine\\Libraries). Install it from Microsoft: aka.ms/vs/17/release/vc_redist.x64.exe'));
-  if (e.vulkan === false) p.append(h('p', { class: 'note warn' }, 'No Vulkan graphics driver was found. Install the latest driver for your graphics card, or choose OpenGL in Emulation settings › Graphics.'));
+  if (e.vulkan === false) p.append(h('p', { class: 'note warn' }, 'No Vulkan graphics driver was found. Install the latest driver for your graphics card, or choose OpenGL in Settings › Graphics & emulation › Graphics.'));
   if (e.infoError) p.append(h('p', { class: 'note warn' }, 'The engine did not describe itself: ' + e.infoError));
   if (e.job?.active || e.job?.error) {
     p.append(h('p', { class: 'note' + (e.job.error ? ' warn' : '') }, e.job.error || e.job.message));
@@ -3863,7 +3952,7 @@ async function renderEngine(p) {
   if (e.active && e.active !== 'bundled') p.append(rowButton('Go back to the previous build', { disabled: e.state?.running, onClick: async () => { try { S.engine = await api('/api/engine/rollback', { body: {} }); toast('Previous engine build activated', I.check); restartNote(); } catch (err) { alertDlg('Could not go back', err.message); } rebuildPanel(); } }));
   p.append(rowButton('Open engine data folder', { sub: 'Keys, firmware, console data, shader caches, logs.', onClick: () => api('/api/engine/open-folder', { body: {} }) }));
   p.append(rowButton('Open builds folder', { onClick: () => api('/api/engine/open-folder', { body: { which: 'builds' } }) }));
-  p.append(h('p', { class: 'note' }, 'Graphics, audio and system options are in Emulation settings. Keys and firmware are in System files.'));
+  p.append(h('p', { class: 'note' }, 'Graphics, audio and system options are in Graphics & emulation. Keys and firmware are in System files.'));
 }
 function restartNote() { if (S.engine?.state?.running === false) toast('The new build is used for the next game', I.info, 3000); }
 async function buildMenu(b) {
@@ -4704,7 +4793,7 @@ const UpdateUI = {
 // ---------- settings: Save Data and Updates categories
 Object.assign(Panels, {
   savedata(p) {
-    p.append(h('h2', {}, 'Save Data'));
+    p.append(h('h2', {}, 'Save data'));
     p.append(h('p', { class: 'note' }, 'Every user has their own save folder, NEXUS data\\UserData\\Saves\\<player ID>-<name>, with a folder per game named after its game ID and a short name (for example 0400486024DEC000-OOT). Games read and write there directly.'));
     for (const pr of S.profiles) {
       const r = rowButton(pr.name, { sub: 'View, import, export, back up, restore or delete saves', onClick: () => saveDataPage(pr.id) });
@@ -4824,7 +4913,7 @@ async function renderRecordingSettings(p) {
   if (rs.enabled === false) return;
   p.append(rowButton('Start / stop shortcut', { value: rs.key || 'Off', sub: 'Press it while playing to start a recording and again to stop it. Changes apply to the next game you start.', onClick: async () => {
     const k = await captureKey({ mods: true }); if (k === undefined) return;
-    if (k && k.toLowerCase() === (S.settings.emulator?.screenshotKey || '').toLowerCase()) { alertDlg('That shortcut is taken', `${k} takes screenshots. Choose another key, or change the screenshot key in Game sessions & saves.`); return; }
+    if (k && k.toLowerCase() === (S.settings.emulator?.screenshotKey || '').toLowerCase()) { alertDlg('That shortcut is taken', `${k} takes screenshots. Choose another key, or change the screenshot key in Playing games.`); return; }
     save({ key: k });
   } }));
   // encoder line: what will actually be used
