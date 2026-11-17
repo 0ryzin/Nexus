@@ -442,34 +442,48 @@ func runUI(a *App, url string) {
 	u.showMainWindow()
 	procUpdateWindow.Call(u.hwnd)
 
-	chromium := edge.NewChromium()
-	chromium.DataPath = a.Paths.WebView
-	chromium.MessageCallback = func(string) {}
-	navigated := false
-	chromium.NavigationCompletedCallback = func(*edge.ICoreWebView2, *edge.ICoreWebView2NavigationCompletedEventArgs) {
-		if navigated {
-			return
+	newChromium := func() *edge.Chromium {
+		chromium := edge.NewChromium()
+		chromium.DataPath = a.Paths.WebView
+		chromium.MessageCallback = func(string) {}
+		navigated := false
+		chromium.NavigationCompletedCallback = func(*edge.ICoreWebView2, *edge.ICoreWebView2NavigationCompletedEventArgs) {
+			if navigated {
+				return
+			}
+			navigated = true
+			a.Log.Printf("startup: interface loaded after %v", time.Since(startupBegan).Round(time.Millisecond))
+			u.ensureWindowVisible("after the interface loaded", false)
 		}
-		navigated = true
-		a.Log.Printf("startup: interface loaded after %v", time.Since(startupBegan).Round(time.Millisecond))
-		u.ensureWindowVisible("after the interface loaded", false)
-	}
-	chromium.SetPermission(edge.CoreWebView2PermissionKindClipboardRead, edge.CoreWebView2PermissionStateAllow)
-	chromium.AcceleratorKeyCallback = func(vk uint) bool {
-		if vk == 0x7A { // F11
-			go func() {
-				on := u.ToggleFullscreen()
-				if !a.Emu.State().Running { // during a game F11 is the game's full screen, not the start-up choice
-					_, _ = a.Settings.Update(func(g *GlobalSettings) { g.Display.Fullscreen = on })
-				}
-			}()
-			return true
+		chromium.SetPermission(edge.CoreWebView2PermissionKindClipboardRead, edge.CoreWebView2PermissionStateAllow)
+		chromium.AcceleratorKeyCallback = func(vk uint) bool {
+			if vk == 0x7A { // F11
+				go func() {
+					on := u.ToggleFullscreen()
+					if !a.Emu.State().Running { // during a game F11 is the game's full screen, not the start-up choice
+						_, _ = a.Settings.Update(func(g *GlobalSettings) { g.Display.Fullscreen = on })
+					}
+				}()
+				return true
+			}
+			return false
 		}
-		return false
+		return chromium
 	}
 	embedStart := time.Now()
-	if !chromium.Embed(u.hwnd) {
-		a.Log.Printf("WebView2 unavailable; falling back to Edge app mode")
+	// WebView2 can fail to start for a moment, for example right after NEXUS ended unexpectedly
+	// while the previous instance's WebView2 processes still hold its data folder (17 Nov: a
+	// controller failure there ended NEXUS). Try again before falling back.
+	chromium := newChromium()
+	ok := chromium.Embed(u.hwnd)
+	for attempt := 2; !ok && attempt <= 3; attempt++ {
+		a.Log.Printf("startup: WebView2 did not start (0x%08x); trying again (%d of 3)", uint32(chromium.Failure()), attempt)
+		time.Sleep(time.Duration(attempt) * time.Second)
+		chromium = newChromium()
+		ok = chromium.Embed(u.hwnd)
+	}
+	if !ok {
+		a.Log.Printf("WebView2 unavailable (0x%08x); falling back to Edge app mode", uint32(chromium.Failure()))
 		procDestroyWindow.Call(u.hwnd)
 		a.UI = noopUI{}
 		fallbackBrowser(a, url)

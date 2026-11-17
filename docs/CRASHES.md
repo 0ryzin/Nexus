@@ -110,3 +110,28 @@ background, which is normal. Shader preparation stays on.
 - **Not tested: loading the save on the user's PC.** That needs the game, the save and the PC. The
   crash is not claimed fixed until that has been done. If NEXUS still closes, the next start shows a
   report with the engine's `Host crash` line, and `eden_crash.dmp` is kept with it.
+
+## After the fix: what the 17 Nov 14:39 session showed
+
+- **The save loaded** and the game ran for 8 minutes (28,505 frames). The save-load crash did
+  not happen again in that session.
+- **NEXUS closed when the game was closed (14:47).** The new handler caught it:
+  - `0xc0000005` at `nvoglv64.dll+0xe4e577` on the engine's `VulkanWorker` thread, 12 s after
+    "stopping";
+  - stack: `nvoglv64.dll`, `nvoglv64.dll`, `graphics-hook64.dll+0xe99c`, then `nexus_engine.dll`
+    frames.
+  - `graphics-hook64.dll` is OBS Studio's game-capture hook. It loads into Vulkan programs while
+    OBS captures (or with OBS's Vulkan capture layer installed).
+  - The crash is inside the NVIDIA driver, reached through that hook, while the engine shuts its
+    Vulkan workers down.
+  - The engine frames cannot be named: release builds kept no symbols. CI now also publishes the
+    engine's link map (`NEXUS-<version>-engine-map`), so the next report's `nexus_engine.dll+0x…`
+    frames can be looked up.
+  - **Not fixed:** the cause is not known. If it happens again, try once with OBS closed. That
+    would show whether the hook is needed for it.
+- **The next start failed (14:50).** WebView2 reported success without a controller, and the
+  WebView2 library NEXUS uses dereferenced it, ending NEXUS (`Logs\crash-go.log`). A start 30 s
+  later worked.
+  - NEXUS now carries that library with a fix (`app/third_party/go-webview2`): a failed WebView2
+    start returns an error instead.
+  - NEXUS then tries twice more, 2 and 3 s apart, before falling back to Edge's app window.

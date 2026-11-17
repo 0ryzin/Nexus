@@ -28,7 +28,8 @@ func (e *Emulator) EngineDataStatus() EngineDataStatus {
 func (e *Emulator) EnsureEngineData() error {
 	dd := e.DataDir()
 	for _, sub := range []string{"", "keys", filepath.Join("nand", "system"), filepath.Join("nand", "user"), "sdmc", "load", "log",
-		"config", "dump", "shader", "screenshots", "lossless", "streamline"} {
+		"config", "dump", "shader", "screenshots", "lossless", "streamline",
+		"play_time", "tas"} { // play_time, tas: the engine writes there but does not create them (engine log, 17 Nov)
 		if err := os.MkdirAll(filepath.Join(dd, sub), 0o755); err != nil {
 			return fmt.Errorf("the NEXUS engine data folder could not be created (%s): %w", dd, err)
 		}
