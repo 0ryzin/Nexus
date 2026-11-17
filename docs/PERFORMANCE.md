@@ -93,6 +93,19 @@ before; about 0-2 after).
 - Not measured yet: Windows/WebView2 idle CPU and GPU, memory after a long session, resource use
   while a game runs or prepares shaders. These need your PC.
 
+## 0.8.0: after closing games, measured (Linux, stand-in engine)
+
+What NEXUS itself keeps after a game closes, with the stand-in engine (17 Nov). The real engine's
+own teardown (its threads, GPU memory, Lichii #1932 closing kernel objects at stop) runs in the
+engine library and needs a Windows run with a game.
+
+- Goroutines: 2 before, 2 after five launch/close cycles (`TestSessionCleanup`, in CI).
+- NEXUS server memory (resident), 20 launch/close cycles: 13.3 MB idle before; 13.9 after the first
+  close, 15.7 after 5, 16.6 after 10, 17.0 after 15 and still 17.0 after 20. It levels off (Go's
+  allocator and NEXUS's caches settling), no growth per session after that.
+- Leak check of the interface (`tools/perf/nav_soak.py`, 60 rounds of 8 screen changes): DOM nodes
+  1,070 and event listeners 215 before and after; JS heap +0.19 MB.
+
 ## 0.8.0 (engine on Lichii build 177): changes, not measurements
 
 None of these has a before/after measurement yet; they are listed so a measurement can be made
