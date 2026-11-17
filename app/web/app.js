@@ -1720,6 +1720,28 @@ function onShaderPrep(p) {
   else if (p.state === 'failed') toast(`${p.title}: shaders could not be prepared. ${p.error || ''}`, I.warn, 8000);
 }
 
+// ---------- portable shader data between your own devices (shadercache.go, docs/SHADERS.md)
+async function shaderExport(g) {
+  try {
+    const r = await fetch(`/api/games/${encodeURIComponent(g.key)}/shaders/export`, { headers: { 'X-Nexus': '1' } });
+    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || `Export failed (${r.status})`); }
+    const blob = await r.blob();
+    const name = (r.headers.get('Content-Disposition') || '').match(/filename="?([^";]+)"?/)?.[1] || `${g.title}.nxshaders`;
+    const a = h('a', { href: URL.createObjectURL(blob), download: decodeURIComponent(name) }); document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    alertDlg('Shader data exported', `${g.title}'s shader data was saved to your Downloads folder (${(blob.size / 1048576).toFixed(1)} MB). On your other device, open the game's Options and choose Import Shader Data. It holds the game's shader code, so keep it to your own devices; graphics-card-specific data is not included.`);
+  } catch (e) { alertDlg('Export failed', e.message); }
+}
+async function shaderImport(g) {
+  const f = await pickFile('.nxshaders'); if (!f) return;
+  try {
+    toast('Importing shader data…', I.chip);
+    const r = await api(`/api/games/${encodeURIComponent(g.key)}/shaders/import`, { body: f });
+    if (!r.added) toast(`${g.title}: nothing new: this device already has all of it (${r.present} entries).`, I.check, 6000);
+    else toast(`${g.title}: ${r.added.toLocaleString()} shader entries added; they are built before you play.${r.present ? ` ${r.present.toLocaleString()} were already here and were kept.` : ''}`, I.check, 8000);
+  } catch (e) { alertDlg('Import failed', e.message); }
+}
+
 // ---------- game options menu
 function gameMenu(key) {
   const g = gameByKey(key); if (!g) return;
@@ -1731,6 +1753,8 @@ function gameMenu(key) {
     isPlayable(g) && !g.hidden && !running ? ['play', 'Play', I.play] : null,
     isPlayable(g) ? ['config', 'Configure Game Settings', I.gear] : null,
     isPlayable(g) && !S.playing?.running ? ['shaders', S.prep?.key === key ? `Preparing Shaders… (${prepLabel(S.prep)})` : 'Prepare Shaders Now', I.chip] : null,
+    isPlayable(g) && !S.playing?.running ? ['shexport', 'Export Shader Data', I.download || I.folder] : null,
+    isPlayable(g) && !S.playing?.running ? ['shimport', 'Import Shader Data…', I.plus] : null,
     ['art', 'Edit Game Artwork', I.palette],
     ['info', 'Game Information', I.info],
     ['open', 'Open Game Location', I.folder],
@@ -1748,6 +1772,8 @@ function gameMenu(key) {
       case 'resume': resumeGame(); break;
       case 'close': closeRunningGame(); break;
       case 'config': gameConfig(key); break;
+      case 'shexport': shaderExport(g); break;
+      case 'shimport': shaderImport(g); break;
       case 'shaders':
         if (S.prep?.key === key) { api('/api/shaders/prepare/cancel', { body: {} }).catch(() => { }); break; }
         api(`/api/games/${encodeURIComponent(key)}/prepare-shaders`, { body: {} })

@@ -92,6 +92,33 @@ percentage: how many shaders a game will still reveal is unknown.
 | `warm-compute.bin` | Compute programs converted from the game files | Rebuilt from the game on each device (it contains the game's code; never synchronised) |
 | `warm-compute.done` | The precache marker | No (driver-specific) |
 
+## Moving shader data to another device (0.8.0)
+
+A game's Options menu has **Export Shader Data** and **Import Shader Data…**:
+
+- Export writes a *shader pack* (`<title> shaders [<title id>].nxshaders`) with the live portable
+  records of the game's `lichii-cache.v2.bin`: shader programs, graphics and compute pipelines (with
+  their render state) and which pipelines each session used. Driver-compiled data is never in it.
+  A description records the title, log format, record counts, source device, NEXUS version and a
+  SHA-256 of the log.
+- Import checks the pack whole before changing anything (format, size against its description,
+  SHA-256, log format, and that it is this game). It **adds only records this device does not
+  have**: a record present here (even another version) is kept, one removed here stays removed, a
+  cut-off tail of the local log is left out, and the old log is kept as
+  `lichii-cache.v2.bin.nexus-backup`. The new log is written to a temporary file and renamed. Nothing
+  happens while a game runs or shaders are being prepared. Importing the same pack again adds
+  nothing.
+- On the next start the engine builds the imported pipelines at *Building shaders from earlier
+  sessions*, with this device's driver. Pipelines whose render state this GPU cannot use are skipped
+  by the engine (`KeyFitsDevice`); programs lowered by another engine build are translated again.
+
+**Why not through the NEXUS Account:** the account keeps its data in a private GitHub Gist, which
+holds text files and truncates contents over 1 MB in its API, while a game's shader data is binary
+and can be hundreds of MB. More importantly, the portable records contain the game's own shader
+code, and NEXUS does not upload game content to the cloud. A cloud-safe version would carry only
+pipeline keys and render states (like Fritchii's recipes) and rebuild the code from each device's
+own copy of the game; that needs the recipe assembly described above and is future work.
+
 ## Not measured
 
 No game was run for this work: there are no before/after numbers for stuttering. To compare on your

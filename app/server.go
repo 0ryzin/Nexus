@@ -11,6 +11,7 @@ import (
 	"image/gif"
 	"io"
 	"io/fs"
+	"mime"
 	"net"
 	"net/http"
 	"os"
@@ -532,6 +533,41 @@ func (s *Server) routes() {
 			return
 		}
 		writeJSON(w, true)
+	})
+	// portable shader data between your own devices (shadercache.go)
+	m.HandleFunc("GET /api/games/{key}/shaders/export", func(w http.ResponseWriter, r *http.Request) {
+		g, ok := a.Library.Get(r.PathValue("key"))
+		if !ok {
+			writeErr(w, 404, errors.New("No such game."))
+			return
+		}
+		var buf bytes.Buffer
+		if _, err := a.Emu.ExportShaders(&g, &buf); err != nil {
+			writeErr(w, 409, err)
+			return
+		}
+		name := shaderPackFileName(g.Title, g.TitleID)
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name}))
+		w.Write(buf.Bytes())
+	})
+	m.HandleFunc("POST /api/games/{key}/shaders/import", func(w http.ResponseWriter, r *http.Request) {
+		g, ok := a.Library.Get(r.PathValue("key"))
+		if !ok {
+			writeErr(w, 404, errors.New("No such game."))
+			return
+		}
+		res, err := a.Emu.ImportShaders(r.Body, func(id string) *Game {
+			if strings.EqualFold(id, g.TitleID) {
+				return &g
+			}
+			return nil
+		})
+		if err != nil {
+			writeErr(w, 409, err)
+			return
+		}
+		writeJSON(w, res)
 	})
 	m.HandleFunc("POST /api/shaders/prepare/cancel", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, a.Emu.cancelPrep())

@@ -33,6 +33,8 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
   the shader programs in the game's own files, and the engine compiles them before the game starts
   (once per game and driver; *Start now* skips). A game's Options menu has *Prepare Shaders Now*.
   See docs/SHADERS.md for what is and is not prepared in advance. Not measured with a game yet.
+- A game's shader data can be exported and imported between your own devices (Options menu);
+  importing only adds what the device lacks, after checksum and format checks.
 - Engine on Lichii build 316 (283 upstream changes, several for Ocarina of Time); games from NSP/XCI
   files now get their control data (NACP).
 - Shaders: the loading screen and the performance bar show pipelines ready from the cache, builds

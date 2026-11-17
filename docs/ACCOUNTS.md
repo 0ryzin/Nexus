@@ -59,6 +59,10 @@ recordings. **Game saves** also stay on each device for now (see *Not done yet*)
 Each category can be switched off under *What synchronises*; *Synchronise this device* switches all
 of it off for this device.
 
+- **Not synchronised: shader caches.** They contain the game's shader code and can be hundreds of
+  MB; use a game's *Export Shader Data* / *Import Shader Data* between your own devices instead
+  (docs/SHADERS.md).
+
 ### Offline and conflicts
 
 - NEXUS never needs a connection. Changes are made locally first.
