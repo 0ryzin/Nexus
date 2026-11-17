@@ -82,10 +82,13 @@ def read_map(path, image_base, image_size):
             if not (0 < rva < image_size):
                 continue  # absolute symbols, or another base
             obj = obj.split(":")[-1].split("\\")[-1].split("/")[-1] or "-"
-            # keep one name per address: prefer a C++ (decorated) or longer name
-            old = out.get(rva)
-            if old is None or (not old[1].startswith("?") and name.startswith("?")):
-                out[rva] = (obj, name)
+            # every name at an address: identical functions are folded into one (/OPT:ICF), and
+            # the address then has several
+            if rva in out:
+                if name not in out[rva][1]:
+                    out[rva][1].append(name)
+            else:
+                out[rva] = (obj, [name])
     return out
 
 
@@ -147,24 +150,36 @@ def main(argv):
     table = read_map(mapfile, image_base, image_size)
     if len(table) < minimum:
         raise SystemExit(f"{mapfile}: only {len(table)} symbols read; not the map of {dll}?")
-    rvas = sorted(table)
-    raw = [table[r][1] for r in rvas]
-    names = undecorate_all(raw, undname)
-    # identity check: every export resolves to a symbol named like it
-    import bisect
-    bad = []
+    # identity check. Every export must start exactly where a symbol of the map starts, and nearly
+    # most must be named so there. Identical functions folded into one (/OPT:ICF) are listed in
+    # the map under one of their names only, so a few exports carry another name (a trivial
+    # "return 2" folded with another one); a map of another build fails both tests.
+    starts, named, bad = 0, 0, []
     for name, rva in exports.items():
-        i = bisect.bisect_right(rvas, rva) - 1
-        if i < 0 or name not in raw[i] and name not in names[i]:
-            bad.append(f"{name} at {rva:#x} -> {raw[i] if i >= 0 else None}")
-    if not exports or bad:
-        raise SystemExit(f"{mapfile} does not match {dll}: " + "; ".join(bad[:10] or ["no exports"]))
+        if rva in table:
+            starts += 1
+            if name in table[rva][1]:
+                named += 1
+            else:
+                table[rva][1].insert(0, name)  # the export's own name first
+        else:
+            bad.append(f"{name} at {rva:#x}")
+    if not exports or bad or named < 0.5 * len(exports):
+        raise SystemExit(f"{mapfile} does not match {dll}: {starts}/{len(exports)} exports start at a symbol, "
+                         f"{named} under their own name; " + "; ".join(bad[:10]))
+    rvas = sorted(table)
+    groups = [table[r][1] for r in rvas]
+    flat = [n for g in groups for n in g]
+    und = iter(undecorate_all(flat, undname))
+    readable = [[next(und) for _ in g] for g in groups]
+    # a folded address names its first symbols ("A | B | +3 more")
+    names = [" | ".join(r[:2]) + (f" | +{len(r) - 2} more" if len(r) > 2 else "") for r in readable]
     with gzip.open(out, "wt", encoding="utf-8", compresslevel=9) as fh:
         fh.write(f"NEXUSSYM 1 {sha} {image_base:x} {len(rvas)}\n")
         for rva, name in zip(rvas, names):
             obj = table[rva][0].replace(" ", "_")
             fh.write(f"{rva:x} {obj} {name.replace(chr(10), ' ')}\n")
-    print(f"{out}: {len(rvas)} symbols for {dll} (sha256 {sha[:16]}…); {len(exports)} exports checked")
+    print(f"{out}: {len(rvas)} symbols for {dll} (sha256 {sha[:16]}…); {len(exports)} exports start at symbols, {named} by name")
 
 
 if __name__ == "__main__":
