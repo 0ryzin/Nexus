@@ -140,6 +140,22 @@ Newest first.
 
 ## 0.7.0 (in development)
 
+### Ocarina of Time: NEXUS closed without a message after "Load existing save" (17 Nov)
+- **Problem:** menu fine (about 150 FPS); loading a save gave a black screen, then the whole of
+  NEXUS closed with no dialog, no report and no dump.
+- **Diagnosis:** the user's `nexus.log` and `eden_log.txt` (read only). The engine log ends at
+  666.7 s right after a burst of unmapped device reads from `buffer_cache.h:4005`; no `Host crash`
+  line. Silent because `nexus_engine` never installed the engine's crash handler and the Go runtime
+  disables Windows Error Reporting (`SEM_NOGPFAULTERRORBOX`). Likely cause: Lichii #2041, a
+  Windows race where the sparse-vector fault handler sets a page read-only while another thread
+  writes to it. Not confirmed with a dump.
+- **Files:** engine patches 0025 (#2041), 0026 (#2062), 0027 (crash handler); `app/crashreport.go`,
+  `app/engine.go`, `app/main.go`, `app/server.go`, `app/web/app.js`, `app/web/eta.js`.
+- **Fix:** the two upstream fixes; crash handler, WER, Go crash output, session record and crash
+  report at the next start (docs/CRASHES.md).
+- **Tests:** engine `sparse_large_vector` test (CI `tests.exe`); `crashreport_test.go`;
+  `tools/uitest/eta_test.js`, `shader_progress.py`. **Not tested with the game on the user's PC.**
+
 ### Home showed a menu instead of the Home screen
 - **Problem:** pressing Home during a game showed a screen with *Return to game / Close game /
   Show performance monitor*. Choosing the running game on Home asked *Cancel / Close / Resume*.

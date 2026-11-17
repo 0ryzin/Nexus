@@ -1,0 +1,116 @@
+From 3aa70c47120016a7d8013977e60e97b6a88f3c96 Mon Sep 17 00:00:00 2001
+From: Zortos <zortosdev@proton.me>
+Date: Tue, 17 Nov 2026 01:45:22 +0100
+Subject: [PATCH 25/27] common: keep a sparse vector page writable when the
+ fault handler commits it again (#2041)
+
+FakePageFaultHandler committed pages read-only. When another thread had committed the same page read-write and was storing entries into it (CommitRegion, then GetUnchecked), the handler's VirtualProtect or VirtualAlloc set it back to read-only while the committed bit stayed set, so the next store faulted. Commit every page read-write and leave committed pages alone.
+
+Co-authored-by: capy-ai[bot] <230910855+capy-ai[bot]@users.noreply.github.com>
+(cherry picked from commit bfc2359f0ce6adc585f1c9f70a0d9b1e76ebf1d3)
+---
+ src/common/sparse_large_vector.cpp       | 17 ++++++-----------
+ src/common/sparse_large_vector.h         |  4 ++--
+ src/tests/common/sparse_large_vector.cpp | 19 +++++++++++++++++++
+ 3 files changed, 27 insertions(+), 13 deletions(-)
+
+diff --git a/src/common/sparse_large_vector.cpp b/src/common/sparse_large_vector.cpp
+index 0e015434e..1ade958bb 100644
+--- a/src/common/sparse_large_vector.cpp
++++ b/src/common/sparse_large_vector.cpp
+@@ -63,13 +63,13 @@ static LONG WINAPI FakePageFaultHandler(PEXCEPTION_POINTERS info) {
+ 
+     // Commit this region
+     if (addr != 0) {
+-        if (!CommitVectorPage(addr << HostPageBits, false)) {
++        if (!CommitVectorPage(addr << HostPageBits)) {
+             return EXCEPTION_CONTINUE_SEARCH;
+         }
+     }
+     // Commit next region if needed
+     if (addr2 != 0) {
+-        if (!CommitVectorPage(addr2 << HostPageBits, false)) {
++        if (!CommitVectorPage(addr2 << HostPageBits)) {
+             return EXCEPTION_CONTINUE_SEARCH;
+         }
+     }
+@@ -77,26 +77,21 @@ static LONG WINAPI FakePageFaultHandler(PEXCEPTION_POINTERS info) {
+     return EXCEPTION_CONTINUE_EXECUTION;
+ }
+ 
+-bool CommitVectorPage(uintptr_t addr, bool write) noexcept {
++// Pages are always committed writable: the fault handler can run after another thread has
++// committed the same page and is storing entries into it, so it must not take write access away.
++bool CommitVectorPage(uintptr_t addr) noexcept {
+     MEMORY_BASIC_INFORMATION info {};
+     auto res = VirtualQuery(reinterpret_cast<void*>(addr), &info, sizeof(info));
+     if (res == 0) {
+         LOG_CRITICAL(HW_Memory, "Failed to query large buffer region at {:#x} with error {}, will try committing anyway", addr, GetLastError());
+     } else if (info.State == MEM_COMMIT) {
+-        DWORD old_protect {};
+-        auto perm = write ? PAGE_READWRITE : PAGE_READONLY;
+-        if (!VirtualProtect(reinterpret_cast<void*>(addr), HostPageSize, perm, &old_protect)) {
+-            LOG_ERROR(HW_Memory, "Failed to change permissions of large buffer region at {:#x}, error {}", addr, GetLastError());
+-            return false;
+-        }
+         return true;
+     } else if (info.State != MEM_RESERVE) {
+         LOG_ERROR(HW_Memory, "Tried to commit an unreserved large buffer region at {:#x} that is not mapped (state {:#x})", addr, info.State);
+         return false;
+     }
+ 
+-    auto perm = write ? PAGE_READWRITE : PAGE_READONLY;
+-    void* res2 = VirtualAlloc(reinterpret_cast<LPVOID>(addr), HostPageSize, MEM_COMMIT, perm);
++    void* res2 = VirtualAlloc(reinterpret_cast<LPVOID>(addr), HostPageSize, MEM_COMMIT, PAGE_READWRITE);
+     if (res2 == nullptr) {
+         LOG_ERROR(HW_Memory, "Failed to commit large buffer region at {:#x}, error {}", addr, GetLastError());
+         return false;
+diff --git a/src/common/sparse_large_vector.h b/src/common/sparse_large_vector.h
+index 07a7df64c..47c045a45 100644
+--- a/src/common/sparse_large_vector.h
++++ b/src/common/sparse_large_vector.h
+@@ -26,7 +26,7 @@ namespace Common {
+ constexpr u64 HostPageSize = 0x1000;
+ constexpr u64 HostPageBits = 12;
+ constexpr u64 HostPageMask = ~(HostPageSize - 1);
+-bool CommitVectorPage(uintptr_t addr, bool write) noexcept;
++bool CommitVectorPage(uintptr_t addr) noexcept;
+ #else
+ inline const u64 HostPageSize = sysconf(_SC_PAGESIZE);
+ inline const u64 HostPageBits = std::countr_zero(HostPageSize);
+@@ -174,7 +174,7 @@ private:
+         auto page_index = (index * sizeof(T)) >> HostPageBits;
+         auto page = reinterpret_cast<uintptr_t>(base_ptr + index) & HostPageMask;
+ #if defined(_WIN32)
+-        if (!CommitVectorPage(page, true)) {
++        if (!CommitVectorPage(page)) {
+             return false;
+         }
+ #else
+diff --git a/src/tests/common/sparse_large_vector.cpp b/src/tests/common/sparse_large_vector.cpp
+index 4be6d3430..9c567b1e7 100644
+--- a/src/tests/common/sparse_large_vector.cpp
++++ b/src/tests/common/sparse_large_vector.cpp
+@@ -53,3 +53,22 @@ TEST_CASE("SparseLargeVector keeps zeroed pages writable for in-flight stores",
+     entries.ZeroRegion(EntriesPerHostPage, EntriesPerHostPage * 2);
+     REQUIRE(entries[index].Type() == Common::PageType::Unmapped);
+ }
++
++#ifdef _WIN32
++// A guest read of an uncommitted page faults into the vector's handler, which commits the page.
++// When another thread committed that page and stored an entry first, the handler must leave the
++// page writable, or that thread's next store faults.
++TEST_CASE("SparseLargeVector fault handler keeps a page another thread committed writable", "[common]") {
++    Common::SparseLargeVector<Entry> entries(EntriesPerHostPage * 2);
++    const std::size_t index = EntriesPerHostPage + 3;
++
++    entries.CommitRegion(index, index + 1);
++    entries.GetUnchecked(index).Store(false, Common::PageType::Memory, 1, 0x1000);
++
++    const auto page = reinterpret_cast<uintptr_t>(entries.data() + index) & Common::HostPageMask;
++    REQUIRE(Common::CommitVectorPage(page));
++
++    entries.GetUnchecked(index).Store(false, Common::PageType::RasterizerCachedMemory, 1, 0x1000);
++    REQUIRE(entries[index].Type() == Common::PageType::RasterizerCachedMemory);
++}
++#endif

@@ -132,6 +132,8 @@ func (p *Paths) Ensure() error {
 type App struct {
 	saveMigrationErr string // shown in Save Data when the 0.3.0 save conversion could not run
 	updateFailed     string // an update was rolled back (shown once in Settings › Updates)
+	crashMu          sync.Mutex
+	crashNotice      *CrashNotice // the last session ended unexpectedly (shown once, crashreport.go)
 	Paths            *Paths
 	Log              *log.Logger
 	Events           *EventBus

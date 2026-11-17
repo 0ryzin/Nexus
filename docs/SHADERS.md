@@ -83,6 +83,22 @@ percentage: how many shaders a game will still reveal is unknown.
 - Fritchii code was not copied into NEXUS. NEXUS's preparation uses Lichii's precache builder (part
   of the engine NEXUS is based on) and NEXUS's own engine interface (`nexus_engine_prepare_shaders`).
 
+## Remaining time (0.8.0)
+
+The loading screen and *Prepare Shaders Now* show how long the measured shader work has left
+(`app/web/eta.js`). The estimate is the remaining count divided by the throughput measured over
+the last 15 seconds of this run; nothing is assumed or carried over from earlier runs.
+
+- Each stage has its own estimate (reading files, converting programs, compiling at boot, building
+  cached pipelines): a new stage starts a new measurement, because their speeds differ by orders
+  of magnitude.
+- Less than 3 seconds and 3 samples of data, or no progress yet: *Calculating remaining time...*
+- No progress for 6 seconds: *Waiting: no progress for ...* instead of an old estimate.
+- After the preparation: *Shader preparation complete.*
+- Stages without a known total (reading the game's files) show no time.
+- Pipelines still building in the background while the game starts get an estimate only from
+  the counts the engine reports; shaders the game has not asked for are unknown and not counted.
+
 ## Caches on disk, and what is portable
 
 | File (per game, in the engine's `shader/<title id>/`) | Holds | Portable to another device? |

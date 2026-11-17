@@ -46,6 +46,17 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
   PERFORMANCE.md).
 - Engine: the texture cache's host-memory cap now works on Linux too (for 16 GB shared-memory
   handhelds; not tested on one).
+- Ocarina of Time closing NEXUS without a message when a save loads (17 Nov): two engine fixes
+  Lichii made after build 316 are ported (#2041, a Windows race in the engine's memory tables that
+  ends the process with an access violation; #2062, texture cache page-table bookkeeping). Most
+  likely cause, not confirmed: no dump existed. **Not yet tested with the game.** See docs/CRASHES.md.
+- Crashes are no longer silent: the engine writes a `Host crash` line and `eden_crash.dmp`;
+  NEXUS re-enables Windows Error Reporting without its dialog, keeps Go's crash output, and after
+  an unexpected close says so at the next start with a crash report (`Logs\crashes`, no keys or
+  account details).
+- Shader work on the loading screen and in *Prepare Shaders Now* shows the remaining time,
+  estimated from measured throughput only ("Calculating remaining time..." until there is enough
+  data; "Waiting: no progress" when it stalls; "Shader preparation complete." when done).
 
 ## 0.6.0 — test build (pre-release)
 

@@ -1,0 +1,57 @@
+From 04cc7f259059a10013f318b53661e6855cc3364c Mon Sep 17 00:00:00 2001
+From: Zortos <zortosdev@proton.me>
+Date: Tue, 17 Nov 2026 10:39:11 +0100
+Subject: [PATCH 26/27] texture_cache: unregister an image from its own address
+ space's page table (#2062)
+
+RegisterImage adds an image's GPU pages to the page table of the channel bound at the time and records that address space in image.address_space. UnregisterImage cleared the pages from the currently bound channel's table instead. The garbage collector, CPU unmaps and joins reach images of any address space through the shared CPU page table, so an image registered on one channel and removed while another channel was bound tripped the "Unregistering unregistered page" assert and left its ids in the original table. Unregister from the table of the image's recorded address space.
+
+Co-authored-by: capy-ai[bot] <230910855+capy-ai[bot]@users.noreply.github.com>
+(cherry picked from commit d589f95322917f356c4eac1f1aa3feb897dec6d2)
+---
+ src/video_core/texture_cache/texture_cache.h | 18 ++++++++++++------
+ 1 file changed, 12 insertions(+), 6 deletions(-)
+
+diff --git a/src/video_core/texture_cache/texture_cache.h b/src/video_core/texture_cache/texture_cache.h
+index 11cb44759..f4d776657 100644
+--- a/src/video_core/texture_cache/texture_cache.h
++++ b/src/video_core/texture_cache/texture_cache.h
+@@ -4240,6 +4240,10 @@ void TextureCache<P>::UnregisterImage(ImageId image_id) {
+     image.flags &= ~ImageFlagBits::Registered;
+     image.flags &= ~ImageFlagBits::BadOverlap;
+     lru_cache.Free(image.lru_index);
++    const std::optional<size_t> storage_id = getStorageID(image.address_space);
++    ASSERT(storage_id);
++    TextureCacheGPUMap& gpu_page_table = gpu_page_table_storage[*storage_id * 2];
++    TextureCacheGPUMap& sparse_page_table = gpu_page_table_storage[*storage_id * 2 + 1];
+     bool reported_missing_page = false;
+     const auto& clear_page_table =
+         [this, image_id, &image, &reported_missing_page](u64 page, ::Common::unordered_map<u64, std::vector<ImageId>, Common::IdentityHash<u64>>& selected_page_table) {
+@@ -4260,9 +4264,10 @@ void TextureCache<P>::UnregisterImage(ImageId image_id) {
+             }
+             image_ids.erase(vector_it);
+         };
+-    ForEachGPUPage(image.gpu_addr, image.guest_size_bytes, [this, &clear_page_table](u64 page) {
+-        clear_page_table(page, (*channel_state->gpu_page_table));
+-    });
++    ForEachGPUPage(image.gpu_addr, image.guest_size_bytes,
++                   [&clear_page_table, &gpu_page_table](u64 page) {
++                       clear_page_table(page, gpu_page_table);
++                   });
+     if (False(image.flags & ImageFlagBits::Sparse)) {
+         const auto map_id = image.map_view_id;
+         ForEachCPUPage(image.cpu_addr, image.guest_size_bytes, [this, map_id](u64 page) {
+@@ -4283,9 +4288,10 @@ void TextureCache<P>::UnregisterImage(ImageId image_id) {
+         slot_map_views.erase(map_id);
+         return;
+     }
+-    ForEachGPUPage(image.gpu_addr, image.guest_size_bytes, [this, &clear_page_table](u64 page) {
+-        clear_page_table(page, (*channel_state->sparse_page_table));
+-    });
++    ForEachGPUPage(image.gpu_addr, image.guest_size_bytes,
++                   [&clear_page_table, &sparse_page_table](u64 page) {
++                       clear_page_table(page, sparse_page_table);
++                   });
+     auto it = sparse_views.find(image_id);
+     ASSERT(it != sparse_views.end());
+     auto& sparse_maps = it->second;

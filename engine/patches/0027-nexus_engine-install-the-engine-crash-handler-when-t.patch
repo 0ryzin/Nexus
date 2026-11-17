@@ -1,0 +1,93 @@
+From 12d623f0d561696ad7fdca8ea34e3ce3cc9bfb00 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 17 Nov 2026 13:50:16 +0000
+Subject: [PATCH 27/27] nexus_engine: install the engine crash handler when the
+ log starts
+
+NEXUS loads the engine in-process and the Go runtime sets SEM_NOGPFAULTERRORBOX, so a native
+crash inside the engine ended NEXUS with no dialog, no Windows Error Reporting dump and no
+log line. Lichii's own front-ends install Common::Windows::InstallCrashHandler; do the same
+when the engine first starts its log (session or shader preparation): a "Host crash" Critical
+line with module+offset stack and thread name, a flushed log, and eden_crash.dmp in the log
+directory (or EDEN_NX2_CRASH_DUMP). Nothing changes until a crash happens.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
+---
+ src/nexus_engine/nexus_engine.cpp | 35 ++++++++++++++++++++++---------
+ 1 file changed, 25 insertions(+), 10 deletions(-)
+
+diff --git a/src/nexus_engine/nexus_engine.cpp b/src/nexus_engine/nexus_engine.cpp
+index 3d1aa11ad..669ebb64a 100644
+--- a/src/nexus_engine/nexus_engine.cpp
++++ b/src/nexus_engine/nexus_engine.cpp
+@@ -12,6 +12,7 @@
+ #include <atomic>
+ #include <chrono>
+ #include <cstdio>
++#include <cstdlib>
+ #include <cstring>
+ #include <ctime>
+ #include <filesystem>
+@@ -70,6 +71,7 @@
+ 
+ #ifdef _WIN32
+ #include <windows.h>
++#include "common/windows/crash_handler.h"
+ #include "common/windows/timer_resolution.h"
+ #endif
+ 
+@@ -207,6 +209,27 @@ Engine& E() {
+     return *engine;
+ }
+ 
++// Starts the engine log once per process. On Windows it also installs the engine's crash handler
++// (as Lichii's own front-ends do): an unhandled exception, abort() or a CRT invalid-parameter
++// failure then logs a Critical "Host crash" line with the faulting module+offset, thread and
++// stack, flushes the log and writes eden_crash.dmp next to it. Without it a native crash inside
++// NEXUS ends the process with no trace, because the Go runtime turns off the Windows error box.
++// EDEN_NX2_CRASH_DUMP=<dir> puts the dump elsewhere, as in Lichii.
++void StartLogging(Engine& e) {
++    if (e.logging_started) {
++        return;
++    }
++    Common::Log::Initialize();
++    Common::Log::Start();
++    e.logging_started = true;
++#ifdef _WIN32
++    const char* const crash_dump_dir = std::getenv("EDEN_NX2_CRASH_DUMP");
++    Common::Windows::InstallCrashHandler(
++        crash_dump_dir ? std::filesystem::path{crash_dump_dir}
++                       : Common::FS::GetEdenPath(Common::FS::EdenPath::LogDir));
++#endif
++}
++
+ void Fail(const char* code, const std::string& message) {
+     {
+         std::scoped_lock lk{E().mutex};
+@@ -847,11 +870,7 @@ void RunSession(Request req) {
+ 
+     // All engine data lives in the folder NEXUS chose (keys, firmware, NAND, saves, caches).
+     Common::FS::SetAppDirectory(req.data_dir);
+-    if (!e.logging_started) {
+-        Common::Log::Initialize();
+-        Common::Log::Start();
+-        e.logging_started = true;
+-    }
++    StartLogging(e);
+     LOG_INFO(Frontend, "NEXUS Engine {} ({}-{}) starting {}", NEXUS_ENGINE_VERSION,
+              Common::g_scm_branch, Common::g_scm_desc, req.game);
+ 
+@@ -1291,11 +1310,7 @@ void RunPrepare(PrepRequest req, std::stop_token stop) {
+         e.prep_state = state;
+     };
+     Common::FS::SetAppDirectory(req.data_dir);
+-    if (!e.logging_started) {
+-        Common::Log::Initialize();
+-        Common::Log::Start();
+-        e.logging_started = true;
+-    }
++    StartLogging(e);
+     LOG_INFO(Frontend, "NEXUS Engine: preparing shaders for {:016X} from {}", req.title_id, req.game);
+     SdlConfig config{req.config_file};
+     if (!e.system) {

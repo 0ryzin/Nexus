@@ -58,9 +58,11 @@ type RunState struct {
 const engineID = "nexus"
 
 type Emulator struct {
-	app  *App
-	mu   sync.Mutex
-	prep shaderPrep // shader preparation (shaderprep.go)
+	app *App
+	mu  sync.Mutex
+	// crash: the session record that lets NEXUS report a session it did not see end (crashreport.go)
+	crash *crashTracker
+	prep  shaderPrep // shader preparation (shaderprep.go)
 
 	state   RunState
 	host    EngineHost
@@ -90,7 +92,7 @@ func (e *Emulator) CheckEngineInBackground(done func(ok bool, msg string)) {
 }
 
 func NewEmulator(a *App) *Emulator {
-	e := &Emulator{app: a}
+	e := &Emulator{app: a, crash: newCrashTracker(a.Paths.Logs)}
 	e.Builds = NewEngineBuilds(e)
 	return e
 }
@@ -159,7 +161,28 @@ func (e *Emulator) setState(s RunState) {
 	e.mu.Lock()
 	e.state = s
 	e.mu.Unlock()
+	e.noteSession(s)
 	e.app.Events.Emit("emulator.state", s)
+}
+
+// noteSession keeps the crash tracker's session record in step with the session state.
+func (e *Emulator) noteSession(s RunState) {
+	if !s.Running {
+		e.crash.end()
+		return
+	}
+	e.crash.update(func(r *sessionRecord) bool {
+		important := r.Phase != s.Phase || r.Stage != s.Stage
+		r.Phase, r.Stage = s.Phase, s.Stage
+		if s.Prep != nil {
+			p := *s.Prep
+			r.Prep = &p
+		}
+		if s.Shaders != nil {
+			r.Shaders = s.Shaders
+		}
+		return important
+	})
 }
 
 // Host loads the active engine build once (in-process).
@@ -469,6 +492,15 @@ func (e *Emulator) Launch(g *Game, profileID string) error {
 	}
 	st := RunState{Running: true, Phase: "starting", Stage: "preparing", Started: nowUnix(), ProfileID: profileID, Mode: "game",
 		GameKey: g.Key, Title: g.Title, Emulator: engineID, EmuName: "NEXUS", Volume: vol}
+	e.crash.begin(sessionRecord{Game: g.Title, GameKey: g.Key, TitleID: g.TitleID, Phase: st.Phase, Stage: st.Stage,
+		Engine: e.Builds.ActiveVersionLabel(), Settings: sessionSettings(cfg)})
+	go func() { // hardware detection can take a moment when not cached: never on the launch path
+		hw := e.app.DetectHardware(false)
+		if p := hw.PrimaryGPU(); p != nil {
+			gpu := strings.TrimSpace(p.Vendor + " " + p.Model + " (driver " + p.Driver + ")")
+			e.crash.update(func(r *sessionRecord) bool { r.GPU = gpu; return true })
+		}
+	}()
 	// shader preparation first (shaderprep.go), when on and the engine build can
 	if sp, ok := host.(ShaderPreparer); ok && s.Emulator.PrepareShaders && g.TitleID != "" && e.PreparingKey() == "" {
 		st.Stage = "prepare"
@@ -477,6 +509,7 @@ func (e *Emulator) Launch(g *Game, profileID string) error {
 		return nil
 	}
 	if err := e.startEngine(host, req, st); err != nil {
+		e.crash.end()
 		return &LaunchError{Code: "start-failed", Message: "The NEXUS engine could not start the game.", Detail: err.Error()}
 	}
 	return nil
@@ -536,6 +569,15 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 		if es.System != "" {
 			gameSystem = es.System
 		}
+		e.crash.update(func(r *sessionRecord) bool {
+			important := r.EngineState != es.State || r.LoadStage != es.LoadStage || (r.Frames == 0) != (es.Frames == 0)
+			r.EngineState, r.LoadStage, r.LoadDone, r.LoadTotal, r.Frames = es.State, es.LoadStage, es.LoadDone, es.LoadTotal, es.Frames
+			r.Suspended = es.Suspended
+			if es.Shaders != nil {
+				r.Shaders = es.Shaders
+			}
+			return important
+		})
 		if st.Phase == "starting" {
 			stage := map[string]string{"starting": "loading", "loading": "loading", "running": "starting"}[es.State]
 			if es.LoadStage == "shaders" || es.LoadStage == "precache" {

@@ -911,6 +911,10 @@ func (s *Server) routes() {
 		}
 		writeJSON(w, true)
 	})
+	// the last game session ended unexpectedly: what to tell the user, once (crashreport.go)
+	m.HandleFunc("GET /api/crash/last", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, a.takeCrashNotice())
+	})
 	m.HandleFunc("POST /api/app/reveal-log", func(w http.ResponseWriter, r *http.Request) {
 		var b struct{ Path string }
 		_ = readBody(r, &b)

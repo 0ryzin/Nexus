@@ -17,6 +17,19 @@ from their commit messages and diffs.
 
 ## Build 177 → 316 (283 commits) - now in the NEXUS Engine
 
+### After build 316: ported into NEXUS (17 Nov 2026)
+
+- `bfc2359f0` #2041 *common: keep a sparse vector page writable when the fault handler commits it
+  again* → patch 0025. Windows `FakePageFaultHandler` committed pages read-only (and re-protected
+  committed ones read-only); a thread storing into a page it had just committed then faulted on a
+  write the handler does not handle. Likely cause of the Ocarina of Time save-load crash
+  (docs/CRASHES.md).
+- `d589f9532` #2062 *texture_cache: unregister an image from its own address space's page table*
+  → patch 0026.
+- Not ported: `f0bf0cfda` #2055 (mapping provenance in unmapped-read logs; diagnostic, larger
+  change to `DeviceMemoryManager`), and the other 11 commits (VP9, accounts, tests, docs, sockets,
+  NCA discovery, frame dumps) which do not touch this crash.
+
 Read from the commit messages and, for the items marked, the diffs. By area: video_core 39,
 vulkan 34, texture_cache 12, shader 11, file_sys 10, core 9, Ocarina-specific 7+, crypto 7,
 loader 5, buffer_cache 4, audio 3.

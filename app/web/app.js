@@ -1706,12 +1706,19 @@ async function rescan() { try { await api('/api/library/scan', { body: {} }); to
 // ---------- game details sheet
 // ---------- shader preparation on Home ("shaders.prepare" events, shaderprep.go)
 const PREP_WORDS = { 'Reading game files': 'reading the game’s files', 'Extracting shaders': 'finding shaders', Converting: 'converting', Writing: 'saving' };
+const prepEta = new ShaderEta();
 function prepLabel(p) {
   const w = PREP_WORDS[p?.stage] || 'starting';
-  return p?.total ? `${w} ${p.done} of ${p.total}` : w;
+  if (!p?.total) return w;
+  const r = p.eta;
+  return `${w} ${p.done} of ${p.total}` + (r && (r.state === 'estimate' || r.state === 'stalled') ? ` \u00b7 ${r.text}` : '');
 }
 function onShaderPrep(p) {
-  if (p.state === 'running') { S.prep = { key: p.gameKey, stage: p.stage, done: p.done, total: p.total }; return; }
+  if (p.state === 'running') {
+    const eta = p.total ? prepEta.add(p.gameKey + '|' + p.stage, p.done || 0, Math.max(0, p.total - (p.done || 0))) : null;
+    S.prep = { key: p.gameKey, stage: p.stage, done: p.done, total: p.total, eta };
+    return;
+  }
   S.prep = null;
   const n = v => Number(v || 0).toLocaleString();
   if (p.state === 'done') toast(`${p.title}: ${n(p.programs)} shader programs found and prepared. They are compiled the next time the game starts.`, I.check, 7000);
@@ -2297,12 +2304,13 @@ const Launch = {
   open(g, st, fromTile = false) {
     this.close(true);
     this.key = g.key; this.t0 = performance.now() - (fromTile ? 1500 : 0);
+    this.etaW = new ShaderEta(); this.sawPrep = this.prepFailed = false;
     const ghost = fromTile ? null : launchArt(g, 'lx-ghost'), art = launchArt(g, 'lx-art');
     const steps = h('div', { class: 'lx-steps' }, ['preparing', 'loading', 'starting'].map(k => h('span', {}, h('i'), this.STAGES[k][0])));
     const el = h('div', { class: 'launchfx' + (S.anim === 'off' ? ' no-anim' : '') + (fromTile ? ' from-tile loading' : ''), role: 'status' },
       h('div', { class: 'lx-backdrop', style: g.artSource ? { backgroundImage: `url("/art/${g.key}?v=${g.artRev || 0}&w=640")` } : {} }),
       h('div', { class: 'lx-stage' }, h('div', { class: 'lx-artwrap' }, ghost, art),
-        h('div', { class: 'lx-info' }, h('h1', {}, g.title), h('div', { class: 'lx-status' }, ''), h('div', { class: 'lx-bar' }, h('i')), steps, h('div', { class: 'lx-shaders', 'aria-live': 'polite' }))),
+        h('div', { class: 'lx-info' }, h('h1', {}, g.title), h('div', { class: 'lx-status' }, ''), h('div', { class: 'lx-bar' }, h('i')), h('div', { class: 'lx-eta', 'aria-live': 'polite' }), steps, h('div', { class: 'lx-shaders', 'aria-live': 'polite' }))),
       h('div', { class: 'lx-brand' }, h('span', { class: 'lx-mark' }), 'NEXUS'));
     const cancel = h('button', { class: 'btn lx-cancel', 'data-nav': true }, 'Cancel');
     cancel.addEventListener('click', () => this.cancel());
@@ -2333,7 +2341,27 @@ const Launch = {
     if (measured) bar.firstChild.style.width = `${Math.min(100, Math.round((st.loadDone || 0) / st.loadTotal * 100))}%`; else bar.firstChild.style.width = '';
     $$('.lx-steps span', el).forEach((s, i) => { s.classList.toggle('done', i < idx); s.classList.toggle('on', i === idx); });
     this.shaders(st.shaders);
+    this.eta(st, measured, label);
     if (st.phase === 'playing') this.enter();
+  },
+  // remaining time for measured shader work, from the throughput measured on this screen only
+  // (eta.js); the preparation's stages and the compiling stages each have their own estimate
+  eta(st, measured, label) {
+    const box = this.el && $('.lx-eta', this.el); if (!box) return;
+    if (st.stage === 'prepare') this.sawPrep = true;
+    const prepDone = this.sawPrep && !this.prepFailed && st.stage !== 'prepare';
+    let r = null;
+    if (measured) {
+      r = this.etaW.add(st.stage + '|' + (st.prep?.stage || ''), st.loadDone || 0, Math.max(0, st.loadTotal - (st.loadDone || 0)));
+      if (r.state === 'complete') r = null; // one stage done, not the whole preparation
+    } else if (st.shaders && st.shaders.queued != null && st.stage !== 'prepare') {
+      const sh = st.shaders, left = Math.max(0, sh.queued + (sh.running || 0));
+      if (left > 0) r = this.etaW.add('pipelines', (sh.fromCache || 0) + (sh.fromPrebuild || 0) + (sh.compiled || 0), left);
+    }
+    if (!r && prepDone) r = { state: 'complete', text: 'Shader preparation complete.' };
+    const rate = r?.state === 'estimate' ? fmtRate(r.rate) : '';
+    box.dataset.state = r?.state || '';
+    box.textContent = r?.text ? r.text + (rate ? ` \u00b7 ${rate}` : '') : '';
   },
   // the shader section: pipelines ready from this PC's cache, builds in flight, compiled now.
   // Counts only; shaders the game has not asked for yet are unknown, so no percentage here.
@@ -3893,7 +3921,7 @@ function connectEvents() {
         if (!Launch.el) goHome({ button: true });
         break;
       case 'launch.reveal': if (Launch.el) Launch.enter(); break;
-      case 'launch.warning': toast(m.data.message, I.warn, 9000); break;
+      case 'launch.warning': Launch.prepFailed = true; toast(m.data.message, I.warn, 9000); break;
       case 'shaders.prepare': onShaderPrep(m.data); break;
       case 'media.added':
         toast(`Screenshot saved${m.data.title ? ' · ' + m.data.title : ''}`, I.media, 2200);
@@ -4473,6 +4501,8 @@ Object.assign(Panels, {
   await gamesLoad;
   const st = await api('/api/system').catch(() => ({}));
   if (S.app.migrated?.length) toast(S.app.migrated[0], I.check, 6000);
+  // the last game session ended with NEXUS closing unexpectedly: say so once, with the report
+  api('/api/crash/last').then(n => { if (n) { Sound.play('error'); launchErrorDlg(n.title, n); } }).catch(() => { });
   if (st.emulator?.running) { S.playing = st.emulator; RecUI.sync(); showPlaying(); return; }
   if (!S.profile) { showWho(); return; }
   renderHome();

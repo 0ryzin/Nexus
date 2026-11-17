@@ -42,6 +42,7 @@ func main() {
 	// make sure a running game isn't orphaned silently
 	if st := app.Emu.State(); st.Running {
 		app.Log.Printf("NEXUS closed while %q was running; the emulator keeps running", st.Title)
+		app.Emu.crash.end() // closed on purpose: not a crash
 	}
 	app.Log.Printf("NEXUS exited")
 }
@@ -83,6 +84,10 @@ func StartCore(o CoreOptions) (*Core, error) {
 		return nil, fmt.Errorf("NEXUS could not start.\n\n%v", err)
 	}
 	c := &Core{App: app}
+	app.installCrashCapture()
+	// the last game session ended without NEXUS seeing it end: report it (crashreport.go). This
+	// runs before the engine is loaded, while its log is still the crashed session's.
+	app.setCrashNotice(app.checkLastSession())
 	app.migrateToDataDir()
 	// the engine's data folder and configuration belong to NEXUS: create them if missing (other
 	// emulators' data is only imported when the user chooses to, see enginedata.go)

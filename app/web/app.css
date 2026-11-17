@@ -813,6 +813,8 @@ input.am-filter:focus,input.am-filter.focus{border-color:var(--accent)}
 .hud-seg.fps i,.hud-seg.frame i{color:#64d2ff}.hud-seg.cpu i{color:#0a84ff}.hud-seg.gpu i{color:#30d158}.hud-seg.mem i{color:#bf5af2}.hud-seg.temp i{color:#ff9f0a}
 .hud-seg.shader i{color:#64d2ff}.hud-seg.shaderbusy i,.hud-seg.shaderbusy b{color:#ff9f0a}
 /* loading screen: what the shaders are doing (measured, never an invented percentage) */
+.lx-eta{font-size:.82em;color:var(--muted);min-height:1.2em;margin:-.5em 0 .6em}
+.lx-eta[data-state=stalled]{color:#ff9f0a}
 .lx-shaders{margin-top:.6em;font-size:.82em;color:var(--muted);display:flex;flex-wrap:wrap;gap:.3em 1.2em}
 .lx-shaders b{color:var(--fg);font-weight:600}
 .lx-shaders .busy{color:#ff9f0a}

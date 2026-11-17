@@ -1,7 +1,7 @@
 From 46689904ae03295f28e32ce12cc7dfa51c27361b Mon Sep 17 00:00:00 2001
 From: NEXUS <nexus@localhost>
 Date: Tue, 10 Nov 2026 23:27:30 +0000
-Subject: [PATCH 01/24] NEXUS engine: in-process engine library, 0-200% gain
+Subject: [PATCH 01/27] NEXUS engine: in-process engine library, 0-200% gain
  with soft limiter, explicit data root, window title/icon, CI and upstream
  sync tooling
 

@@ -20,6 +20,10 @@ scenes) and the list below.
 ## Known issues
 
 ### The Legend of Zelda: Ocarina of Time (Switch 2 edition, 0400486024DEC000) - black screen after loading a save
+- **17 Nov report: NEXUS closes completely after "Load existing save"** (black screen, then no
+  NEXUS, no message). Logs read, cause most likely Lichii #2041 (ported as patch 0025), not
+  confirmed; crash reporting added so a repeat leaves a dump. Details and what was and was not
+  tested: docs/CRASHES.md.
 - **Exact report (13 Nov):** the title screen and save selection work; after a save is loaded the
   screen stays black, loading, and gameplay never starts.
 - **Leads fixed by moving the engine to Lichii build 177 (not yet confirmed with the game):**

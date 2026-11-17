@@ -5,8 +5,10 @@
 #   python3 shader_progress.py <NEXUS binary> <portable data folder> [screenshot folder]
 #
 # Checks: the loading screen shows the measured "n of total" bar and a shader line whose counts
-# grow; no invented percentage when the total is unknown; the performance sample carries the
-# shader status while playing and the "shaders" reading says compiling, then ready.
+# grow; no invented percentage when the total is unknown; the remaining-time line (web/eta.js)
+# says it is calculating before it has data, gives only measured estimates, and says the
+# preparation is complete after it; the performance sample carries the shader status while
+# playing and the "shaders" reading says compiling, then ready.
 import asyncio, os, re, sys
 from playwright.async_api import async_playwright
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "perf"))
@@ -24,9 +26,11 @@ async def main():
         await enter(pg)
         await pg.evaluate("launchGame(S.games.find(isPlayable).key, true)")
         # 1. shader preparation before the engine starts, then the boot precache with "Start now"
-        prep_seen, skip_seen = [], False
+        prep_seen, skip_seen, etas = [], False, []
         for _ in range(80):
-            t, skip = await pg.evaluate("[document.querySelector('.lx-status')?.textContent || '', !!document.querySelector('.lx-skip:not([hidden])')]")
+            t, skip, eta = await pg.evaluate("[document.querySelector('.lx-status')?.textContent || '', !!document.querySelector('.lx-skip:not([hidden])'), document.querySelector('.lx-eta')?.textContent || '']")
+            if eta and (not etas or etas[-1] != eta):
+                etas.append(eta)
             label = t.split(':')[0].rstrip('…')
             if label and (not prep_seen or prep_seen[-1] != label):
                 prep_seen.append(label)
@@ -40,10 +44,16 @@ async def main():
         in_order = all(w in prep_seen for w in wanted) and [prep_seen.index(w) for w in wanted] == sorted(prep_seen.index(w) for w in wanted)
         print(f"{'PASS' if in_order and skip_seen else 'FAIL'} preparation stages {prep_seen}; Start now shown during compiling: {skip_seen}")
         ok &= in_order and skip_seen
+        eta_ok = "Calculating remaining time..." in etas and all(
+            re.fullmatch(r"Calculating remaining time\.\.\.|Shader preparation complete\.|Waiting: no progress for .+|"
+                         r"(About .+|Less than 10 seconds) remaining( · .+ per (second|minute))?", e) for e in etas)
+        print(f"{'PASS' if eta_ok else 'FAIL'} remaining time lines {etas}")
+        ok &= eta_ok
         await pg.wait_for_function("document.querySelector('.lx-shaders')?.textContent.includes('ready from the shader cache')", timeout=20000)
         seen = []
         for _ in range(8):
             seen.append(await pg.evaluate("[document.querySelector('.lx-status')?.textContent, document.querySelector('.lx-shaders')?.textContent]"))
+            etas.append(await pg.evaluate("document.querySelector('.lx-eta')?.textContent || ''"))
             if SHOTS and len(seen) == 3:
                 await pg.screenshot(path=os.path.join(SHOTS, "loading-shaders.png"))
             await pg.wait_for_timeout(350)
@@ -52,6 +62,9 @@ async def main():
         measured = any(re.search(r"Building shaders from earlier sessions: [\d,]+ of [\d,]+", s or "") for s, _ in seen)
         print(f"{'PASS' if grew and measured else 'FAIL'} loading screen: bar {[s for s, _ in seen][:2]}, shader line {seen[-1][1]!r}")
         ok &= grew and measured
+        complete = "Shader preparation complete." in etas
+        print(f"{'PASS' if complete else 'FAIL'} preparation reported complete after it: {etas[-3:]}")
+        ok &= complete
         await pg.wait_for_function("S.playing && S.playing.phase === 'playing'", timeout=20000)
         readings = []
         for _ in range(12):

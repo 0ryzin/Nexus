@@ -1,8 +1,8 @@
 # The NEXUS engine: investigation, architecture, status and plan
 
-## NEXUS Engine 0.8.0 (in development): Lichii build 316, patches 0018-0023
+## NEXUS Engine 0.8.0 (in development): Lichii build 316, patches 0018-0027
 
-Base: Lichii `build-316` (`5a66c8959`), 24 NEXUS patches. Interface version stays 2; the additions
+Base: Lichii `build-316` (`5a66c8959`), 27 NEXUS patches. Interface version stays 2; the additions
 below are optional exports that NEXUS looks up by name (older engine builds simply lack them).
 
 | Patch | What |
@@ -12,8 +12,11 @@ below are optional exports that NEXUS looks up by name (older engine builds simp
 | 0020 | Linux commit room for the texture cache's host-memory cap (`common/linux_commit_room.h`) |
 | 0021 | Shader status for NEXUS (`video_core/nexus_shader_status.h`): `"shaders"` in the status JSON |
 | 0022 | The booted NSP/XCI is registered in the content provider (port of Lichii #1935): games get their NACP |
-| 0024 | NEXUS gain converts samples as Lichii does at or below 100 % (bit-identical output) |
 | 0023 | Shader preparation: `nexus_engine_prepare_shaders`, `nexus_engine_prepare_cancel`, `nexus_engine_skip_precache`; load stage `"precache"`; `"prepare"` in the status JSON |
+| 0024 | NEXUS gain converts samples as Lichii does at or below 100 % (bit-identical output) |
+| 0025 | Port of Lichii #2041 (after build 316): sparse-vector pages are always committed writable; the Windows fault handler could set a page another thread was writing back to read-only, and the next write ended the process (docs/CRASHES.md) |
+| 0026 | Port of Lichii #2062 (after build 316): the texture cache unregisters an image from its own address space's page table |
+| 0027 | The engine installs Lichii's Windows crash handler when its log starts: a `Host crash` line and `eden_crash.dmp` instead of a silent end (docs/CRASHES.md) |
 
 `nexus_engine_prepare_shaders(json)`: `{"game", "dataDir", "configFile", "titleId": "<hex>",
 "contents": [...], "force": false}`; 0 started, -1 a game or preparation runs, -2 bad request. It
