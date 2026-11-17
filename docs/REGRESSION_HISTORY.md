@@ -140,6 +140,14 @@ Newest first.
 
 ## 0.7.0 (in development)
 
+### Typing in the settings search triggered shortcuts (17 Nov)
+- **Problem:** in the Settings search box (added the same day) H went Home, X opened Options,
+  Q/E switched tabs; the same in e-mail and password fields of the sign-in forms.
+- **Cause:** the keyboard handler treated only `input[type=text]` as a text field.
+- **Fix:** `isTextField()` (text, search, e-mail, password, URL, number, phone, textarea) in
+  the key handler, focus and Back.
+- **Tests:** `tools/uitest/resets_osk.py` types "hex" into the search box.
+
 ### Signed out of GitHub again and again (17 Nov)
 - **Problem:** NEXUS kept signing the user out of the connected GitHub account (three times
   between 12 and 17 Nov), with nothing in `nexus.log`.

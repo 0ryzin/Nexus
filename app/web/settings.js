@@ -17,30 +17,154 @@ function sameSetting(a, b) {
 function defaultBlank(v) { return typeof v === 'boolean' ? false : typeof v === 'number' ? 0 : typeof v === 'string' ? '' : v; }
 function fmtDefault(v) { return v === true ? 'On' : v === false ? 'Off' : v === '' || v == null ? 'none' : typeof v === 'number' && v > 0 && v <= 1 ? Math.round(v * 100) + '%' : String(v); }
 
-// changedMark(row, 'sound.enabled'): marks the row while the setting differs from its default.
-// Returns the row, so it wraps a rowToggle / rowChoice / rowRange call.
-function changedMark(row, path) {
-  row.dataset.setting = path;
-  markChanged(row);
+// ---------------------------------------------------------------- restore one setting
+// Every setting row can carry a small restore button (addReset). It shows while the setting
+// differs from its default, restores and saves the default when pressed (mouse), and the
+// controller's Options button / the X key does the same on the focused setting (Nav.options).
+let PROFILE_DEFAULTS = null;
+api('/api/profiles/defaults').then(d => { PROFILE_DEFAULTS = d; if (S.screen === 'settings' || S.screen === 'controllers') markAllChanged(); }).catch(() => { });
+const RESET_ICON = 'M12 5V1L7 6l5 5V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z';
+
+// addReset(row, { changed: () => bool, run: async () => {}, def: () => 'label of the default' })
+function addReset(row, spec) {
+  row._reset = spec;
+  let b = row.querySelector(':scope > .rst');
+  if (!b) {
+    b = h('span', { class: 'rst', role: 'button', 'aria-label': 'Restore the default' }, svg(RESET_ICON));
+    b.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); if (row._reset.changed()) runReset(row); });
+    b.addEventListener('mousedown', e => e.stopPropagation());
+    const rv = row.querySelector(':scope > .rv, :scope > .swatches, :scope > .toggle, :scope > .vol');
+    rv ? row.insertBefore(b, rv) : row.append(b);
+  }
+  refreshReset(row);
   return row;
 }
-function markChanged(row) {
-  const path = row.dataset.setting;
-  if (!path || !SETTING_DEFAULTS) return;
-  let cur = path === 'display.fullscreen' ? (S.system?.fullscreen ?? settingAt(S.settings, path)) : settingAt(S.settings, path);
-  let def = settingAt(SETTING_DEFAULTS, path);
-  // settings stored as "not set" mean the value the interface shows for them
-  if (path in SETTING_UNSET) { if (cur == null || cur === '') cur = SETTING_UNSET[path]; if (def == null || def === '') def = SETTING_UNSET[path]; }
-  const changed = !sameSetting(cur, def);
+function refreshReset(row) {
+  const sp = row._reset, b = row.querySelector(':scope > .rst'); if (!sp || !b) return;
+  let changed = false; try { changed = !!sp.changed(); } catch { }
+  const def = (() => { try { return sp.def ? sp.def() : ''; } catch { return ''; } })();
+  b.classList.toggle('off', !changed);
+  b.setAttribute('aria-disabled', String(!changed));
+  b.title = changed ? `Restore the default${def ? ` (${def})` : ''}. Controller: press Options on this setting.` : 'This is the default';
   row.classList.toggle('changed', changed);
   let tag = row.querySelector('.chg');
-  if (changed && !tag) {
-    tag = h('span', { class: 'chg', title: '' }, 'Changed');
-    row.querySelector('.rl > span')?.append(tag);
-  }
-  if (tag) { tag.hidden = !changed; tag.title = `Changed from the default (${fmtDefault(def)})`; }
+  if (changed && !tag) { tag = h('span', { class: 'chg' }, 'Changed'); row.querySelector('.rl > span')?.append(tag); }
+  if (tag) { tag.hidden = !changed; tag.title = def ? `Changed from the default (${def})` : 'Changed from the default'; }
 }
-function markAllChanged() { $$('#set-panel [data-setting]').forEach(markChanged); }
+async function runReset(row) {
+  const sp = row._reset; if (!sp) return;
+  const label = row.querySelector('.rl > span')?.firstChild?.textContent?.trim() || 'Setting';
+  try { await sp.run(); toast(`${label}: default restored`, I.check, 1600); }
+  catch (e) { alertDlg('The default was not restored', e.message); }
+  if (S.screen === 'settings' && !Nav.top()?.dialog) await rebuildPanel();
+  else markAllChanged();
+  renderHints();
+}
+// what the Options button restores on the focused element (Nav.options, renderHints)
+function resetTarget(el) {
+  const row = el?.closest?.('.row');
+  if (!row?._reset) return null;
+  let changed = false; try { changed = !!row._reset.changed(); } catch { }
+  return changed ? { run: () => runReset(row) } : null;
+}
+
+// changedMark(row, 'sound.enabled' | 'profile:theme.mode'): the setting's restore button and
+// "Changed" mark, from NEXUS's own defaults. Returns the row.
+function changedMark(row, path) {
+  row.dataset.setting = path;
+  addReset(row, { changed: () => pathChanged(path), def: () => fmtDefault(pathDefault(path)), run: () => resetPath(path) });
+  return row;
+}
+const SETTING_UNSET_P = { 'perfMonitor.layout': 'bar', 'perfMonitor.mode': 'off', 'profile:theme.homeTransition': 'zoom', 'profile:theme.wallpaper.motion': 'on', 'profile:controls.confirmButton': 'south',
+  'profile:home.widgets.recent': true, 'profile:home.widgets.details': true, 'emulator.amiiboPrompt': '', 'recording.folder': '' };
+function pathValue(path) {
+  if (path === 'display.fullscreen') return S.system?.fullscreen ?? settingAt(S.settings, path);
+  if (path.startsWith('profile:')) return settingAt(S.profile, path.slice(8));
+  return settingAt(S.settings, path);
+}
+function pathDefault(path) {
+  if (path.startsWith('profile:')) { if (!PROFILE_DEFAULTS) return undefined; const v = settingAt(PROFILE_DEFAULTS, path.slice(8)); return v === undefined && path in SETTING_UNSET_P ? SETTING_UNSET_P[path] : v; }
+  if (!SETTING_DEFAULTS) return undefined;
+  return settingAt(SETTING_DEFAULTS, path);
+}
+function pathChanged(path) {
+  if (!(path.startsWith('profile:') ? PROFILE_DEFAULTS && S.profile : SETTING_DEFAULTS)) return false;
+  let cur = pathValue(path), def = pathDefault(path);
+  const unset = SETTING_UNSET[path] ?? SETTING_UNSET_P[path];
+  if (unset !== undefined) { if (cur == null || cur === '') cur = unset; if (def == null || def === '') def = unset; }
+  return !sameSetting(cur, def);
+}
+function nest(path, v) { return path.split('.').reduceRight((acc, k) => ({ [k]: acc }), v); }
+async function resetPath(path) {
+  let def = pathDefault(path);
+  const unset = SETTING_UNSET[path] ?? SETTING_UNSET_P[path];
+  if (def === undefined) def = unset !== undefined ? unset : null;
+  if (path === 'display.fullscreen') { const r = await api('/api/app/fullscreen', { body: { on: !!def } }); if (S.system) S.system.fullscreen = r.fullscreen; S.settings = (await api('/api/state')).settings; return; }
+  if (KEYBINDS.some(k => k[0] === path)) return resetKeybind(path, def);
+  if (path === 'profile:controls.confirmButton') { const m = { ...(S.profile.controls.mapping || {}), confirm: 0, back: 1 }; return ctlPatch({ confirmButton: 'south', mapping: m }); }
+  if (path.startsWith('profile:')) {
+    if (!S.profile) return;
+    await patchProfile(S.profile.id, nest(path.slice(8), def));
+    if (S.screen === 'home') renderHome();
+    if (S.screen === 'controllers') Controllers.refreshList();
+    return;
+  }
+  if (path === 'updates.autoCheck') { await api('/api/update/settings', { body: { autoCheck: !!def } }); S.settings = (await api('/api/state')).settings; return; }
+  await saveSettings(nest(path, def));
+  if (path.startsWith('sound.')) Sound.init?.();
+}
+function markChanged(row) { if (row._reset) refreshReset(row); }
+function markAllChanged() { $$('.row').forEach(r => r._reset && refreshReset(r)); }
+
+// ---------------------------------------------------------------- keyboard shortcuts
+// NEXUS's own keys (the game's controls are the engine's). Restoring one checks that its
+// default is not in use by another shortcut, so two actions never share a key.
+const KEYBINDS = [
+  ['emulator.homeKey', 'Home key'], ['emulator.fullscreenKey', 'Fullscreen / window key'],
+  ['emulator.screenshotKey', 'Screenshot key'], ['recording.key', 'Start / stop recording'],
+];
+async function resetKeybind(path, def) {
+  const clash = KEYBINDS.find(([p]) => p !== path && def && String(settingAt(S.settings, p) || '').toLowerCase() === String(def).toLowerCase());
+  if (clash) throw new Error(`${def} is now used by “${clash[1]}”. Change or restore that shortcut first, or use Restore all keybinds.`);
+  await saveSettings(nest(path, def));
+}
+// Restore all keybinds: NEXUS's keyboard shortcuts, the controller buttons NEXUS listens to
+// (Home, Capture, quit combination) and this user's controller buttons in menus and games.
+async function resetAllKeybinds() {
+  const who = S.profile ? `${S.profile.name}’s` : 'the current user’s';
+  const ok = await dialog({ title: 'Restore all keybinds?', text: `These go back to their defaults:\n• Keyboard shortcuts: Home (Shift+H), full screen (F11), screenshot (Alt+F12), recording (F12)\n• Controller Home and Capture buttons, and the quit combination (View + Menu)\n• ${who} NEXUS menu buttons and controller layout for games\n\nNot changed: other settings, per-game controller layouts, the engine’s saved controller profiles, users and saves.`,
+    buttons: [{ label: 'Cancel', value: false }, { label: 'Restore keybinds', value: true, danger: true }], cancelValue: false });
+  if (!ok) return false;
+  const r = await api('/api/keybinds/reset', { body: { profile: S.profile?.id || '' } });
+  S.settings = r.settings;
+  if (r.profile) { const i = S.profiles.findIndex(x => x.id === r.profile.id); if (i >= 0) S.profiles[i] = r.profile; S.profile = r.profile; }
+  toast('Keybinds restored to their defaults', I.check);
+  if (S.screen === 'settings') rebuildPanel();
+  if (S.screen === 'controllers') Controllers.refreshList();
+  renderHints();
+  return true;
+}
+
+// ---------------------------------------------------------------- restore all settings
+async function resetAllSettings() {
+  const who = S.profile ? S.profile.name : 'the current user';
+  const ok = await dialog({ title: 'Reset all settings?',
+    text: `Every NEXUS setting goes back to its default: startup, sounds, full screen, playing games, keyboard shortcuts, shader preparation, screen recording, the performance monitor, library options, updates and the global graphics & emulation settings. ${who}’s appearance, Home screen look and controller settings are reset too.\n\nKept: your users, saves and play time, games and library folders, keys and firmware, the engine and its shader caches, your NEXUS account and GitHub connection, wallpapers and artwork, Home folders and pages, per-game settings, and other users’ preferences.`,
+    buttons: [{ label: 'Cancel', value: false }, { label: 'Reset all settings', value: true, danger: true }], cancelValue: false });
+  if (!ok) return false;
+  const wasFull = S.system?.fullscreen ?? S.settings.display?.fullscreen;
+  const r = await api('/api/settings/reset-all', { body: { profile: S.profile?.id || '' } });
+  S.settings = r.settings;
+  if (r.profile) { const i = S.profiles.findIndex(x => x.id === r.profile.id); if (i >= 0) S.profiles[i] = r.profile; S.profile = r.profile; }
+  // what the interface shows changes at once: theme, sounds, the window
+  applyTheme();
+  if (r.settings.display?.fullscreen !== wasFull) { const f = await api('/api/app/fullscreen', { body: { on: !!r.settings.display.fullscreen } }).catch(() => null); if (f && S.system) S.system.fullscreen = f.fullscreen; }
+  advancedSection.opened.clear();
+  toast('All settings restored to their defaults', I.check, 3000);
+  if (S.screen === 'settings') rebuildPanel();
+  renderHints();
+  return true;
+}
 // saving a setting updates the markers of the rows on screen
 {
   const save = saveSettings;
@@ -243,3 +367,21 @@ function settingsReveal(name) {
 const _selectCat = selectCat;
 // eslint-disable-next-line no-global-assign
 selectCat = async (id, focus) => { const r = await _selectCat(id, focus); markAllChanged(); return r; };
+
+// the game volume (global): 100 % is the default
+function volumeReset(row) {
+  const cur = () => +(S.settings.engine?.['audio.volume'] ?? 100);
+  return addReset(row, { changed: () => cur() !== 100, def: () => '100%', run: async () => {
+    const r = await api('/api/emulator/volume', { body: { percent: 100 } });
+    S.settings.engine = S.settings.engine || {}; S.settings.engine['audio.volume'] = String(r.volume);
+  } });
+}
+
+// In a game's settings: where a value comes from — this game's own setting (an override) or
+// the global settings it follows.
+function srcTag(row, overridden) {
+  const host = row.querySelector('.rl > span'); if (!host) return row;
+  host.querySelector('.src')?.remove();
+  host.append(h('span', { class: 'src ' + (overridden ? 'game' : 'global'), title: overridden ? 'Set for this game only; the global setting is not changed.' : 'Follows Settings › Graphics & emulation.' }, overridden ? 'This game' : 'Global'));
+  return row;
+}

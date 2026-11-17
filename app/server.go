@@ -164,6 +164,7 @@ func readAnimated(r *http.Request) ([]byte, string, string, error) {
 func (s *Server) routes() {
 	m := s.mux
 	a := s.app
+	s.resetRoutes(m) // restoring defaults (resets.go)
 
 	// ----- static -----
 	sub, _ := fs.Sub(webFS, "web")

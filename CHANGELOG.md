@@ -14,6 +14,15 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
 
 ## 0.8.0 — in development (not released)
 
+- **Restore defaults:** every setting has a small restore button once it differs from its
+  default (controller: Options on the setting); *Reset all settings* and *Restore all keybinds*
+  ask first and say what is kept. Users, saves, games, keys, firmware, the GitHub connection,
+  library folders and per-game settings are never reset.
+- **On-screen keyboard** after the Steam Deck's, for every text field: opens when a field is
+  chosen with a controller (A, or the Search button), never with the mouse or a physical keyboard.
+- **Search in a game's settings**, with *This game* / *Global* labels and *Only this game's*.
+- Fixed: typing H, X, Q or E in the settings search (and in e-mail and password fields) went
+  Home, opened Options or switched tabs.
 - **GitHub stays connected.** NEXUS signed out of GitHub about eight hours after each sign-in:
   GitHub's sign-ins now last eight hours and come with a refresh token that NEXUS threw away.
   NEXUS now keeps it (encrypted with Windows data protection) and renews the sign-in by itself;

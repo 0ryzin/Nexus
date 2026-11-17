@@ -55,3 +55,49 @@ panel, opens the *Advanced* section if needed, focuses the setting and highlight
 `app/tools/uitest/settings_search.py` (CI, Linux): every category opens without script errors;
 groups; the old Startup id; the six searches named in the brief; a result inside *Advanced*; an
 engine setting opening its section; *Changed* following a value; the account panel.
+
+## Restoring defaults (17 Nov, usability update)
+
+- **One setting:** a restore button (circular arrow) next to the value, shown while the setting
+  differs from its default; its tooltip names the default. Controller: press Options on the
+  focused setting (the hint bar then reads *Reset to default*); keyboard: X. The default is
+  saved at once and the panel redrawn. Covered: every NEXUS setting with a stored default
+  (General, Playing games, Game library incl. each file format, Shader management, Screen
+  recording, Performance monitor, Amiibo, Updates), the user's Appearance, Home screen and
+  Controllers settings, each global engine setting (back to the engine default), each per-game
+  setting (back to the global one), and each button in the game controller layout editor.
+  Not covered: lists of things (folders, pages, devices), the account's sync categories.
+- **Reset all settings** (General › Restore defaults, and Storage & data › Maintenance):
+  `POST /api/settings/reset-all` (`resets.go`). Resets every NEXUS setting, the global engine
+  settings and the current user's appearance, Home look and controller settings. Keeps users,
+  saves, play time, games, library folders, keys, firmware, engine files and shader caches, the
+  account and GitHub sign-in, wallpapers and artwork files (and which ones are chosen), Home
+  folders, pages, favourites, order and hidden games, per-game settings and other users'
+  preferences. The theme and window apply at once.
+- **Keybinds:** NEXUS's keyboard shortcuts (Home, full screen, screenshot, recording) each have a
+  restore button; restoring one whose default another shortcut now uses is refused with an
+  explanation. Each NEXUS menu button in Controllers has one (a button another action took is
+  swapped back). *Restore all keybinds* (Playing games, General, Controllers;
+  `POST /api/keybinds/reset`) resets the shortcuts, the controller Home/Capture buttons, the quit
+  combination, and the user's menu buttons and controller layout for games, and nothing else.
+  The engine's own saved controller profiles and per-game layouts are not touched.
+
+## On-screen keyboard (`web/osk.js`)
+
+One keyboard for every text field (settings search, Library search, a game's settings search,
+dialogs, sign-in forms). It opens when a text field is chosen with a controller (A on the field,
+or the Search button on Settings and Library); clicking a field or using a physical keyboard never
+opens it, and pressing a physical key while it is open closes it and types the key. Controller:
+D-pad/stick move, A types, B closes, X deletes, Y space, LB/RB move the cursor, Menu is Enter,
+View is Shift (twice: caps lock); `&123` switches to symbols. Mouse: click keys, *Close*, or
+outside the keyboard. Tested on Linux with a scripted controller (Gamepad API) and Playwright;
+**not tested on a Steam Deck** (Gaming Mode) or with a physical controller.
+
+## A game's settings: search and overrides
+
+*Configure Game Settings* has a search box and an *Only this game's* filter above its sections.
+Results come from every section, grouped by section; each row says **This game** (an override,
+stored for the game only) or **Global** (follows Settings › Graphics & emulation). Changing a
+row there creates or changes the game's override only; its restore button removes the override.
+The existing per-game storage and the engine's precedence (game > NEXUS global > engine) are
+unchanged.

@@ -295,17 +295,17 @@ function homeSettingsPanel(p) {
     lays.append(b);
   }
   p.append(lays);
-  p.append(rowChoice('Order of games', HOME_SORTS, S.profile?.sort || 'recent', v => patchProfile(S.profile.id, { sort: v }).then(() => renderHome()),
-    'My order: move games with their Options › Organise › Move earlier / later.'));
-  if (hp.layout === 'classic') p.append(rowChoice('Games on the Home row', [6, 9, 12, 18, 24].map(n => ({ v: n, l: String(n) })), hp.count, v => homePatch({ count: +v })));
+  p.append(changedMark(rowChoice('Order of games', HOME_SORTS, S.profile?.sort || 'recent', v => patchProfile(S.profile.id, { sort: v }).then(() => renderHome()),
+    'My order: move games with their Options › Organise › Move earlier / later.'), 'profile:sort'));
+  if (hp.layout === 'classic') p.append(changedMark(rowChoice('Games on the Home row', [6, 9, 12, 18, 24].map(n => ({ v: n, l: String(n) })), hp.count, v => homePatch({ count: +v })), 'profile:home.count'));
   p.append(h('h3', {}, 'Look'));
-  p.append(rowChoice('Panels', [{ v: 'glass', l: 'Frosted glass' }, { v: 'flat', l: 'Flat (lightest on the graphics card)' }], hp.effects, v => homePatch({ effects: v })));
-  p.append(rowToggle('Selected game’s picture behind the cards', hp.gameBackground, v => homePatch({ gameBackground: v }), 'Cards layout. A game’s own background picture when it has one (Options › Edit Game Artwork), else its icon, softened.'));
-  p.append(rowSwatches('Plain background colour', ['', '#101214', '#1b2a41', '#2b1d3a', '#173326', '#3a1f1f', '#e9ecef'], hp.bgColor, c => homePatch({ bgColor: c || '' }), { custom: true }));
+  p.append(changedMark(rowChoice('Panels', [{ v: 'glass', l: 'Frosted glass' }, { v: 'flat', l: 'Flat (lightest on the graphics card)' }], hp.effects, v => homePatch({ effects: v })), 'profile:home.effects'));
+  p.append(changedMark(rowToggle('Selected game’s picture behind the cards', hp.gameBackground, v => homePatch({ gameBackground: v }), 'Cards layout. A game’s own background picture when it has one (Options › Edit Game Artwork), else its icon, softened.'), 'profile:home.gameBackground'));
+  p.append(changedMark(rowSwatches('Plain background colour', ['', '#101214', '#1b2a41', '#2b1d3a', '#173326', '#3a1f1f', '#e9ecef'], hp.bgColor, c => homePatch({ bgColor: c || '' }), { custom: true }), 'profile:home.bgColor'));
   p.append(rowButton('Wallpaper, theme and accent colour…', { sub: 'Your background picture, dimming, blur, dark or light theme and accent.', onClick: () => selectCat('appearance', true) }));
   p.append(h('h3', {}, 'Widgets'));
   p.append(h('p', { class: 'note' }, 'Cards and Grid layouts. They are drawn from what NEXUS already knows and do not run in the background.'));
-  for (const [k, l, d] of HOME_WIDGETS) p.append(rowToggle(l, hp.widgets[k] === true || (k === 'details' && hp.widgets[k] !== false), v => homePatch({ widgets: { ...hp.widgets, [k]: v } }), d));
+  for (const [k, l, d] of HOME_WIDGETS) p.append(changedMark(rowToggle(l, hp.widgets[k] === true || (k === 'details' && hp.widgets[k] !== false), v => homePatch({ widgets: { ...hp.widgets, [k]: v } }), d), 'profile:home.widgets.' + k));
   p.append(h('h3', {}, 'Folders and pages'));
   for (const f of hp.folders) p.append(rowButton(f.name, { value: `${f.games.length} game(s)`, sub: 'Folder', onClick: () => openHomeFolder(f.id) }));
   p.append(rowButton('New folder…', { icon: I.plus, onClick: async () => { if (await newGroup('folders')) rebuildPanel(); } }));

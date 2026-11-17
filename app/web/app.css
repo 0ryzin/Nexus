@@ -997,3 +997,38 @@ body.home-bg-color #wallpaper{background:var(--home-bg)!important}
 .acct-actions{display:flex;flex-wrap:wrap;gap:.5em;margin:.2em 0 1em}
 .tb-acct.expired svg{fill:var(--danger)}
 .tb-acct.offline svg{fill:var(--warn)}
+
+/* ---- on-screen keyboard (web/osk.js), after the Steam Deck's ---- */
+.layer.osk-layer{place-items:end stretch;background:rgba(0,0,0,.28)}
+.osk{background:var(--surface);border-top:1px solid var(--line);box-shadow:0 -12px 40px rgba(0,0,0,.45);padding:.9em max(1.2em,calc((100vw - 1100px)/2)) 1em;
+  display:flex;flex-direction:column;gap:.55em;animation:osk-up .16s ease-out}
+@keyframes osk-up{from{transform:translateY(40%);opacity:0}to{transform:none;opacity:1}}
+.anim-off .osk{animation:none}
+.osk-preview{display:flex;flex-direction:column;gap:.15em;background:var(--bg);border-radius:12px;padding:.5em .9em;min-height:3.2em}
+.osk-preview small{color:var(--muted);font-size:.75em}
+.osk-text{font-size:1.15em;white-space:pre;overflow:hidden;text-overflow:ellipsis}
+.osk-caret{display:inline-block;width:2px;height:1.1em;background:var(--accent);vertical-align:-.15em;margin:0 1px;animation:osk-blink 1s steps(1) infinite}
+@keyframes osk-blink{50%{opacity:0}}
+.osk-keys{display:flex;flex-direction:column;gap:.4em}
+.osk-row{display:flex;gap:.4em}
+.osk-key{flex:1 1 0;min-width:0;height:2.9em;border:0;border-radius:10px;background:var(--surface2,rgba(127,127,127,.16));color:inherit;font:inherit;font-size:1.05em;font-weight:500;outline:none}
+.osk-key.wide{flex:1.6 1 0;font-size:.9em}
+.osk-key.space{flex:5 1 0}
+.osk-key.on{background:color-mix(in srgb,var(--accent) 35%,transparent)}
+.osk-key.focus{background:var(--accent);color:var(--accent-ink);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 40%,transparent)}
+.input-mouse .osk-key:hover{background:var(--hover,rgba(127,127,127,.25))}
+.input-mouse .osk-key.focus:not(:hover){background:var(--surface2,rgba(127,127,127,.16));color:inherit;box-shadow:none}
+.osk-legend{display:flex;flex-wrap:wrap;gap:.3em 1.2em;justify-content:center;color:var(--muted);font-size:.8em}
+.osk-legend span{display:inline-flex;align-items:center;gap:.35em}
+/* restore-the-default button on a setting (web/settings.js addReset) */
+.row .rst{flex:none;display:inline-grid;place-items:center;width:1.9em;height:1.9em;margin:0 .5em 0 auto;border-radius:50%;color:var(--muted);cursor:pointer;opacity:.85}
+.row .rst svg{width:1.05em;height:1.05em;fill:currentColor}
+.row .rst:hover{background:var(--hover,rgba(127,127,127,.18));color:var(--accent-text);opacity:1}
+.row .rst.off{visibility:hidden}
+.row .rl + .rst{margin-left:auto}
+.row .src{display:inline-block;margin-left:.6em;padding:0 .5em;border-radius:1em;font-size:.66em;font-weight:600;line-height:1.7;vertical-align:.12em}
+.row .src.game{color:var(--accent-ink);background:var(--accent)}
+.row .src.global{color:var(--muted);background:color-mix(in srgb,var(--muted) 16%,transparent)}
+.cfg-search{margin:0 .2em .7em;flex:none}
+.cfg-search input{width:100%;min-width:0}
+.cfg-filter{display:flex;gap:.4em;margin:0 .2em .8em}

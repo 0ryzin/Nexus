@@ -169,6 +169,10 @@ const Sound = {
 };
 
 // ------------------------------------------------------------------ navigation & input
+// a field the user types in (the keyboard shortcuts below leave it alone)
+function isTextField(el) {
+  return !!(el && el.matches && (el.matches('textarea') || el.matches('input:not([type]), input[type=text], input[type=search], input[type=email], input[type=password], input[type=url], input[type=number], input[type=tel]')));
+}
 const Nav = {
   layers: [], // {root, onBack, onOptions, name, restore}
   cur: null,
@@ -194,10 +198,12 @@ const Nav = {
   setFocus(el, { silent = false, scroll = true } = {}) {
     if (!el) return;
     if (this.cur && this.cur !== el) { this.cur.classList.remove('focus'); this.cur.dispatchEvent(new CustomEvent('navblur')); }
+    const hintsBefore = !!resetTarget(this.cur);
     this.cur = el;
     el.classList.add('focus');
-    if (el.matches('input[type=text]') && S.lastInput !== 'mouse') el.focus({ preventScroll: true });
-    else if (document.activeElement && document.activeElement !== el && document.activeElement.matches('input')) document.activeElement.blur();
+    if (hintsBefore || resetTarget(el)) renderHints();
+    if (isTextField(el) && S.lastInput !== 'mouse') el.focus({ preventScroll: true });
+    else if (document.activeElement && document.activeElement !== el && document.activeElement.matches('input') && !OSK.target) document.activeElement.blur();
     if (scroll) el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: S.anim === 'off' ? 'auto' : 'smooth' });
     el.dispatchEvent(new CustomEvent('navfocus'));
     if (!silent) Sound.play('move', .6);
@@ -233,16 +239,27 @@ const Nav = {
   },
   activate() {
     const el = this.cur; if (!el || !this.top()?.root.contains(el)) return;
-    if (el.matches('input[type=text]')) { el.focus(); return; }
+    if (isTextField(el)) {
+      el.focus();
+      // a text field chosen with a controller opens the on-screen keyboard (web/osk.js); with a
+      // physical keyboard or the mouse it never appears
+      if (S.lastInput === 'gamepad') OSK.open(el);
+      return;
+    }
     Sound.play('select');
     el.click();
   },
   back() {
     const l = this.top(); if (!l) return;
-    if (document.activeElement?.matches('input[type=text]') && S.lastInput === 'keyboard' && l.root.contains(document.activeElement)) { document.activeElement.blur(); return; }
+    if (isTextField(document.activeElement) && S.lastInput === 'keyboard' && l.root.contains(document.activeElement)) { document.activeElement.blur(); return; }
     if (l.onBack) { Sound.play('back'); l.onBack(); }
   },
-  options() { const l = this.top(); if (l?.onOptions) { Sound.play('select'); l.onOptions(this.cur); } },
+  options() {
+    // on a setting that differs from its default, Options restores the default (web/settings.js)
+    const r = resetTarget(this.cur);
+    if (r) { Sound.play('select'); r.run(); return; }
+    const l = this.top(); if (l?.onOptions) { Sound.play('select'); l.onOptions(this.cur); }
+  },
   tab(d) { const l = this.top(); if (l?.onTab) { Sound.play('move'); l.onTab(d); } },
 };
 
@@ -260,7 +277,7 @@ document.addEventListener('keydown', e => {
   if (document.body.classList.contains('booting')) { Boot.skip(); e.preventDefault(); return; }
   setInputMode('keyboard');
   const t = e.target;
-  const typing = t && t.matches && t.matches('input[type=text]');
+  const typing = isTextField(t);
   const k = e.key;
   if ((e.ctrlKey && ['+', '-', '=', '0', 'p', 's', 'f', 'r', 'u'].includes(k.toLowerCase())) || k === 'F5' || k === 'F12' || k === 'F3') { e.preventDefault(); }
   if (Mapper.listening) { if (k === 'Escape') Mapper.cancel(); e.preventDefault(); return; }
@@ -383,7 +400,11 @@ const Pad = {
       if (edge('confirm')) Nav.activate();
       if (edge('back')) Nav.back();
       if (edge('options')) Nav.options();
-      if (edge('search')) { if (S.screen === 'library') { Nav.setFocus($('#lib-search')); $('#lib-search').focus(); } else if (S.screen === 'home') showLibrary(true); }
+      if (OSK.target && OSK.pad(state, prev)) { this.prev[key] = state; continue; } // the on-screen keyboard's own buttons
+      if (edge('search')) {
+        const box = S.screen === 'library' ? $('#lib-search') : S.screen === 'settings' && !Nav.top()?.dialog ? $('#set-search') : null;
+        if (box) { Nav.setFocus(box); box.focus(); OSK.open(box); } else if (S.screen === 'home') showLibrary(true);
+      }
       if (edge('prevTab')) Nav.tab(-1);
       if (edge('nextTab')) Nav.tab(1);
       if (edge('menu')) { if (!Nav.top()?.dialog) openPower(); }
@@ -890,7 +911,8 @@ function renderHints() {
   const l = Nav.top();
   // controller prompts show the active controller's own buttons (web/pads.js)
   const k = (padIdx, kb) => pad ? PadInfo.glyph(padIdx) : h('span', { class: 'key kb' }, kb);
-  if (l?.onOptions) items.push([k(map.options, 'X'), 'Options', () => Nav.options()]);
+  if (resetTarget(Nav.cur)) items.push([k(map.options, 'X'), 'Reset to default', () => Nav.options()]);
+  else if (l?.onOptions) items.push([k(map.options, 'X'), 'Options', () => Nav.options()]);
   if (S.screen === 'home' && !l?.dialog) items.push([k(map.menu, 'Esc'), 'Power', () => openPower()]);
   if (l?.onBack && (l.dialog || S.screen !== 'home')) items.push([k(map.back, 'Esc'), 'Back', () => Nav.back()]);
   items.push([k(map.confirm, 'Enter'), 'OK', () => Nav.activate()]);
@@ -2074,9 +2096,9 @@ function effValue(view, id, engine, withGame = true) {
   if (ev !== undefined) return [ev, 'engine'];
   return [undefined, 'default'];
 }
-function settingRows(container, view, section, { mode, engine, save }) {
+function settingRows(container, view, section, { mode, engine, save, filter }) {
   const engines = view.engines.map(e => e.id);
-  for (const st of view.settings.filter(x => x.section === section)) {
+  for (const st of view.settings.filter(x => x.section === section && (!filter || filter(x)))) {
     const id = st.id;
     if (mode === 'game') {
       const cap = view.caps[engine][id] || {};
@@ -2108,6 +2130,8 @@ function settingRows(container, view, section, { mode, engine, save }) {
         const r = rowChoice(st.label, [{ v: '', l: 'Use the user’s controls' }, ...ips.map(x => ({ v: x, l: x }))], view.inputProfile || '', v => save({ inputProfile: v }),
           ips.length ? 'Loads this controller profile only for this game.' : 'No saved controller profiles yet. Without one, player 1 is mapped automatically to the first connected controller.');
         if (view.inputProfile) r.classList.add('overridden');
+        srcTag(r, !!view.inputProfile);
+        addReset(r, { changed: () => !!view.inputProfile, def: () => 'the user’s controls', run: () => save({ inputProfile: '' }) });
         container.append(r);
         continue;
       }
@@ -2121,6 +2145,7 @@ function settingRows(container, view, section, { mode, engine, save }) {
           const b = h('button', { class: 'chip', 'data-nav': true }, 'Use global'); b.addEventListener('click', () => save({ settings: { [id]: null } }));
           r.append(b);
         }
+        srcTag(r, cur !== undefined);
         container.append(r);
         continue;
       }
@@ -2142,12 +2167,14 @@ function settingRows(container, view, section, { mode, engine, save }) {
       if (gsrc === 'engine') sub = (sub ? sub + ' ' : '') + 'Global value comes from the engine configuration.';
       const r = rowChoice(st.label, ch, cur ?? '__global', onPick, sub);
       if (cur !== undefined) r.classList.add('overridden');
+      srcTag(r, cur !== undefined);
+      addReset(r, { changed: () => cur !== undefined, def: () => `use the global setting: ${glabel}`, run: () => save({ settings: { [id]: null } }) });
       container.append(r);
     } else {
       if (id === 'graphics.resolution') { container.append(infoRow(st.label, resolutionOf(view.global['graphics.scale'] || '1', view.global['system.docked'] || 'docked'), st.help)); continue; }
       if (id === 'system.firmware') { container.append(infoRow(st.label, view.firmware || 'Not installed', 'Managed in Settings › System files.')); continue; }
       if (id === 'controls.profile') { container.append(infoRow(st.label, '', 'Each user picks their controller profile in Controllers; a game can override it in Configure Game Settings.')); continue; }
-      if (id === 'audio.volume') { container.append(rowVolume(st.label, +(view.global[id] ?? 100), sendVolume, st.help)); continue; }
+      if (id === 'audio.volume') { container.append(volumeReset(rowVolume(st.label, +(view.global[id] ?? 100), sendVolume, st.help))); continue; }
       const sup = engines.filter(e => view.caps[e][id]?.available);
       if (st.kind === 'info' || !sup.length) {
         const note = engines.map(e => view.caps[e][id]?.note).find(Boolean) || st.help;
@@ -2160,6 +2187,7 @@ function settingRows(container, view, section, { mode, engine, save }) {
       let sub = (st.help ? st.help + ' ' : '') + engineNow;
       const r = rowChoice(st.label, ch, cur ?? '__engine', onPick, sub);
       if (cur !== undefined) r.classList.add('overridden');
+      addReset(r, { changed: () => cur !== undefined, def: () => 'engine default', run: () => save({ settings: { [id]: null } }) });
       container.append(r);
     }
   }
@@ -2172,6 +2200,18 @@ async function gameConfig(key, startSection = 'general') {
   const withContent = v => { if (g.titleId && g.kind !== 'homebrew' && !v.sections.some(x => x.v === 'updates')) v.sections = [...v.sections, { v: 'updates', l: 'Game Updates' }, { v: 'mods', l: 'Mods' }]; return v; };
   withContent(view);
   let section = startSection;
+  // search within this game's settings (and "only this game's own settings")
+  let query = '', onlyOwn = false;
+  const own = st => view.overrides?.[st.id] !== undefined || (st.id === 'controls.profile' && !!view.inputProfile);
+  const searchable = () => view.sections.filter(x => !['general', 'updates', 'mods'].includes(x.v));
+  const matches = st => {
+    if (onlyOwn && !own(st)) return false;
+    const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+    if (!words.length) return true;
+    const sec = view.sections.find(x => x.v === st.section)?.l || '';
+    const text = [st.label, st.help, sec, ...(st.choices || []).map(c => c.l), own(st) ? 'override this game changed' : 'global inherited'].join(' ').toLowerCase();
+    return words.every(w => text.includes(w));
+  };
   const root = h('div', { class: 'cfg-page' });
   const layer = openLayer(root, { name: 'gameconfig', onTab: d => { const i = view.sections.findIndex(x => x.v === section); section = view.sections[(i + d + view.sections.length) % view.sections.length].v; draw(true); } });
   const nav = h('nav', { class: 'cfg-nav' });
@@ -2195,19 +2235,53 @@ async function gameConfig(key, startSection = 'general') {
       h('span', {}, [g.version ? `Version ${g.version}` : '', g.titleId ? `Title ID ${g.titleId}` : ''].filter(Boolean).join(' · ')),
       h('span', {}, `NEXUS Engine · ${n ? `${n} game-specific setting${n > 1 ? 's' : ''}` : 'Uses global settings'} · changes save automatically`)), close);
   };
+  let searchBox = null, ownChip = null;
   const drawNav = () => {
+    const keepSearch = searchBox && Nav.cur === searchBox;
     nav.replaceChildren();
+    if (!searchBox) {
+      searchBox = h('input', { type: 'search', placeholder: 'Search this game’s settings', 'data-nav': true, autocomplete: 'off', spellcheck: 'false', 'aria-label': `Search ${g.title}’s settings` });
+      let t = null;
+      searchBox.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { query = searchBox.value.trim(); drawBody(); drawNavCounts(); }, 100); });
+      searchBox.addEventListener('submit', () => { const f = Nav.items(body)[0]; f && Nav.setFocus(f); });
+      ownChip = h('button', { class: 'chip', 'data-nav': true, title: 'Show only the settings this game changes from the global settings' }, 'Only this game’s');
+      ownChip.addEventListener('click', () => { onlyOwn = !onlyOwn; ownChip.classList.toggle('on', onlyOwn); drawBody(); });
+    }
+    nav.append(h('label', { class: 'search cfg-search' }, svg('M10 3a7 7 0 1 1 0 14 7 7 0 0 1 0-14Zm0 2a5 5 0 1 0 0 10 5 5 0 0 0 0-10Zm6.3 10.9 4.4 4.4-1.4 1.4-4.4-4.4z'), searchBox), h('div', { class: 'cfg-filter' }, ownChip));
+    if (keepSearch) Nav.setFocus(searchBox, { silent: true });
     for (const sct of view.sections) {
       const cnt = sct.v === 'general' ? 0 : view.settings.filter(x => x.section === sct.v && view.overrides[x.id] !== undefined).length + (sct.v === 'controls' && view.inputProfile ? 1 : 0);
       const b = h('button', { class: 'cat' + (sct.v === section ? ' sel' : ''), 'data-nav': true }, sct.l, cnt ? h('small', { class: 'cnt' }, String(cnt)) : '');
       b._sec = sct.v;
-      b.addEventListener('click', () => { section = sct.v; draw(true); });
-      b.addEventListener('navfocus', () => { if (S.lastInput !== 'mouse' && section !== sct.v) { section = sct.v; drawBody(); drawNav(); Nav.setFocus($$('.cat', nav).find(x => x._sec === sct.v), { silent: true }); } });
+      b.addEventListener('click', () => { section = sct.v; clearSearch(); draw(true); });
+      b.addEventListener('navfocus', () => { if (S.lastInput !== 'mouse' && section !== sct.v && !searching()) { section = sct.v; drawBody(); drawNav(); Nav.setFocus($$('.cat', nav).find(x => x._sec === sct.v), { silent: true }); } });
       nav.append(b);
     }
+    $$('.cat', nav).forEach(b => b.classList.toggle('sel', !searching() && b._sec === section));
+  };
+  const searching = () => !!query || onlyOwn;
+  const clearSearch = () => { query = ''; onlyOwn = false; if (searchBox) searchBox.value = ''; ownChip?.classList.remove('on'); };
+  const drawNavCounts = () => $$('.cat', nav).forEach(b => b.classList.toggle('sel', !searching() && b._sec === section));
+  // results across every section of this game's settings, grouped by section
+  const drawResults = () => {
+    const eng = view.effective;
+    body.append(h('h2', {}, query ? `Settings matching “${query}”` : 'This game’s own settings'));
+    body.append(h('p', { class: 'note' }, 'A “This game” label marks a setting this game changes for itself (an override); “Global” follows Settings › Graphics & emulation. Changing a setting here changes it for this game only.'));
+    if (!view.perGameOk) { body.append(h('p', { class: 'note warn' }, view.perGameReason)); return; }
+    let n = 0;
+    for (const sct of searchable()) {
+      const box = h('div');
+      settingRows(box, view, sct.v, { mode: 'game', engine: eng, save, filter: matches });
+      const rows = $$(':scope > .row, :scope > div > .row', box);
+      if (!rows.length) continue;
+      n += rows.length;
+      const head = h('h3', {}, sct.l); body.append(head, ...box.childNodes);
+    }
+    if (!n) body.append(h('p', { class: 'note' }, onlyOwn && !query ? 'This game uses the global settings for everything.' : 'No setting of this game matches. Try another word, such as “resolution”, “vsync”, “frame” or “volume”.'));
   };
   const drawBody = () => {
     body.replaceChildren();
+    if (searching()) return drawResults();
     const eng = view.effective;
     body.append(h('h2', {}, view.sections.find(x => x.v === section).l));
     if (section === 'general') {
@@ -2680,12 +2754,12 @@ function wallpaperSettings(p, th) {
   if (wp.animated && wp.file) p.append(rowChoice('Use', [{ v: 'static', l: 'Static wallpaper' }, { v: 'animated', l: 'Animated wallpaper' }], wp.use, async v => { try { done(await api(`/api/profiles/${pid}/wallpaper/use`, { body: { use: v } })); } catch (e) { toast(e.message, I.warn); } }));
   else if (wp.animated && wp.use !== 'animated') p.append(rowButton('Use the animated wallpaper', { onClick: async () => done(await api(`/api/profiles/${pid}/wallpaper/use`, { body: { use: 'animated' } })) }));
   if (wp.animated) {
-    p.append(rowToggle('Play animated wallpaper', wp.motion !== 'off', v => themePatch({ wallpaper: { motion: v ? 'on' : 'off' } }), 'Off shows a still frame for maximum performance. It always pauses while a game runs, NEXUS is in the background, or another screen is open.'));
+    p.append(changedMark(rowToggle('Play animated wallpaper', wp.motion !== 'off', v => themePatch({ wallpaper: { motion: v ? 'on' : 'off' } }), 'Off shows a still frame for maximum performance. It always pauses while a game runs, NEXUS is in the background, or another screen is open.'), 'profile:theme.wallpaper.motion'));
   }
   if (wp.file || wp.animated) {
-    p.append(rowRange('Brightness', { min: 10, max: 100, step: 5, value: Math.round((wp.brightness ?? .55) * 100), fmt: v => v + '%', onChange: (v, commit) => { S.profile.theme.wallpaper.brightness = v / 100; applyTheme(); if (commit) themePatch({ wallpaper: { brightness: v / 100 } }); } }));
-    p.append(rowRange('Blur', { min: 0, max: 40, step: 2, value: wp.blur || 0, fmt: v => v ? v + ' px' : 'Off', onChange: (v, commit) => { S.profile.theme.wallpaper.blur = v; applyTheme(); if (commit) themePatch({ wallpaper: { blur: v } }); } }));
-    p.append(rowChoice('Scaling', [{ v: 'cover', l: 'Fill' }, { v: 'contain', l: 'Fit' }, { v: 'stretch', l: 'Stretch' }, { v: 'center', l: 'Centre' }, { v: 'tile', l: 'Tile (static only)' }], wp.fit || 'cover', v => themePatch({ wallpaper: { fit: v } })));
+    p.append(changedMark(rowRange('Brightness', { min: 10, max: 100, step: 5, value: Math.round((wp.brightness ?? .55) * 100), fmt: v => v + '%', onChange: (v, commit) => { S.profile.theme.wallpaper.brightness = v / 100; applyTheme(); if (commit) themePatch({ wallpaper: { brightness: v / 100 } }); } }), 'profile:theme.wallpaper.brightness'));
+    p.append(changedMark(rowRange('Blur', { min: 0, max: 40, step: 2, value: wp.blur || 0, fmt: v => v ? v + ' px' : 'Off', onChange: (v, commit) => { S.profile.theme.wallpaper.blur = v; applyTheme(); if (commit) themePatch({ wallpaper: { blur: v } }); } }), 'profile:theme.wallpaper.blur'));
+    p.append(changedMark(rowChoice('Scaling', [{ v: 'cover', l: 'Fill' }, { v: 'contain', l: 'Fit' }, { v: 'stretch', l: 'Stretch' }, { v: 'center', l: 'Centre' }, { v: 'tile', l: 'Tile (static only)' }], wp.fit || 'cover', v => themePatch({ wallpaper: { fit: v } })), 'profile:theme.wallpaper.fit'));
   }
   if (wp.animated) p.append(rowButton('Remove animated wallpaper', { danger: true, sub: wp.file ? 'Your static wallpaper is used again.' : 'The default background is used again.', onClick: async () => done(await api(`/api/profiles/${pid}/wallpaper?kind=animated`, { method: 'DELETE' })) }));
   if (wp.file || wp.animated) p.append(rowButton('Reset to default background', { danger: true, sub: 'Removes your custom wallpapers.', onClick: async () => done(await api(`/api/profiles/${pid}/wallpaper`, { method: 'DELETE' })) }));
@@ -2887,7 +2961,7 @@ const AmiiboUI = {
     st.list = st.list || []; // an empty library arrives as null
     const es = S.settings.emulator || {};
     p.append(h('h2', {}, 'Amiibo'), h('p', { class: 'note' }, 'When a game asks you to scan an amiibo, NEXUS shows this library and gives the game the one you choose. Import dumps of your own amiibo, or create a NEXUS virtual amiibo for use in NEXUS only. NEXUS includes no amiibo data.'));
-    p.append(rowChoice('When a game scans for an amiibo', [{ v: '', l: 'Show the amiibo library' }, { v: 'off', l: 'Do nothing' }], es.amiiboPrompt || '', v => saveSettings({ emulator: { amiiboPrompt: v } })));
+    p.append(changedMark(rowChoice('When a game scans for an amiibo', [{ v: '', l: 'Show the amiibo library' }, { v: 'off', l: 'Do nothing' }], es.amiiboPrompt || '', v => saveSettings({ emulator: { amiiboPrompt: v } })), 'emulator.amiiboPrompt'));
     p.append(rowButton('Import amiibo dump…', { sub: 'A .bin or .nfc dump of your own figure or card (NTAG215, 532/540/572 bytes). NEXUS copies it; the original is not changed.', onClick: async () => { if (await this.import(S.profile?.id)) rebuildPanel(); } }));
     p.append(rowButton('Amiibo Creator\u2026', { icon: I.plus, sub: 'Create a NEXUS virtual amiibo: search by name, character or series, or type its ID; add your own name, notes and picture. Works only in NEXUS; it is not an authenticated amiibo.', onClick: async () => { if (await this.creator(null, S.profile?.id)) rebuildPanel(); } }));
     p.append(h('h3', {}, `Library (${st.list.length})`));
@@ -3345,12 +3419,12 @@ const Panels = {
   appearance(p) {
     const th = S.profile?.theme || {};
     p.append(h('h2', {}, 'Appearance'), h('p', { class: 'note' }, `These settings belong to ${S.profile?.name || 'the current user'}.`));
-    p.append(rowChoice('Theme', [{ v: 'dark', l: 'Dark' }, { v: 'light', l: 'Light' }], th.mode, v => themePatch({ mode: v })));
-    p.append(rowSwatches('Accent colour', ACCENTS, th.accent, c => themePatch({ accent: c })));
+    p.append(changedMark(rowChoice('Theme', [{ v: 'dark', l: 'Dark' }, { v: 'light', l: 'Light' }], th.mode, v => themePatch({ mode: v })), 'profile:theme.mode'));
+    p.append(changedMark(rowSwatches('Accent colour', ACCENTS, th.accent, c => themePatch({ accent: c })), 'profile:theme.accent'));
     p.append(h('h3', {}, 'Interface animations'));
-    p.append(rowChoice('Interface animations', [{ v: 'full', l: 'Full' }, { v: 'reduced', l: 'Reduced (faster)' }, { v: 'off', l: 'Off' }], th.animations, v => themePatch({ animations: v }).then(rebuildPanel), 'Off also stops animated wallpapers and the Home transition.'));
-    p.append(rowChoice('Home transition', [{ v: 'zoom', l: 'Zoom' }, { v: 'fade', l: 'Fade' }, { v: 'slide', l: 'Slide' }, { v: 'off', l: 'Off' }], th.homeTransition || 'zoom', v => { themePatch({ homeTransition: v }).then(() => { if (v !== 'off') { const pv = $('#set-panel .ht-demo'); pv && (pv.classList.remove('ht-' + v), void pv.offsetWidth, pv.classList.add('ht-' + v)); } }); },
-      'How the Home screen appears when you press Home, including from a game (what the game does meanwhile is set in Emulation › Home button).'));
+    p.append(changedMark(rowChoice('Interface animations', [{ v: 'full', l: 'Full' }, { v: 'reduced', l: 'Reduced (faster)' }, { v: 'off', l: 'Off' }], th.animations, v => themePatch({ animations: v }).then(rebuildPanel), 'Off also stops animated wallpapers and the Home transition.'), 'profile:theme.animations'));
+    p.append(changedMark(rowChoice('Home transition', [{ v: 'zoom', l: 'Zoom' }, { v: 'fade', l: 'Fade' }, { v: 'slide', l: 'Slide' }, { v: 'off', l: 'Off' }], th.homeTransition || 'zoom', v => { themePatch({ homeTransition: v }).then(() => { if (v !== 'off') { const pv = $('#set-panel .ht-demo'); pv && (pv.classList.remove('ht-' + v), void pv.offsetWidth, pv.classList.add('ht-' + v)); } }); },
+      'How the Home screen appears when you press Home, including from a game (what the game does meanwhile is set in Emulation › Home button).'), 'profile:theme.homeTransition'));
     wallpaperSettings(p, th);
     p.append(h('h3', {}, 'More'));
     p.append(rowButton('Home screen layout, order and shortcuts…', { sub: 'Classic, Cards or Grid, widgets, folders and pages.', onClick: () => selectCat('home', true) }));
@@ -3366,6 +3440,10 @@ const Panels = {
     p.append(changedMark(rowToggle('Interface sounds', S.settings.sound?.enabled, v => saveSettings({ sound: { enabled: v } }).then(rebuildPanel)), 'sound.enabled'));
     p.append(changedMark(rowRange('Sound volume', { min: 0, max: 100, step: 10, value: Math.round((S.settings.sound?.volume ?? .7) * 100), fmt: v => v + '%', onChange: (v, commit) => { S.settings.sound.volume = v / 100; if (commit) { saveSettings({ sound: { volume: v / 100 } }); Sound.play('select'); } } }), 'sound.volume'));
     p.append(h('p', { class: 'note' }, 'Game sound has its own volume, in Playing games and while playing.'));
+    p.append(h('h3', {}, 'Restore defaults'));
+    p.append(h('p', { class: 'note' }, 'One setting: its restore button appears next to it once it is changed (controller: Options on the setting).'));
+    p.append(rowButton('Restore all keybinds…', { sub: 'Keyboard shortcuts and controller buttons only.', onClick: () => resetAllKeybinds() }));
+    p.append(rowButton('Reset all settings…', { danger: true, sub: 'Every setting back to its default. Users, saves, games, keys, firmware and your GitHub connection are kept.', onClick: () => resetAllSettings() }));
   },
   startup(p) { this.general(p); },
 };
@@ -3377,7 +3455,7 @@ function startupRows(p) {
     if (st.enabled) {
       p.append(changedMark(rowChoice('Length', [{ v: 'standard', l: 'Standard' }, { v: 'short', l: 'Short' }], st.style, v => saveSettings({ startup: { style: v } }).then(rebuildPanel)), 'startup.style'));
       p.append(changedMark(rowToggle('Startup sound', st.sound, v => saveSettings({ startup: { sound: v } }).then(rebuildPanel)), 'startup.sound'));
-      p.append(rowSwatches('Background colour', BOOT_COLORS, st.color, c => saveSettings({ startup: { color: c } }).then(rebuildPanel)));
+      p.append(changedMark(rowSwatches('Background colour', BOOT_COLORS, st.color, c => saveSettings({ startup: { color: c } }).then(rebuildPanel)), 'startup.color'));
       const prev = h('div', { class: 'boot-preview', style: { background: st.color } });
       prev.append(h('div', { class: 'bp-logo', style: { background: luminance(st.color) > .55 ? '#141414' : '#fff' } })); p.append(prev);
     }
@@ -3403,7 +3481,12 @@ Object.assign(Panels, {
     p.append(h('p', { class: 'note' }, 'All of these are opened by the NEXUS engine (checked against its file loader). Updates and DLC in these folders are applied automatically when you start the base game.'));
     for (const f of S.formats || []) {
       const on = (lib.formats || []).includes(f.ext);
-      p.append(rowToggle(`.${f.ext.toUpperCase()}`, on, v => { const set = new Set(S.settings.library.formats); v ? set.add(f.ext) : set.delete(f.ext); saveSettings({ library: { formats: [...set] } }); }, f.label));
+      const fr = rowToggle(`.${f.ext.toUpperCase()}`, on, v => { const set = new Set(S.settings.library.formats); v ? set.add(f.ext) : set.delete(f.ext); saveSettings({ library: { formats: [...set] } }); }, f.label);
+      const defOn = () => (SETTING_DEFAULTS?.library?.formats || []).includes(f.ext);
+      addReset(fr, { changed: () => !!SETTING_DEFAULTS && (S.settings.library.formats || []).includes(f.ext) !== defOn(), def: () => defOn() ? 'On' : 'Off', run: async () => {
+        const set = new Set(S.settings.library.formats); defOn() ? set.add(f.ext) : set.delete(f.ext); await saveSettings({ library: { formats: [...set] } });
+      } });
+      p.append(fr);
     }
     p.append(h('h3', {}, 'Artwork & names'));
     p.append(changedMark(rowToggle('Read game info with prod.keys', lib.readKeysForIds, v => saveSettings({ library: { readKeysForIds: v } }), 'Decrypts game headers locally with your own keys to read the real title, version and icon. Nothing leaves your PC.'), 'library.readKeysForIds'));
@@ -3435,13 +3518,13 @@ Object.assign(Panels, {
   emulator(p) {
     const es = S.settings.emulator || {};
     p.append(h('h2', {}, 'Playing games'), h('p', { class: 'note' }, 'How NEXUS starts and runs games, and the keys and buttons you use while playing. Graphics, audio and system options are in Graphics & emulation; shader preparation and the shared cache in Shader management.'));
-    p.append(rowVolume('Game volume', +(S.settings.engine?.['audio.volume'] ?? 100), sendVolume, '0% is silent, 100% is the game’s own level, up to 200% boosts quiet games (a soft limiter prevents harsh clipping). Also adjustable while playing.'));
+    p.append(volumeReset(rowVolume('Game volume', +(S.settings.engine?.['audio.volume'] ?? 100), sendVolume, '0% is silent, 100% is the game’s own level, up to 200% boosts quiet games (a soft limiter prevents harsh clipping). Also adjustable while playing.')));
     p.append(changedMark(rowChoice('Ask who\u2019s playing a game', [{ v: 'several', l: 'When there is more than one user' }, { v: 'always', l: 'Always' }, { v: 'never', l: 'Never (the current user plays)' }], es.whoPlays || 'several', v => saveSettings({ emulator: { whoPlays: v } }), 'Before a game starts, NEXUS asks which user is playing. Play time, saves and controller layout belong to that user.'), 'emulator.whoPlays'));
     p.append(h('h3', {}, 'NEXUS Home while playing'));
-    p.append(rowButton('Home key', { value: es.homeKey || 'Off', sub: 'Press it in a game to go back to NEXUS Home; the game keeps running. Standard: Shift+H, so H alone stays a game control. A single key that is one of the game\u2019s controls stays with the game.', onClick: async () => {
+    p.append(changedMark(rowButton('Home key', { value: es.homeKey || 'Off', sub: 'Press it in a game to go back to NEXUS Home; the game keeps running. Standard: Shift+H, so H alone stays a game control. A single key that is one of the game\u2019s controls stays with the game.', onClick: async () => {
       const k = await captureKey({ mods: true }); if (k === undefined) return;
       saveSettings({ emulator: { homeKey: k } }).then(rebuildPanel);
-    } }));
+    } }), 'emulator.homeKey'));
     p.append(changedMark(rowChoice('When you press Home in a game', [{ v: 'background', l: 'Keep the game running (muted)' }, { v: 'pause', l: 'Pause the game' }], es.homeAction || 'background', v => saveSettings({ emulator: { homeAction: v } }),
       'Keep running: the game carries on in the background without sound and ignores your controls until you choose Resume (a green dot shows it is running). Pause: the game stops where it is. Either way one press of Home is one trip to NEXUS Home.'), 'emulator.homeAction'));
     p.append(changedMark(rowToggle('Controller Home button', es.homeButton !== false, v => saveSettings({ emulator: { homeButton: v } }), 'The Xbox Guide button, the PlayStation button or a controller\u2019s Home button takes you straight to NEXUS Home (the game never sees it). Choose Resume Game to go back. If Steam or Windows uses the button for itself, use the Home key instead.'), 'emulator.homeButton'));
@@ -3450,20 +3533,21 @@ Object.assign(Panels, {
       'A game kept running behind NEXUS Home is paused after this long, so a forgotten game stops using your processor and graphics card. Resume continues where it was.'), 'emulator.backgroundMinutes'));
     p.append(changedMark(rowChoice('Game window', [{ v: 'inside', l: 'Inside NEXUS' }, { v: 'separate', l: 'Separate window' }], es.gameWindow || 'inside', v => saveSettings({ emulator: { gameWindow: v } }),
       'Inside NEXUS: the game is drawn in the NEXUS window, and the fullscreen key switches that window between full screen and its previous size. Separate window: the game opens in a window of its own (use this if a game shows a black picture inside NEXUS). Applies from the next game.'), 'emulator.gameWindow'));
-    p.append(rowButton('Fullscreen / window key', { value: es.fullscreenKey || 'Off', sub: 'Switches the game between full screen and a window without stopping it. If the key is one of the game\u2019s controls, it stays with the game.', onClick: async () => {
+    p.append(changedMark(rowButton('Fullscreen / window key', { value: es.fullscreenKey || 'Off', sub: 'Switches the game between full screen and a window without stopping it. If the key is one of the game\u2019s controls, it stays with the game.', onClick: async () => {
       const k = await captureKey(); if (k === undefined) return;
       saveSettings({ emulator: { fullscreenKey: k } }).then(rebuildPanel);
-    } }));
-    p.append(rowButton('Screenshot key', { value: es.screenshotKey || 'Off', sub: 'Saves a screenshot to Media (NEXUS data\\Media\\Screenshots). Alt+F12 by default; F12 starts and stops a recording (Settings › Screen recording).', onClick: async () => {
+    } }), 'emulator.fullscreenKey'));
+    p.append(changedMark(rowButton('Screenshot key', { value: es.screenshotKey || 'Off', sub: 'Saves a screenshot to Media (NEXUS data\\Media\\Screenshots). Alt+F12 by default; F12 starts and stops a recording (Settings › Screen recording).', onClick: async () => {
       const k = await captureKey({ mods: true }); if (k === undefined) return;
       if (k && k.toLowerCase() === (S.settings.recording?.key || '').toLowerCase()) { alertDlg('That shortcut is taken', `${k} starts and stops recordings. Choose another key for screenshots.`); return; }
       saveSettings({ emulator: { screenshotKey: k } }).then(rebuildPanel);
-    } }));
+    } }), 'emulator.screenshotKey'));
     p.append(changedMark(rowToggle('Controller Share / Capture button takes screenshots', es.captureButton !== false, v => saveSettings({ emulator: { captureButton: v } }), 'The Xbox Share button, the Switch Pro Controller\u2019s Capture button or a similar button.'), 'emulator.captureButton'));
     p.append(changedMark(rowToggle('Fade into the game', es.fadeIn !== false, v => saveSettings({ emulator: { fadeIn: v } }), 'The loading screen fades out and the game fades in. Turn off if the game window stays dark or flickers with your graphics driver.'), 'emulator.fadeIn'));
     p.append(rowButton('Shader management…', { sub: 'Prepare shaders before playing, and the shader cache shared by all users of this PC.', onClick: () => selectCat('shaders', true) }));
     p.append(changedMark(rowToggle('Start games in full screen', es.fullscreen, v => saveSettings({ emulator: { fullscreen: v } }), 'The game window belongs to NEXUS; when the game ends you are back on the NEXUS home screen.'), 'emulator.fullscreen'));
     p.append(changedMark(rowToggle('Quit shortcut: hold View + Menu', es.quitCombo, v => saveSettings({ emulator: { quitCombo: v } }), 'Hold Back + Start for 2 seconds on an XInput controller to close the game.'), 'emulator.quitCombo'));
+    p.append(rowButton('Restore all keybinds…', { sub: 'Home, full screen, screenshot and recording keys, the controller’s Home and Capture buttons and the quit combination, and your controller buttons.', onClick: () => resetAllKeybinds() }));
     p.append(rowButton('Save Data…', { sub: 'Every user has their own saves.', onClick: () => selectCat('savedata', true) }));
     p.append(rowButton('Keys and firmware…', { sub: 'Install or replace prod.keys and firmware.', onClick: () => selectCat('sysfiles', true) }));
     moveToAdvanced(p, ['Game window', 'Fade into the game', 'Quit shortcut: hold View + Menu', 'Pause a game left in the background after'], { sub: 'The game window, fading in, the quit shortcut and pausing a forgotten game.' });
@@ -3510,9 +3594,7 @@ Object.assign(Panels, {
     p.append(h('h3', {}, 'Maintenance'));
     p.append(rowButton('Open logs folder', { onClick: () => api('/api/app/open-folder', { body: { which: 'logs' } }) }));
     p.append(rowButton('Open NEXUS folder', { onClick: () => api('/api/app/open-folder', { body: { which: 'root' } }) }));
-    p.append(rowButton('Reset NEXUS settings', { sub: 'Restores startup, sound, library and game session settings. Users, saves and game folders are kept.', onClick: async () => {
-      if (await confirmDlg('Reset settings?', 'Users, saves and game folders are kept.', 'Reset', true)) { S.settings = await api('/api/settings/reset', { body: {} }); rebuildPanel(); toast('Settings reset', I.check); }
-    } }));
+    p.append(rowButton('Reset all settings…', { danger: true, sub: 'Every setting back to its default. Users, saves, games, keys, firmware and your GitHub connection are kept.', onClick: () => resetAllSettings() }));
   },
   about(p) {
     p.append(h('h2', {}, 'About NEXUS'));
@@ -3627,9 +3709,9 @@ async function sharedCachePanel(box) {
   try { st = await api('/api/shaders/cache'); } catch (e) { box.replaceChildren(h('p', { class: 'note warn' }, e.message)); return; }
   const es = S.settings.emulator || {};
   box.replaceChildren(h('h3', { class: 'set-h' }, 'Shader cache'));
-  box.append(rowToggle('Share shaders with other NEXUS users on this PC', !es.privateShaderCache, async v => {
+  box.append(changedMark(rowToggle('Share shaders with other NEXUS users on this PC', !es.privateShaderCache, async v => {
     await saveSettings({ emulator: { privateShaderCache: !v } }); sharedCachePanel(box);
-  }, 'Shaders one user\u2019s games have built are ready for every NEXUS user of this PC, so the second person to play a game has fewer stutters. Only shader data that works on any graphics card is shared; what your graphics driver builds for your card stays yours. Nothing is uploaded. Some effects are still built the first time anyone meets them, and each user\u2019s graphics driver still prepares its own copy once.'));
+  }, 'Shaders one user\u2019s games have built are ready for every NEXUS user of this PC, so the second person to play a game has fewer stutters. Only shader data that works on any graphics card is shared; what your graphics driver builds for your card stays yours. Nothing is uploaded. Some effects are still built the first time anyone meets them, and each user\u2019s graphics driver still prepares its own copy once.'), 'emulator.privateShaderCache'));
   const games = st.titles.length;
   box.append(h('p', { class: 'note' }, `${st.shared ? 'Shared cache' : 'Your own cache'}: ${games} game${games === 1 ? '' : 's'}, ${st.records.toLocaleString()} shaders and pipelines, ${fmtBytes(st.bytes)}.`));
   for (const t of st.titles.slice(0, 12)) {
@@ -3689,11 +3771,11 @@ async function renderPerfSettings(p) {
   const preview = h('div', { class: 'perf-preview hud ' + (pm.position === 'bottom' ? 'bottom' : 'top') + (pm.layout === 'fps' ? ' fps' : ''), style: { '--hud-bg': `rgba(14,15,18,${(pm.opacity || 80) / 100})`, fontSize: `${(pm.scale || 100) / 100}em` } }, 'Measuring\u2026');
   p.append(h('div', { class: 'perf-stage' }, preview));
   const save = async patch => { await saveSettings({ perfMonitor: patch }); rebuildPanel(); };
-  p.append(rowChoice('Show it', [{ v: 'off', l: 'Off' }, { v: 'all', l: 'In every game' }, { v: 'selected', l: 'Only in games I choose' }], pm.mode || 'off', v => save({ mode: v }), pm.mode === 'selected' ? `${(pm.games || []).length} game(s) chosen — switch it on for a game in its Configure Game Settings, or while playing.` : ''));
-  p.append(rowChoice('Position', [{ v: 'top', l: 'Top' }, { v: 'bottom', l: 'Bottom' }], pm.position || 'top', v => save({ position: v })));
-  p.append(rowChoice('Layout', [{ v: 'bar', l: 'Strip across the picture' }, { v: 'fps', l: 'Frame rate only, in the corner' }], pm.layout || 'bar', v => save({ layout: v })));
-  p.append(rowRange('Background opacity', { min: 30, max: 100, step: 5, value: pm.opacity || 80, fmt: v => v + '%', onChange: v => saveSettings({ perfMonitor: { opacity: v } }).then(() => preview.style.setProperty('--hud-bg', `rgba(14,15,18,${v / 100})`)) }));
-  p.append(rowRange('Size', { min: 75, max: 200, step: 5, value: pm.scale || 100, fmt: v => v + '%', onChange: v => saveSettings({ perfMonitor: { scale: v } }).then(() => preview.style.fontSize = `${v / 100}em`) }));
+  p.append(changedMark(rowChoice('Show it', [{ v: 'off', l: 'Off' }, { v: 'all', l: 'In every game' }, { v: 'selected', l: 'Only in games I choose' }], pm.mode || 'off', v => save({ mode: v }), pm.mode === 'selected' ? `${(pm.games || []).length} game(s) chosen — switch it on for a game in its Configure Game Settings, or while playing.` : ''), 'perfMonitor.mode'));
+  p.append(changedMark(rowChoice('Position', [{ v: 'top', l: 'Top' }, { v: 'bottom', l: 'Bottom' }], pm.position || 'top', v => save({ position: v })), 'perfMonitor.position'));
+  p.append(changedMark(rowChoice('Layout', [{ v: 'bar', l: 'Strip across the picture' }, { v: 'fps', l: 'Frame rate only, in the corner' }], pm.layout || 'bar', v => save({ layout: v })), 'perfMonitor.layout'));
+  p.append(changedMark(rowRange('Background opacity', { min: 30, max: 100, step: 5, value: pm.opacity || 80, fmt: v => v + '%', onChange: v => saveSettings({ perfMonitor: { opacity: v } }).then(() => preview.style.setProperty('--hud-bg', `rgba(14,15,18,${v / 100})`)) }), 'perfMonitor.opacity'));
+  p.append(changedMark(rowRange('Size', { min: 75, max: 200, step: 5, value: pm.scale || 100, fmt: v => v + '%', onChange: v => saveSettings({ perfMonitor: { scale: v } }).then(() => preview.style.fontSize = `${v / 100}em`) }), 'perfMonitor.scale'));
   p.append(h('h3', {}, 'What it shows'));
   let info; try { info = await api('/api/perf'); } catch { info = { metrics: [] }; }
   const notes = { cputemp: 'Windows does not give applications a reliable CPU temperature sensor, so this shows N/A.', gputemp: 'Measured on NVIDIA graphics cards (through the NVIDIA driver); N/A on others.', ramspeed: 'The configured memory speed of your RAM modules — a speed, not how much is in use.', fps: 'Frames the game presented in the last second.', frametime: 'Average time per presented frame over the last second.', vram: 'Graphics memory in use, of the card’s total.', gpu: 'Busiest graphics engine (3D) of your graphics card.', shaders: 'Shaders compiling now (these can make a game stutter), cached pipelines still being prepared in the background, or ready with the number compiled this session. A count, not a percentage: a game reveals new shaders as you play.' };
@@ -4018,21 +4100,38 @@ const Controllers = {
     const curPref = infos.find(i => i.key === c.preferredPad) ? c.preferredPad : (infos.find(i => S.pads.find(p => p.index === i.index)?.id === c.preferredPad)?.key || c.preferredPad || '');
     left.append(rowChoice('Controller for NEXUS menus', padChoices, curPref, v => ctlPatch({ preferredPad: v, preferredPadName: infos.find(i => i.key === v)?.name || '' }),
       infos.length > 1 ? 'Only this controller moves around NEXUS menus. In games, players are set below.' : ''));
-    left.append(rowToggle('Vibration', c.vibration, v => { ctlPatch({ vibration: v }); if (v) setTimeout(() => Pad.rumble(250, .8), 100); }));
-    left.append(rowRange('Repeat speed', { min: 60, max: 300, step: 20, value: c.keyRepeatMs || 140, fmt: v => v + ' ms', onChange: (v, commit) => { if (commit) ctlPatch({ keyRepeatMs: v }); } }));
+    left.append(changedMark(rowToggle('Vibration', c.vibration, v => { ctlPatch({ vibration: v }); if (v) setTimeout(() => Pad.rumble(250, .8), 100); }), 'profile:controls.vibration'));
+    left.append(changedMark(rowRange('Repeat speed', { min: 60, max: 300, step: 20, value: c.keyRepeatMs || 140, fmt: v => v + ' ms', onChange: (v, commit) => { if (commit) ctlPatch({ keyRepeatMs: v }); } }), 'profile:controls.keyRepeatMs'));
 
     right.append(h('h3', { class: 'set-h' }, 'NEXUS button mapping'));
-    right.append(rowChoice('Confirm button', [{ v: 'south', l: `Bottom (${PadInfo.label(0)})` }, { v: 'east', l: `Right (${PadInfo.label(1)})` }], c.confirmButton, v => {
+    right.append(changedMark(rowChoice('Confirm button', [{ v: 'south', l: `Bottom (${PadInfo.label(0)})` }, { v: 'east', l: `Right (${PadInfo.label(1)})` }], c.confirmButton, v => {
       const m = { ...c.mapping }; if (v === 'east') { m.confirm = 1; m.back = 0; } else { m.confirm = 0; m.back = 1; }
       ctlPatch({ confirmButton: v, mapping: m });
-    }));
+    }), 'profile:controls.confirmButton'));
     const ACT = [['confirm', 'OK / Select'], ['back', 'Back'], ['options', 'Options'], ['search', 'Search'], ['prevTab', 'Previous tab'], ['nextTab', 'Next tab'], ['menu', 'Power menu'], ['home', 'Home']];
-    for (const [a, l] of ACT) { const idx = c.mapping?.[a]; const r = rowButton(l, { value: idx == null ? '\u2014' : PadInfo.label(idx), sub: '', onClick: () => Mapper.start(a, l) }); if (idx != null) r.querySelector('.rv').prepend(PadInfo.glyph(idx, 'key inline')); right.append(r); }
-    right.append(rowButton('Reset mapping', { onClick: () => ctlPatch({ confirmButton: 'south', mapping: { confirm: 0, back: 1, options: 3, search: 2, prevTab: 4, nextTab: 5, menu: 9, home: 16, view: 8 } }) }));
+    // a button's default follows the confirm-button choice (Right swaps OK and Back)
+    const defIdx = a => { const d = { confirm: 0, back: 1, options: 3, search: 2, prevTab: 4, nextTab: 5, menu: 9, home: 16, view: 8 }; if (c.confirmButton === 'east') { d.confirm = 1; d.back = 0; } return d[a]; };
+    for (const [a, l] of ACT) {
+      const idx = c.mapping?.[a]; const r = rowButton(l, { value: idx == null ? '\u2014' : PadInfo.label(idx), sub: '', onClick: () => Mapper.start(a, l) });
+      if (idx != null) r.querySelector('.rv').prepend(PadInfo.glyph(idx, 'key inline'));
+      addReset(r, { changed: () => (S.profile?.controls?.mapping?.[a]) !== defIdx(a), def: () => PadInfo.label(defIdx(a)), run: async () => {
+        const m = { ...S.profile.controls.mapping }, want = defIdx(a);
+        const clash = Object.keys(m).find(k => m[k] === want && k !== a); // the button another action has: they swap, as when mapping
+        if (clash) m[clash] = m[a];
+        m[a] = want;
+        await ctlPatch({ mapping: m });
+      } });
+      right.append(r);
+    }
+    right.append(rowButton('Reset menu buttons', { sub: 'OK, Back, Options, Search, tabs, Power and Home back to the standard buttons.', onClick: async () => {
+      if (await confirmDlg('Reset the menu buttons?', 'The buttons that move around NEXUS menus go back to the standard ones (OK on the bottom button). Your controller layout for games is not changed.', 'Reset', true))
+        ctlPatch({ confirmButton: 'south', mapping: { confirm: 0, back: 1, options: 3, search: 2, prevTab: 4, nextTab: 5, menu: 9, home: 16, view: 8 } });
+    } }));
+    right.append(rowButton('Restore all keybinds…', { sub: 'Keyboard shortcuts, controller Home and Capture buttons, menu buttons and the controller layout for games.', onClick: () => resetAllKeybinds() }));
     right.append(h('h3', { class: 'set-h' }, 'In-game controls'));
     const ips = S.emulator?.inputProfiles || [];
-    right.append(rowChoice('Controller profile for games', [{ v: '', l: 'Automatic: first connected controller' }, ...ips.map(x => ({ v: x, l: x }))], c.emuInputProfile || '', v => ctlPatch({ emuInputProfile: v }),
-      ips.length ? 'Player 1 uses this saved profile whenever this user starts a game. A game can choose its own in Configure Game Settings.' : 'Player 1 is mapped automatically to the first connected controller with its standard layout (keyboard if none is connected).'));
+    right.append(changedMark(rowChoice('Controller profile for games', [{ v: '', l: 'Automatic: first connected controller' }, ...ips.map(x => ({ v: x, l: x }))], c.emuInputProfile || '', v => ctlPatch({ emuInputProfile: v }),
+      ips.length ? 'Player 1 uses this saved profile whenever this user starts a game. A game can choose its own in Configure Game Settings.' : 'Player 1 is mapped automatically to the first connected controller with its standard layout (keyboard if none is connected).'), 'profile:controls.emuInputProfile'));
     if (!c.emuInputProfile) layoutRows(right, c.gameLayout || {}, async l => { await api(`/api/profiles/${S.profile.id}/game-layout`, { body: l }); await loadState(); S.profile = profileById(S.profile.id); Controllers.refreshList(); }, 'user');
     right.append(h('p', { class: 'note' }, 'In games the NEXUS engine detects controllers automatically (Xbox/XInput, PlayStation, Switch Pro and most USB or Bluetooth pads) and uses this layout for player 1. A game can have its own layout in Configure Game Settings › Controls. Keyboard: the engine’s standard keys work when no controller is connected.'));
     const known = h('div'); left.prepend(known);
@@ -4080,10 +4179,10 @@ function captureButton(ms = 6000) {
 }
 function layoutRows(container, layout, save, scope) {
   const l = { base: layout.base || 'nintendo', buttons: { ...(layout.buttons || {}) }, controllerType: layout.controllerType || '' };
-  container.append(rowChoice('Button layout', [{ v: 'nintendo', l: 'Nintendo positions (A on the right)' }, { v: 'xbox', l: 'Xbox labels (A at the bottom)' }], l.base,
-    v => save({ ...l, base: v, buttons: {} }), 'Nintendo positions keep the console’s layout; Xbox labels match the letters printed on Xbox-style pads.'));
-  container.append(rowChoice('Controller type', [{ v: '', l: 'Automatic' }, { v: 'pro', l: 'Pro Controller' }, { v: 'dual_joycon', l: 'Joy-Con pair' }, { v: 'handheld', l: 'Handheld' }], l.controllerType,
-    v => save({ ...l, controllerType: v }), 'What the game sees. Automatic uses the game’s own preset if it has one, otherwise a Pro Controller.'));
+  container.append(addReset(rowChoice('Button layout', [{ v: 'nintendo', l: 'Nintendo positions (A on the right)' }, { v: 'xbox', l: 'Xbox labels (A at the bottom)' }], l.base,
+    v => save({ ...l, base: v, buttons: {} }), 'Nintendo positions keep the console’s layout; Xbox labels match the letters printed on Xbox-style pads.'), { changed: () => l.base !== 'nintendo', def: () => 'Nintendo positions', run: () => save({ ...l, base: 'nintendo', buttons: {} }) }));
+  container.append(addReset(rowChoice('Controller type', [{ v: '', l: 'Automatic' }, { v: 'pro', l: 'Pro Controller' }, { v: 'dual_joycon', l: 'Joy-Con pair' }, { v: 'handheld', l: 'Handheld' }], l.controllerType,
+    v => save({ ...l, controllerType: v }), 'What the game sees. Automatic uses the game’s own preset if it has one, otherwise a Pro Controller.'), { changed: () => !!l.controllerType, def: () => 'Automatic', run: () => save({ ...l, controllerType: '' }) }));
   const n = Object.keys(l.buttons).length;
   container.append(rowButton('Customise buttons…', { value: n ? `${n} changed` : '', sub: 'Choose which button on your controller does each Switch button.', onClick: () => layoutEditor(l, save, scope) }));
   if (n || l.base !== 'nintendo' || l.controllerType) container.append(rowButton('Restore default layout', { danger: true, onClick: () => save({ base: 'nintendo', buttons: {}, controllerType: '' }) }));
@@ -4099,6 +4198,7 @@ async function layoutEditor(l0, save, scope) {
       const r = rowChoice(`Switch ${SW_LABEL[sw] || sw}`, info.positions.map(p => ({ v: p, l: POS_LABEL[p] || p })), cur,
         v => { if (v === base[sw]) delete l.buttons[sw]; else l.buttons[sw] = v; }, l.buttons[sw] ? 'Changed' : '');
       if (l.buttons[sw]) r.classList.add('overridden');
+      addReset(r, { changed: () => !!l.buttons[sw], def: () => POS_LABEL[base[sw]] || base[sw], run: async () => { delete l.buttons[sw]; rebuild(); } });
       const press = h('button', { class: 'chip', 'data-nav': true }, 'Press…');
       press.addEventListener('click', async () => {
         press.textContent = 'Press a button…';
@@ -4747,7 +4847,7 @@ async function updatesPanel(p) {
   if (info.available) p.append(rowButton(`Update to ${info.latest}…`, { icon: I.check, onClick: () => updateDialog(info) }));
   else if (info.checked && !info.error) p.append(h('p', { class: 'note' }, 'NEXUS is up to date.'));
   p.append(rowButton('Check for updates', { onClick: async () => { await api('/api/update/check', { body: {} }).catch(() => { }); rebuildPanel(); } }));
-  p.append(rowToggle('Check when NEXUS starts', d.settings.autoCheck, v => api('/api/update/settings', { body: { autoCheck: v } })));
+  p.append(changedMark(rowToggle('Check when NEXUS starts', d.settings.autoCheck, v => api('/api/update/settings', { body: { autoCheck: v } })), 'updates.autoCheck'));
   p.append(h('h3', {}, 'Release page'));
   p.append(rowButton('Repository', { value: d.settings.repo || '0ryzin/Nexus', sub: 'Where NEXUS looks for official releases (GitHub owner/name).', onClick: async () => {
     const v = await dialog({ title: 'Release repository', input: { value: d.settings.repo || '', max: 100 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Save', value: true, primary: true }] });
@@ -4909,13 +5009,13 @@ async function renderRecordingSettings(p) {
   if (!caps.available) {
     p.append(h('p', { class: 'note warn' }, 'Recording is not available on this PC: ' + (caps.reason || 'the NEXUS capture module could not be loaded.') + ' Screenshots still work.'));
   }
-  p.append(rowToggle('Screen recording', rs.enabled !== false, v => save({ enabled: v }), 'When off, the record shortcut does nothing.'));
+  p.append(changedMark(rowToggle('Screen recording', rs.enabled !== false, v => save({ enabled: v }), 'When off, the record shortcut does nothing.'), 'recording.enabled'));
   if (rs.enabled === false) return;
-  p.append(rowButton('Start / stop shortcut', { value: rs.key || 'Off', sub: 'Press it while playing to start a recording and again to stop it. Changes apply to the next game you start.', onClick: async () => {
+  p.append(changedMark(rowButton('Start / stop shortcut', { value: rs.key || 'Off', sub: 'Press it while playing to start a recording and again to stop it. Changes apply to the next game you start.', onClick: async () => {
     const k = await captureKey({ mods: true }); if (k === undefined) return;
     if (k && k.toLowerCase() === (S.settings.emulator?.screenshotKey || '').toLowerCase()) { alertDlg('That shortcut is taken', `${k} takes screenshots. Choose another key, or change the screenshot key in Playing games.`); return; }
     save({ key: k });
-  } }));
+  } }), 'recording.key'));
   // encoder line: what will actually be used
   const hw = (caps.encoders || []).filter(e => e.hardware);
   const encLine = !caps.available ? 'None' : rs.hardware !== false && caps.hardware
@@ -4923,23 +5023,23 @@ async function renderRecordingSettings(p) {
     : 'Software (Windows Media Foundation)';
   const VEND = { nvidia: 'NVIDIA NVENC', amd: 'AMD', intel: 'Intel Quick Sync' };
   p.append(rowButton('Encoder', { value: caps.vendor && rs.hardware !== false && caps.hardware ? (VEND[caps.vendor] || caps.vendor) : (caps.available ? 'Software' : '—'), sub: encLine + (caps.hardware ? '' : '. No hardware video encoder was found, so recording uses the processor; resolution is limited to 1080p to keep games smooth.') }));
-  if (caps.hardware) p.append(rowToggle('Use the graphics card to encode', rs.hardware !== false, v => save({ hardware: v }), 'NVIDIA NVENC, AMD or Intel Quick Sync. Much lighter on games than software encoding. Turn off only if recordings fail with your driver.'));
+  if (caps.hardware) p.append(changedMark(rowToggle('Use the graphics card to encode', rs.hardware !== false, v => save({ hardware: v }), 'NVIDIA NVENC, AMD or Intel Quick Sync. Much lighter on games than software encoding. Turn off only if recordings fail with your driver.'), 'recording.hardware'));
   const RES = { native: 'Game resolution', '720p': '720p', '1080p': '1080p', '1440p': '1440p', '2160p': '4K (2160p)' };
   const resList = (caps.resolutions?.length ? caps.resolutions : ['native', '720p', '1080p']).map(v => ({ v, l: RES[v] || v }));
-  p.append(rowChoice('Resolution', resList, eff.resolution || rs.resolution, v => save({ resolution: v }), 'The game picture is scaled to fit (never stretched).'));
+  p.append(changedMark(rowChoice('Resolution', resList, eff.resolution || rs.resolution, v => save({ resolution: v }), 'The game picture is scaled to fit (never stretched).'), 'recording.resolution'));
   const fpsList = (caps.fps?.length ? caps.fps : [30, 60]).map(v => ({ v, l: v + ' fps' }));
-  p.append(rowChoice('Frame rate', fpsList, eff.fps || rs.fps, v => save({ fps: +v })));
-  p.append(rowChoice('Quality', [{ v: 'standard', l: 'Standard' }, { v: 'high', l: 'High' }, { v: 'max', l: 'Maximum' }, { v: 'custom', l: 'Custom bit rate' }], rs.quality || 'high', v => save({ quality: v }),
-    `About ${(info.bitrate / 1000).toFixed(info.bitrate < 10000 ? 1 : 0)} Mbit/s, roughly ${fmtBytes(info.bitrate * 1000 / 8 * 60)} per minute.`));
-  if (rs.quality === 'custom') p.append(rowRange('Bit rate', { min: 2000, max: 80000, step: 1000, value: rs.bitrate || 12000, fmt: v => (v / 1000) + ' Mbit/s', onChange: (v, commit) => { if (commit) saveSettings({ recording: { bitrate: v } }); } }));
+  p.append(changedMark(rowChoice('Frame rate', fpsList, eff.fps || rs.fps, v => save({ fps: +v })), 'recording.fps'));
+  p.append(changedMark(rowChoice('Quality', [{ v: 'standard', l: 'Standard' }, { v: 'high', l: 'High' }, { v: 'max', l: 'Maximum' }, { v: 'custom', l: 'Custom bit rate' }], rs.quality || 'high', v => save({ quality: v }),
+    `About ${(info.bitrate / 1000).toFixed(info.bitrate < 10000 ? 1 : 0)} Mbit/s, roughly ${fmtBytes(info.bitrate * 1000 / 8 * 60)} per minute.`), 'recording.quality'));
+  if (rs.quality === 'custom') p.append(changedMark(rowRange('Bit rate', { min: 2000, max: 80000, step: 1000, value: rs.bitrate || 12000, fmt: v => (v / 1000) + ' Mbit/s', onChange: (v, commit) => { if (commit) saveSettings({ recording: { bitrate: v } }); } }), 'recording.bitrate'));
   const codecs = [{ v: 'h264', l: 'H.264 (plays everywhere)' }];
   if (caps.hardwareHevc) codecs.push({ v: 'hevc', l: 'HEVC / H.265 (smaller files)' });
-  p.append(rowChoice('Video format', codecs, codecs.some(c => c.v === rs.codec) ? rs.codec : 'h264', v => save({ codec: v }), 'MP4 file. HEVC is offered only when your graphics card can encode it.'));
-  p.append(rowToggle('Record game sound', rs.audio !== false, v => save({ audio: v }), caps.processAudio ? 'Only the game’s sound — not other apps.' : 'This version of Windows cannot record one app’s sound on its own, so everything you hear is recorded.'));
-  p.append(rowToggle('Record microphone', !!rs.mic, v => save({ mic: v }), 'Your default microphone, as a separate audio track.'));
-  p.append(rowButton('Save recordings to', { value: rs.folder ? '' : 'Media › Recordings', sub: info.folder, onClick: async () => {
+  p.append(changedMark(rowChoice('Video format', codecs, codecs.some(c => c.v === rs.codec) ? rs.codec : 'h264', v => save({ codec: v }), 'MP4 file. HEVC is offered only when your graphics card can encode it.'), 'recording.codec'));
+  p.append(changedMark(rowToggle('Record game sound', rs.audio !== false, v => save({ audio: v }), caps.processAudio ? 'Only the game’s sound — not other apps.' : 'This version of Windows cannot record one app’s sound on its own, so everything you hear is recorded.'), 'recording.audio'));
+  p.append(changedMark(rowToggle('Record microphone', !!rs.mic, v => save({ mic: v }), 'Your default microphone, as a separate audio track.'), 'recording.mic'));
+  p.append(changedMark(rowButton('Save recordings to', { value: rs.folder ? '' : 'Media › Recordings', sub: info.folder, onClick: async () => {
     const r = await api('/api/recording/folder', { body: {} }).catch(e => { toast(e.message, I.warn); return null; });
     if (r?.path) save({ folder: r.path });
-  } }));
+  } }), 'recording.folder'));
   if (rs.folder) p.append(rowButton('Use Media › Recordings again', { onClick: () => save({ folder: '' }) }));
 }
