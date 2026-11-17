@@ -1,7 +1,7 @@
 From 9577af86fbe20c519bee63f6b0a2b2f2402a036d Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Tue, 17 Nov 2026 11:36:31 +0000
-Subject: [PATCH 23/23] nexus_engine: shader preparation while no game runs;
+Subject: [PATCH 23/24] nexus_engine: shader preparation while no game runs;
  precache stage; skip
 
 - nexus_engine_prepare_shaders(json): runs Lichii's shader precache

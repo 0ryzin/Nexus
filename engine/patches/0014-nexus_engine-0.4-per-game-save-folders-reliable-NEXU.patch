@@ -1,7 +1,7 @@
 From 735387878abfbf7f74df2099676aa594d5a2b861 Mon Sep 17 00:00:00 2001
 From: NEXUS <nexus@localhost>
 Date: Wed, 11 Nov 2026 23:03:04 +0000
-Subject: [PATCH 14/23] nexus_engine 0.4: per-game save folders, reliable NEXUS
+Subject: [PATCH 14/24] nexus_engine 0.4: per-game save folders, reliable NEXUS
  Home, F11, screenshots, controller choice, reveal after the loading screen
 
 - savedata_factory: NexusSaveFolders() maps a game's account/device save to folders NEXUS names

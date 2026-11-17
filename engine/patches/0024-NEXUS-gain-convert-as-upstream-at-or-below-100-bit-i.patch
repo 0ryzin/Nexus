@@ -1,0 +1,39 @@
+From b11f2b3afd4c877b2c9c30e3ce0d2546590baf24 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 17 Nov 2026 12:50:46 +0000
+Subject: [PATCH 24/24] NEXUS gain: convert as upstream at or below 100 %
+ (bit-identical output)
+
+NEXUS's gain helper rounded samples where Lichii truncates, so output at
+or below 100 % was sometimes one step off Lichii's, against the helper's
+own promise. Lichii's nx2_sysmix test (5.1 to stereo downmix) caught it on
+build 316: centre 9765 instead of 9764. At or below 100 % samples are now
+truncated as upstream does; above 100 % (NEXUS's own range) they are
+still rounded.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
+---
+ src/audio_core/sink/nexus_gain.h | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/src/audio_core/sink/nexus_gain.h b/src/audio_core/sink/nexus_gain.h
+index f0506621b..0a6f3432f 100644
+--- a/src/audio_core/sink/nexus_gain.h
++++ b/src/audio_core/sink/nexus_gain.h
+@@ -43,8 +43,13 @@ inline std::int16_t ApplyGain(float sample, float gain) {
+     if (gain > 1.0f) {
+         x = SoftLimit(x);
+     }
+-    const float r = std::nearbyint(std::clamp(x, -32768.0f, 32767.0f));
+-    return static_cast<std::int16_t>(r);
++    const float c = std::clamp(x, -32768.0f, 32767.0f);
++    if (gain <= 1.0f) {
++        // as upstream converts (truncation), so at or below 100 % the output is bit-identical to
++        // Lichii's; rounding here was one step off in its 5.1 downmix test (nx2_sysmix)
++        return static_cast<std::int16_t>(static_cast<std::int32_t>(c));
++    }
++    return static_cast<std::int16_t>(std::nearbyint(c)); // NEXUS's own range above 100 %
+ }
+ 
+ } // namespace AudioCore::Nexus

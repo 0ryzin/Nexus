@@ -1,7 +1,7 @@
 From 977b6be61b5074feac4039043ec9b4477e96ec20 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 11 Nov 2026 08:57:57 +0000
-Subject: [PATCH 07/23] nexus_engine: NEXUS controller layouts (button map +
+Subject: [PATCH 07/24] nexus_engine: NEXUS controller layouts (button map +
  controller type) on top of the automatic mapping
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

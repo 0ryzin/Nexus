@@ -5,6 +5,15 @@ Newest first.
 
 ## 0.8.0 (in development)
 
+### NEXUS volume output one step off Lichii's at 100 %
+- **Problem (found 17 Nov, CI on build 316):** Lichii's `nx2_sysmix` test (Orbitals 5.1 audio
+  downmixed to stereo) failed in the NEXUS Engine: centre sample 9765, expected 9764.
+- **Cause:** NEXUS's gain helper (`audio_core/sink/nexus_gain.h`, patch 0001) rounded samples where
+  Lichii truncates, although it promises output identical to Lichii's at or below 100 %.
+- **Fix:** truncation as upstream at or below 100 %; rounding only above 100 % (NEXUS's range).
+  Engine patch 0024. Inaudible (one step in 32,768), but now exact.
+- **Test:** Lichii's `nx2_sysmix` test and NEXUS's `nexus_gain` tests, every 16-bit sample at 100 %.
+
 ### Installing keys could race with a background vault copy
 - **Problem (found 17 Nov, CI):** `TestSystemFilesKeys` failed intermittently ("keys not
   installed into the NEXUS engine"; locally also "directory not empty" after the test).
