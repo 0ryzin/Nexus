@@ -1,7 +1,7 @@
 From 55fe2a5cfedac3090e15caae5cecf54e7aa3a4d3 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Tue, 10 Nov 2026 23:41:36 +0000
-Subject: [PATCH 03/20] nexus_engine: updates/DLC from NEXUS game folders,
+Subject: [PATCH 03/21] nexus_engine: updates/DLC from NEXUS game folders,
  controller auto-map for player 1
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

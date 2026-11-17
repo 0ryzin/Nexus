@@ -24,6 +24,18 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
 - The optimiser keeps Switch 2 games on the engine's tested settings (reactive flushing on,
   conservative video memory, no scaling above 1x), and each Switch 2 session logs the settings
   and update files it started with.
+- Windows: NEXUS no longer sometimes starts without a window; starting it again brings the running
+  window forward. The performance bar appears without pressing F11.
+- Controller: close a game kept on Home from its Options menu, the Power menu or the Home banner.
+  Fixed Home trapping the controller when pressed during the loading screen's fade, and the loading
+  screen waiting forever when a game started quickly.
+- Shaders: the loading screen and the performance bar show pipelines ready from the cache, builds
+  compiling now, background preparation and new ones this session.
+- NEXUS Account: keeps synchronising with a game kept on Home, after sleep and when NEXUS comes to
+  the front; a passing GitHub error no longer signs the device out; switching accounts never
+  copies one account's data into another without asking.
+- Idle: less work with a controller connected and behind a running game (measured, see
+  PERFORMANCE.md).
 - Engine: the texture cache's host-memory cap now works on Linux too (for 16 GB shared-memory
   handhelds; not tested on one).
 

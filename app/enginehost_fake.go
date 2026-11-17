@@ -77,7 +77,10 @@ func (f *fakeEngine) run(req EngineRequest) {
 		f.set(func(s *EngineStatus) { s.State = "starting" })
 		time.Sleep(d / 2)
 		for i := uint64(0); i <= 20; i++ {
-			f.set(func(s *EngineStatus) { s.LoadStage, s.LoadDone, s.LoadTotal = "shaders", i*50, 1000 })
+			f.set(func(s *EngineStatus) {
+				s.LoadStage, s.LoadDone, s.LoadTotal = "shaders", i*50, 1000
+				s.Shaders = fakeShaders(i*50, 0, 0, 0)
+			})
 			time.Sleep(d / 40)
 		}
 		f.set(func(s *EngineStatus) { s.LoadStage, s.LoadDone, s.LoadTotal = "", 0, 0 })
@@ -93,6 +96,7 @@ func (f *fakeEngine) run(req EngineRequest) {
 		sys = "switch2"
 	}
 	f.set(func(s *EngineStatus) { s.State = "running"; s.System = sys; s.ProgramID = "0100000000010000" })
+	playStart := time.Now()
 	dur := 2 * time.Second
 	if d := os.Getenv("NEXUS_FAKE_PLAY"); d != "" {
 		if v, err := time.ParseDuration(d); err == nil {
@@ -117,6 +121,13 @@ func (f *fakeEngine) run(req EngineRequest) {
 				continue
 			}
 			f.st.Frames += 3
+			// like the engine: shaders compiled during the first seconds of play, then ready
+			el := time.Since(playStart).Seconds()
+			cached := uint64(0)
+			if f.st.Shaders != nil {
+				cached = f.st.Shaders.FromCache
+			}
+			f.st.Shaders = fakeShaders(cached, uint64(min(el, 5)*8), uint64(max(0, 10-el*3)), uint64(max(0, 30-el*10)))
 			f.samples = toneBuffer(f.volume)
 			// like engine 0.4: ready with the first frame, shown at once or after Reveal
 			if !f.st.Ready {
@@ -368,4 +379,11 @@ func fakePNG() []byte {
 	var b bytes.Buffer
 	_ = png.Encode(&b, img)
 	return b.Bytes()
+}
+
+func fakeShaders(cached, compiled, building, background uint64) *ShaderStatus {
+	zero := uint64(0)
+	q, r, bq := building+background, min(building, 2), background
+	q -= min(q, r)
+	return &ShaderStatus{FromCache: cached, Compiled: compiled, Queued: &q, Running: &r, BackgroundQueued: &bq, Failed: &zero}
 }

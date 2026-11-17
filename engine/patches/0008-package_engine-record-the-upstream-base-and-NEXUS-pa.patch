@@ -1,7 +1,7 @@
 From 8a5dffeef6cb1976318318536f71ac418de1977c Mon Sep 17 00:00:00 2001
 From: NEXUS <nexus@users.noreply.github.com>
 Date: Wed, 11 Nov 2026 10:17:40 +0000
-Subject: [PATCH 08/20] package_engine: record the upstream base and NEXUS
+Subject: [PATCH 08/21] package_engine: record the upstream base and NEXUS
  patch series when built from patches
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

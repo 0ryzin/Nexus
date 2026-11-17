@@ -69,12 +69,25 @@ of it off for this device.
   overwritten: the item appears under *Needs your choice*, showing what differs, and you choose
   *Keep this device's* or *Use Steam Deck's*.
 - Removing a user is never synchronised (their saves are on that device).
+- **Staying in sync after time away (0.8.0):** NEXUS synchronises when the computer wakes from
+  sleep, when NEXUS comes back to the front after more than a minute, and while a game is kept
+  running behind Home (before 0.8.0 a game left in the background stopped synchronisation for as
+  long as it ran, and sleep could delay it by hours). Only a game in front waits.
+- **GitHub sign-ins do not expire on their own.** NEXUS uses a GitHub OAuth app; its sign-in has
+  no expiry and no refresh token (GitHub only ends it when you revoke it, or after a year unused).
+  A single "not accepted" answer from GitHub is checked against your GitHub profile first; the
+  device is signed out only if GitHub refuses the sign-in there too.
 
 ### Devices, sign-out, recovery
 
 - *Linked devices* lists every device with its platform and when it was last seen. Remove one to
   sign it out at once; nothing on that device is deleted.
 - *Sign out on this device* keeps all local data.
+- **Switching accounts:** sign out, then sign in with another account. If it is a different
+  account than this device used before, NEXUS receives that account's data but sends nothing
+  from this device until you choose *Send this device's data* or *Keep this device's data here*
+  (status *Waiting for your choice*). Data that came from the first account is never copied into
+  the second by accident.
 - *Change password* signs out your other devices.
 - *Forgot your password?* uses the recovery code; all devices are signed out and you receive a
   new recovery code.
@@ -133,7 +146,11 @@ would move it to PostgreSQL behind the same API.
   service refuses an upload based on an older version (409), which becomes a conflict for the user.
   Never "last upload wins".
 - Background: at start, about 10 seconds after a change in NEXUS, every 2 minutes if changes are
-  pending, every 15 minutes otherwise; with back-off while offline. Idle cost when nothing changes:
+  pending, every 15 minutes otherwise, after waking from sleep and when NEXUS comes to the front
+  (at most every 30 s); with back-off while offline (30 s doubling to 10 minutes). Times are
+  wall-clock: Windows' monotonic clock stops during sleep.
+- A stored sign-in that cannot be read for a moment (another program has the file open, a passing
+  DPAPI error) is retried at the next five synchronisations before NEXUS asks to sign in again. Idle cost when nothing changes:
   no measurable CPU (0 ticks in 60 s in the measurement below).
 
 ### Tests

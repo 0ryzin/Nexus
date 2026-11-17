@@ -17,6 +17,20 @@ type fakeGitHub struct {
 	desc     map[string]string
 	approved map[string]bool // device code -> approved
 	n        int
+	// account_session_test.go: which GitHub user a sign-in belongs to, each user's gists, and
+	// failures to simulate
+	nextUser int             // user id the next approved sign-in gets (0: 42)
+	tokUser  map[string]int  // token -> user id
+	owner    map[string]int  // gist id -> user id
+	flaky401 int             // the next n gist requests answer 401 (GitHub having a moment)
+	revoked  map[string]bool // tokens GitHub no longer accepts
+}
+
+func (f *fakeGitHub) userOf(auth string) int {
+	if u := f.tokUser[strings.TrimPrefix(auth, "Bearer ")]; u != 0 {
+		return u
+	}
+	return 42
 }
 
 func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -35,15 +49,32 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(map[string]string{"error": "authorization_pending"})
 			return
 		}
+		if f.nextUser != 0 {
+			if f.tokUser == nil {
+				f.tokUser = map[string]int{}
+			}
+			f.tokUser["gho_"+dc] = f.nextUser
+		}
 		json.NewEncoder(w).Encode(map[string]string{"access_token": "gho_" + dc})
-	case !strings.HasPrefix(auth, "Bearer gho_"):
+	case !strings.HasPrefix(auth, "Bearer gho_") || f.revoked[strings.TrimPrefix(auth, "Bearer ")]:
+		w.WriteHeader(401)
+		fmt.Fprint(w, `{"message":"Bad credentials"}`)
+	case f.flaky401 > 0 && strings.HasPrefix(r.URL.Path, "/gists"):
+		f.flaky401--
 		w.WriteHeader(401)
 		fmt.Fprint(w, `{"message":"Bad credentials"}`)
 	case r.URL.Path == "/user":
-		fmt.Fprint(w, `{"id":42,"login":"tom","name":"Tom"}`)
+		if u := f.userOf(auth); u != 42 {
+			fmt.Fprintf(w, `{"id":%d,"login":"user%d","name":"User %d"}`, u, u, u)
+		} else {
+			fmt.Fprint(w, `{"id":42,"login":"tom","name":"Tom"}`)
+		}
 	case r.URL.Path == "/gists" && r.Method == "GET":
 		var out []map[string]any
 		for id, files := range f.gists {
+			if o := f.owner[id]; o != 0 && o != f.userOf(auth) || o == 0 && f.userOf(auth) != 42 {
+				continue
+			}
 			fs := map[string]any{}
 			for n := range files {
 				fs[n] = map[string]any{}
@@ -64,6 +95,10 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		id := fmt.Sprintf("g%d", len(f.gists)+1)
 		f.gists[id], f.desc[id] = map[string]string{}, b.Description
+		if f.owner == nil {
+			f.owner = map[string]int{}
+		}
+		f.owner[id] = f.userOf(auth)
 		for n, c := range b.Files {
 			f.gists[id][n] = c.Content
 		}

@@ -1,0 +1,269 @@
+From 7994a095ae1941fa411227d83bbc17fdebe95e87 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 13 Nov 2026 21:16:27 +0000
+Subject: [PATCH 21/21] NEXUS engine: shader and pipeline status for the NEXUS
+ performance interface
+
+nexus_shader_status.h reads, per session, how the pipelines a game used
+got ready (built from the disk cache at boot, by the background prebuild,
+or compiled when first used) and the shader job scheduler's builds queued,
+running and failed. The pipeline cache registers its scheduler there.
+StutterTrace's first-use lookup counters now always run (one relaxed
+atomic add per pipeline) instead of only with EDEN_NX2_STUTTER_TRACE.
+nexus_engine reports them as "shaders" in its status while a session runs.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
+---
+ src/nexus_engine/nexus_engine.cpp             |  27 +++++
+ src/video_core/CMakeLists.txt                 |   1 +
+ src/video_core/nexus_shader_status.h          | 103 ++++++++++++++++++
+ .../renderer_vulkan/vk_pipeline_cache.cpp     |  19 ++--
+ 4 files changed, 142 insertions(+), 8 deletions(-)
+ create mode 100644 src/video_core/nexus_shader_status.h
+
+diff --git a/src/nexus_engine/nexus_engine.cpp b/src/nexus_engine/nexus_engine.cpp
+index 91489d9cd..bc35e1417 100644
+--- a/src/nexus_engine/nexus_engine.cpp
++++ b/src/nexus_engine/nexus_engine.cpp
+@@ -55,6 +55,7 @@
+ #include "network/network.h"
+ #include "nexus_engine.h"
+ #include "video_core/gpu.h"
++#include "video_core/nexus_shader_status.h"
+ #include "video_core/rasterizer_interface.h"
+ #include "video_core/renderer_base.h"
+ #include "lichii_cmd/emu_window/emu_window_sdl3.h"
+@@ -149,6 +150,8 @@ struct Engine {
+     std::atomic<int> load_stage{0};
+     std::atomic<std::uint64_t> load_done{0};
+     std::atomic<std::uint64_t> load_total{0};
++    // shader status at this session's start (the counts are process-wide; nexus_shader_status.h)
++    NexusShaderStatus::Counts shaders_at_start{};
+     // NEXUS Home requests from the game window (keyboard key or controller Home button)
+     std::atomic<std::uint64_t> home_presses{0};
+     std::atomic<std::uint64_t> record_presses{0};
+@@ -790,6 +793,10 @@ void RunSession(Request req) {
+     e.load_stage = 0;
+     e.load_done = 0;
+     e.load_total = 0;
++    {
++        std::scoped_lock lk{e.mutex};
++        e.shaders_at_start = NexusShaderStatus::Read();
++    }
+     e.home_key_conflict = false;
+     e.shown = false;
+     e.ready = false;
+@@ -1356,6 +1363,26 @@ NEXUS_API int32_t nexus_engine_status(char* buf, int32_t buf_len) {
+     if (const int gen = e.system_gen.load(); gen != 0) {
+         j["system"] = gen == 2 ? "switch2" : "switch1";
+     }
++    if (const State st = e.state.load(); st == State::Starting || st == State::Running) {
++        NexusShaderStatus::Counts start;
++        {
++            std::scoped_lock lk{e.mutex};
++            start = e.shaders_at_start;
++        }
++        const auto c = NexusShaderStatus::Since(start, NexusShaderStatus::Read());
++        json sh{{"fromCache", c.from_cache},
++                          {"fromPrebuild", c.from_prebuild},
++                          {"compiled", c.compiled},
++                          {"programsReused", c.programs_reused},
++                          {"programsTranslated", c.programs_translated}};
++        if (c.builds_known) {
++            sh["queued"] = c.queued;
++            sh["running"] = c.running;
++            sh["backgroundQueued"] = c.background_queued;
++            sh["failed"] = c.failed;
++        }
++        j["shaders"] = std::move(sh);
++    }
+     {
+         std::scoped_lock lk{e.mutex};
+         if (!e.code.empty()) {
+diff --git a/src/video_core/CMakeLists.txt b/src/video_core/CMakeLists.txt
+index 5b9f0e204..cda478577 100644
+--- a/src/video_core/CMakeLists.txt
++++ b/src/video_core/CMakeLists.txt
+@@ -132,6 +132,7 @@ add_library(video_core STATIC
+     nx2_fast_draw.h
+     nx2_profile.h
+     nx2_stutter_trace.cpp
++    nexus_shader_status.h
+     nx2_stutter_trace.h
+     nx2_perf.h
+     nx2_async_readback.h
+diff --git a/src/video_core/nexus_shader_status.h b/src/video_core/nexus_shader_status.h
+new file mode 100644
+index 000000000..e25f5093d
+--- /dev/null
++++ b/src/video_core/nexus_shader_status.h
+@@ -0,0 +1,103 @@
++// SPDX-FileCopyrightText: 2026 NEXUS project
++// SPDX-License-Identifier: GPL-3.0-or-later
++
++// Shader and pipeline status for the NEXUS performance interface: how many of the pipelines a
++// game used came ready from the disk cache, how many it had to compile while playing (the ones
++// that can stutter), and how many builds are queued or running now. Read by nexus_engine for its
++// status; NEXUS shows it on the loading screen and in the performance bar.
++//
++// The pipeline counts are StutterTrace's lookups (counted once per pipeline at its first use in a
++// session; NEXUS turns that counting on always, it is one relaxed atomic add per pipeline). Builds
++// in flight come from the pipeline cache's shader job scheduler, which registers itself here.
++// Counts are process-wide and monotonic; a session's numbers are the difference from its start
++// (Since).
++
++#pragma once
++
++#include <algorithm>
++#include <functional>
++#include <mutex>
++#include <optional>
++
++#include "common/common_types.h"
++#include "video_core/nx2_stutter_trace.h"
++#include "video_core/shader_jobs.h"
++
++namespace NexusShaderStatus {
++
++struct Counts {
++    u64 from_cache{};    ///< Pipelines built from the disk cache at boot, first used
++    u64 from_prebuild{}; ///< Built from the disk cache in the background, first used
++    u64 compiled{};      ///< Compiled when first used: not ready from the cache (can stutter)
++    u64 programs_reused{};   ///< Shader programs taken from cache records instead of translated
++    u64 programs_translated{};
++    u64 queued{};  ///< Builds waiting (all priorities)
++    u64 running{}; ///< Builds running now
++    u64 background_queued{}; ///< Cached pipelines still waiting for the background prebuild
++    u64 failed{};
++    bool builds_known{}; ///< A pipeline cache is registered (queued/running/failed are real)
++};
++
++namespace detail {
++inline std::mutex mutex;
++inline std::function<VideoCommon::ShaderJobStats()> job_stats;
++inline const void* owner{};
++} // namespace detail
++
++/// The pipeline cache's scheduler reports its jobs from now on (owner: the pipeline cache).
++inline void RegisterJobs(const void* owner, std::function<VideoCommon::ShaderJobStats()> stats) {
++    std::scoped_lock lock{detail::mutex};
++    detail::owner = owner;
++    detail::job_stats = std::move(stats);
++}
++
++/// Called by the pipeline cache before its scheduler goes away.
++inline void UnregisterJobs(const void* owner) {
++    std::scoped_lock lock{detail::mutex};
++    if (detail::owner == owner) {
++        detail::owner = nullptr;
++        detail::job_stats = nullptr;
++    }
++}
++
++[[nodiscard]] inline Counts Read() {
++    using VideoCommon::StutterTrace::Lookup;
++    const auto lookup = [](Lookup l) {
++        return VideoCommon::StutterTrace::g_totals.lookups[static_cast<size_t>(l)].load(
++            std::memory_order_relaxed);
++    };
++    Counts c;
++    c.from_cache = lookup(Lookup::GraphicsPrebuilt) + lookup(Lookup::ComputePrebuilt);
++    c.from_prebuild = lookup(Lookup::GraphicsBackground);
++    c.compiled = lookup(Lookup::GraphicsRecorded) + lookup(Lookup::GraphicsNew) +
++                 lookup(Lookup::ComputeNew);
++    c.programs_reused = lookup(Lookup::ProgramHit);
++    c.programs_translated = lookup(Lookup::ProgramMiss) + lookup(Lookup::ProgramStale);
++    std::scoped_lock lock{detail::mutex};
++    if (detail::job_stats) {
++        const auto stats = detail::job_stats();
++        for (size_t i = 0; i < VideoCommon::NumShaderJobPriorities; ++i) {
++            c.queued += stats.priorities[i].queued;
++            c.running += stats.priorities[i].running;
++            c.failed += stats.priorities[i].failed;
++        }
++        c.background_queued = stats.priorities[static_cast<size_t>(
++                                                    VideoCommon::ShaderJobPriority::Background)]
++                                  .queued;
++        c.builds_known = true;
++    }
++    return c;
++}
++
++/// The counts of one session: monotonic counts minus those at its start; builds in flight as now.
++[[nodiscard]] inline Counts Since(const Counts& start, const Counts& now) {
++    Counts c = now;
++    c.from_cache -= std::min(start.from_cache, now.from_cache);
++    c.from_prebuild -= std::min(start.from_prebuild, now.from_prebuild);
++    c.compiled -= std::min(start.compiled, now.compiled);
++    c.programs_reused -= std::min(start.programs_reused, now.programs_reused);
++    c.programs_translated -= std::min(start.programs_translated, now.programs_translated);
++    return c;
++}
++
++} // namespace NexusShaderStatus
+diff --git a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp b/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
+index b01cf47cf..be1207404 100644
+--- a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
++++ b/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
+@@ -62,6 +62,7 @@
+ #include "video_core/renderer_vulkan/vk_cooperative_hmma_test.h"
+ #include "video_core/renderer_vulkan/vk_descriptor_pool.h"
+ #include "video_core/renderer_vulkan/vk_pipeline_binaries.h"
++#include "video_core/nexus_shader_status.h"
+ #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
+ #include "video_core/renderer_vulkan/vk_pipeline_cache_records.h"
+ #include "video_core/renderer_vulkan/vk_scheduler.h"
+@@ -789,6 +790,7 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
+         .driver_threads = driver_threads,
+         .name = "VkShader",
+     });
++    NexusShaderStatus::RegisterJobs(this, [this] { return shader_jobs->Stats(); });
+ }
+ 
+ namespace {
+@@ -877,6 +879,7 @@ void DestroyPipelinesWithProgress(Container& pipelines) {
+ } // Anonymous namespace
+ 
+ PipelineCache::~PipelineCache() {
++    NexusShaderStatus::UnregisterJobs(this);
+     serialization_stop.request_stop();
+     StopBackgroundJobs();
+     // The pipelines' builds end before the driver pipeline cache they build into goes.
+@@ -1059,7 +1062,8 @@ ComputePipeline* PipelineCache::CurrentComputePipeline(u64& native_key) {
+             entry.rebuilds = MaxComputeRebuilds;
+         }
+     }
+-    if (VideoCommon::StutterTrace::Enabled() && !std::exchange(entry.used, true)) {
++    // NEXUS: always counted (first use only), for the shader status (nexus_shader_status.h)
++    if (!std::exchange(entry.used, true)) {
+         VideoCommon::StutterTrace::CountLookup(
+             is_new ? VideoCommon::StutterTrace::Lookup::ComputeNew
+                    : VideoCommon::StutterTrace::Lookup::ComputePrebuilt);
+@@ -2117,12 +2121,11 @@ GraphicsPipeline* PipelineCache::CurrentGraphicsPipelineSlowPath() {
+         if (scheduled_prebuild) {
+             pipeline = scheduled_prebuild->Take(graphics_key);
+         }
+-        if (StutterTrace::Enabled()) {
+-            StutterTrace::CountLookup(pipeline ? StutterTrace::Lookup::GraphicsBackground
+-                                      : disk_pipelines.contains(graphics_key.Hash())
+-                                          ? StutterTrace::Lookup::GraphicsRecorded
+-                                          : StutterTrace::Lookup::GraphicsNew);
+-        }
++        // NEXUS: always counted (once per new key), for the shader status
++        StutterTrace::CountLookup(pipeline ? StutterTrace::Lookup::GraphicsBackground
++                                  : disk_pipelines.contains(graphics_key.Hash())
++                                      ? StutterTrace::Lookup::GraphicsRecorded
++                                      : StutterTrace::Lookup::GraphicsNew);
+         if (!pipeline) {
+             const auto keep = evicted_pointer_slots.Take(graphics_key.Hash());
+             if (auto kept = kept_stages.Take(graphics_key)) {
+@@ -2133,7 +2136,7 @@ GraphicsPipeline* PipelineCache::CurrentGraphicsPipelineSlowPath() {
+                 pipeline = CreateGraphicsPipeline(keep ? &*keep : nullptr);
+             }
+         }
+-    } else if (StutterTrace::Enabled() && pipeline && !pipeline->WasUsed()) {
++    } else if (pipeline && !pipeline->WasUsed()) { // NEXUS: always counted
+         StutterTrace::CountLookup(StutterTrace::Lookup::GraphicsPrebuilt);
+     }
+     if (!pipeline) {

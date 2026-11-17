@@ -1,7 +1,7 @@
 From d30f0bdead45726320abfc5d0ea9c76138e45c9b Mon Sep 17 00:00:00 2001
 From: NEXUS <nexus@users.noreply.github.com>
 Date: Wed, 11 Nov 2026 19:44:23 +0000
-Subject: [PATCH 13/20] nexus_engine: game window hidden until its first frame,
+Subject: [PATCH 13/21] nexus_engine: game window hidden until its first frame,
  real loading progress, NEXUS Home key
 
 - The game window was created visible before the game loaded. While the engine

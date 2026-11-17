@@ -94,6 +94,33 @@ type EngineRequest struct {
 }
 
 // EngineStatus is the JSON returned by nexus_engine_status.
+// ShaderStatus: the pipelines this session used and how they got ready, and the builds in
+// flight. Queued/Running/BackgroundQueued/Failed are nil when the engine cannot tell.
+type ShaderStatus struct {
+	FromCache          uint64  `json:"fromCache"`    // built from the disk cache at boot
+	FromPrebuild       uint64  `json:"fromPrebuild"` // built from the disk cache in the background
+	Compiled           uint64  `json:"compiled"`     // compiled when first used (can stutter)
+	ProgramsReused     uint64  `json:"programsReused"`
+	ProgramsTranslated uint64  `json:"programsTranslated"`
+	Queued             *uint64 `json:"queued,omitempty"`
+	Running            *uint64 `json:"running,omitempty"`
+	BackgroundQueued   *uint64 `json:"backgroundQueued,omitempty"`
+	Failed             *uint64 `json:"failed,omitempty"`
+}
+
+// Building is the number of builds the game is waiting for or will soon need (not the
+// background prebuild of cached pipelines); ok=false when the engine cannot tell.
+func (s *ShaderStatus) Building() (n uint64, ok bool) {
+	if s == nil || s.Queued == nil || s.Running == nil {
+		return 0, false
+	}
+	n = *s.Queued + *s.Running
+	if s.BackgroundQueued != nil {
+		n -= min(n, *s.BackgroundQueued)
+	}
+	return n, true
+}
+
 type EngineStatus struct {
 	State     string `json:"state"` // idle | starting | running | stopping | stopped | error
 	Frames    uint64 `json:"frames"`
@@ -125,7 +152,9 @@ type EngineStatus struct {
 	Embedded          bool   `json:"embedded,omitempty"`          // drawn inside the NEXUS window
 	FullscreenPresses uint64 `json:"fullscreenPresses,omitempty"` // F11 while embedded
 	Amiibo            string `json:"amiibo,omitempty"`            // none | scanning | placed
-	KeyboardMoves     string `json:"keyboardMoves,omitempty"`     // "R H -> E": default keys freed for shortcuts
+	// engine 0.8: shaders and pipelines of this session (nexus_shader_status.h)
+	Shaders       *ShaderStatus `json:"shaders,omitempty"`
+	KeyboardMoves string        `json:"keyboardMoves,omitempty"` // "R H -> E": default keys freed for shortcuts
 }
 
 // EngineBuildInfo is nexus_engine_info plus what NEXUS knows about the installed build.

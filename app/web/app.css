@@ -811,6 +811,11 @@ input.am-filter:focus,input.am-filter.focus{border-color:var(--accent)}
 .hud-seg b{font-size:1.05em}
 .hud-seg small{color:#989ca4;font-size:.72em;font-weight:600}
 .hud-seg.fps i,.hud-seg.frame i{color:#64d2ff}.hud-seg.cpu i{color:#0a84ff}.hud-seg.gpu i{color:#30d158}.hud-seg.mem i{color:#bf5af2}.hud-seg.temp i{color:#ff9f0a}
+.hud-seg.shader i{color:#64d2ff}.hud-seg.shaderbusy i,.hud-seg.shaderbusy b{color:#ff9f0a}
+/* loading screen: what the shaders are doing (measured, never an invented percentage) */
+.lx-shaders{margin-top:.6em;font-size:.82em;color:var(--muted);display:flex;flex-wrap:wrap;gap:.3em 1.2em}
+.lx-shaders b{color:var(--fg);font-weight:600}
+.lx-shaders .busy{color:#ff9f0a}
 
 .wp-actions{display:flex;justify-content:center;margin-top:1.4em}
 .wp-cancel{min-width:9em}

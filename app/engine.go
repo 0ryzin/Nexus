@@ -40,6 +40,9 @@ type RunState struct {
 	// LoadDone/LoadTotal: measured progress of the current stage (shaders), when the engine has it
 	LoadDone  uint64 `json:"loadDone,omitempty"`
 	LoadTotal uint64 `json:"loadTotal,omitempty"`
+	// Shaders: while starting, the engine's shader status (cleared when the game plays; the
+	// performance bar samples it from then on, so state events do not follow every build)
+	Shaders *ShaderStatus `json:"shaders,omitempty"`
 	// HomeKeyConflict: the Home key is one of the game's controls, so it goes to the game
 	HomeKeyConflict bool `json:"homeKeyConflict,omitempty"`
 	// Embedded: the game is drawn inside the NEXUS window (engine 0.6)
@@ -280,6 +283,19 @@ func (e *Emulator) writeSessionConfig(g *Game, pr *Profile) (string, error) {
 	return e.SessionPath(), ini.Save(e.SessionPath())
 }
 
+// shaderStatusChanged: whether the loading screen's shader numbers differ.
+func shaderStatusChanged(a, b *ShaderStatus) bool {
+	if (a == nil) != (b == nil) {
+		return true
+	}
+	if a == nil {
+		return false
+	}
+	an, _ := a.Building()
+	bn, _ := b.Building()
+	return a.FromCache != b.FromCache || a.Compiled != b.Compiled || an != bn
+}
+
 // switch2SessionSummary is one log line with what a Switch 2 session was started with: the
 // renderer settings that most affect loading (docs/COMPATIBILITY.md, Ocarina of Time) and
 // the update/DLC files passed to the engine. Nothing personal is logged: file names only.
@@ -504,8 +520,8 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 			if es.LoadStage == "shaders" {
 				stage = "shaders"
 			}
-			if stage != "" && (stage != st.Stage || es.LoadDone != st.LoadDone || es.LoadTotal != st.LoadTotal) {
-				st.Stage, st.LoadDone, st.LoadTotal = stage, es.LoadDone, es.LoadTotal
+			if stage != "" && (stage != st.Stage || es.LoadDone != st.LoadDone || es.LoadTotal != st.LoadTotal || shaderStatusChanged(st.Shaders, es.Shaders)) {
+				st.Stage, st.LoadDone, st.LoadTotal, st.Shaders = stage, es.LoadDone, es.LoadTotal, es.Shaders
 				e.setState(st)
 			}
 		}
@@ -521,7 +537,7 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 				}
 				sawGame = true
 				playStart = time.Now()
-				st.Phase, st.Stage = "playing", ""
+				st.Phase, st.Stage, st.Shaders = "playing", "", nil
 				e.setState(st)
 				checkpoint()
 			}

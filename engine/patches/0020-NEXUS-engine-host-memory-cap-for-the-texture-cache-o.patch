@@ -1,7 +1,7 @@
 From e86bf7b54261040d94a9738274985ccd999cf01a Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Fri, 13 Nov 2026 18:06:34 +0000
-Subject: [PATCH 20/20] NEXUS engine: host-memory cap for the texture cache on
+Subject: [PATCH 20/21] NEXUS engine: host-memory cap for the texture cache on
  Linux
 
 Common::GetSystemCommitRoom returned no value outside Windows, so the

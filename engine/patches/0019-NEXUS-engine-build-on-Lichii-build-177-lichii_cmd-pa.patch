@@ -1,7 +1,7 @@
 From 7a9c78896283ec480179ab4b573f85d40eebd6ae Mon Sep 17 00:00:00 2001
 From: NEXUS <nexus@users.noreply.github.com>
 Date: Fri, 13 Nov 2026 17:28:51 +0000
-Subject: [PATCH 19/20] NEXUS engine: build on Lichii build 177 (lichii_cmd
+Subject: [PATCH 19/21] NEXUS engine: build on Lichii build 177 (lichii_cmd
  paths and LICHII_* options)
 
 Lichii renamed yuzu_cmd to lichii_cmd and the YUZU_* CMake options to LICHII_* (#1541, #1550).

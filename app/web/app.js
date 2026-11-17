@@ -2249,7 +2249,7 @@ const Launch = {
     const el = h('div', { class: 'launchfx' + (S.anim === 'off' ? ' no-anim' : '') + (fromTile ? ' from-tile loading' : ''), role: 'status' },
       h('div', { class: 'lx-backdrop', style: g.artSource ? { backgroundImage: `url("/art/${g.key}?v=${g.artRev || 0}&w=640")` } : {} }),
       h('div', { class: 'lx-stage' }, h('div', { class: 'lx-artwrap' }, ghost, art),
-        h('div', { class: 'lx-info' }, h('h1', {}, g.title), h('div', { class: 'lx-status' }, ''), h('div', { class: 'lx-bar' }, h('i')), steps)),
+        h('div', { class: 'lx-info' }, h('h1', {}, g.title), h('div', { class: 'lx-status' }, ''), h('div', { class: 'lx-bar' }, h('i')), steps, h('div', { class: 'lx-shaders', 'aria-live': 'polite' }))),
       h('div', { class: 'lx-brand' }, h('span', { class: 'lx-mark' }), 'NEXUS'));
     const cancel = h('button', { class: 'btn lx-cancel', 'data-nav': true }, 'Cancel');
     cancel.addEventListener('click', () => this.cancel());
@@ -2269,11 +2269,26 @@ const Launch = {
     const [label, idx] = this.STAGES[st.stage] || this.STAGES.preparing;
     // a determinate bar only when the engine measures progress (the shader cache); never invented
     const measured = st.stage === 'shaders' && st.loadTotal > 0;
-    $('.lx-status', el).textContent = measured ? `${label}: ${st.loadDone} of ${st.loadTotal}` : label + '…';
+    $('.lx-status', el).textContent = measured ? `${label}: ${(st.loadDone || 0).toLocaleString()} of ${st.loadTotal.toLocaleString()}` : label + '…';
     const bar = $('.lx-bar', el); bar.classList.toggle('measured', measured);
-    if (measured) bar.firstChild.style.width = `${Math.min(100, Math.round(st.loadDone / st.loadTotal * 100))}%`; else bar.firstChild.style.width = '';
+    if (measured) bar.firstChild.style.width = `${Math.min(100, Math.round((st.loadDone || 0) / st.loadTotal * 100))}%`; else bar.firstChild.style.width = '';
     $$('.lx-steps span', el).forEach((s, i) => { s.classList.toggle('done', i < idx); s.classList.toggle('on', i === idx); });
+    this.shaders(st.shaders);
     if (st.phase === 'playing') this.enter();
+  },
+  // the shader section: pipelines ready from this PC's cache, builds in flight, compiled now.
+  // Counts only; shaders the game has not asked for yet are unknown, so no percentage here.
+  shaders(sh) {
+    const box = this.el && $('.lx-shaders', this.el); if (!box) return;
+    if (!sh) { box.replaceChildren(); return; }
+    const n = v => Number(v || 0).toLocaleString();
+    const building = sh.queued == null ? null : Math.max(0, sh.queued + (sh.running || 0) - (sh.backgroundQueued || 0));
+    const items = [h('span', {}, h('b', {}, n(sh.fromCache + (sh.fromPrebuild || 0))), ' ready from the shader cache')];
+    if (building) items.push(h('span', { class: 'busy' }, h('b', {}, n(building)), ' compiling'));
+    if (sh.backgroundQueued) items.push(h('span', {}, h('b', {}, n(sh.backgroundQueued)), ' more preparing in the background'));
+    if (sh.compiled) items.push(h('span', {}, h('b', {}, n(sh.compiled)), ' new this session'));
+    if (sh.failed) items.push(h('span', { class: 'busy' }, h('b', {}, n(sh.failed)), ' could not be built'));
+    box.replaceChildren(...items);
   },
   // Stage D: the engine shows the game — the loading screen fades and NEXUS steps aside
   // The game's first frame is ready: the loading screen's content fades out over the artwork
@@ -2755,7 +2770,7 @@ function formDlg({ title, text, fields, ok = 'OK', extra, validate }) {
 // ---------- NEXUS Account (account.go): sign-in, linked devices, synchronisation
 const AccountUI = {
   st: null,
-  STATE: { synced: 'Synced', syncing: 'Syncing…', offline: 'Waiting for connection', pending: 'Changes pending', failed: 'Sync failed', conflict: 'Conflict needs attention', off: 'Synchronisation off', signedout: 'Not signed in', unavailable: 'Not available yet' },
+  STATE: { synced: 'Synced', syncing: 'Syncing…', offline: 'Waiting for connection', pending: 'Changes pending', failed: 'Sync failed', conflict: 'Conflict needs attention', held: 'Waiting for your choice', off: 'Synchronisation off', signedout: 'Not signed in', unavailable: 'Not available yet' },
   PLAT: { windows: 'Windows PC', linux: 'Linux', macos: 'Mac', android: 'Android', ios: 'iPhone / iPad', other: 'Device' },
   CATS: [
     ['profile', 'Users', 'Names, pictures, colours and themes, and controller layouts.'],
@@ -2986,6 +3001,13 @@ const AccountUI = {
     ));
     p.append(infoRow('This device', st.deviceName, this.PLAT[st.platform] || st.platform));
     p.append(infoRow('Synchronisation', this.STATE[st.state] || st.state, [st.lastSync ? `Last synchronised ${this.ago(st.lastSync)}.` : 'Not synchronised yet.', st.pending ? `${st.pending} change(s) on this device not sent yet.` : '', st.lastError && st.state !== 'synced' ? st.lastError : ''].filter(Boolean).join(' ')));
+    if (st.holdUploads) {
+      // signed in to another account than before on this device: nothing goes up until chosen
+      p.append(h('div', { class: 'banner-inline warn' }, h('b', {}, `This device was signed in to ${st.holdFrom} before. `),
+        `NEXUS receives ${st.email}'s data but does not send this device's users, library or settings to it until you choose.`));
+      p.append(rowButton(`Send this device's data to ${st.email}`, { icon: I.cloud, onClick: async () => { if (await confirmDlg('Send this device’s data?', `Users, library details and preferences on this device are added to ${st.email}. Items that differ on both sides ask for your choice; nothing is overwritten.`, 'Send')) this.run(() => api('/api/account/hold', { body: { send: true } }), 'This device’s data will be sent'); } }));
+      p.append(rowButton('Keep this device’s data here', { sub: 'Only changes you make from now on are sent.', onClick: () => this.run(() => api('/api/account/hold', { body: { send: false } }), 'Kept on this device') }));
+    }
     p.append(rowButton('Synchronise now', { icon: I.refresh, disabled: !st.syncOn, onClick: () => this.run(() => api('/api/account/sync', { body: {} }), null) }));
     p.append(rowToggle('Synchronise this device', st.syncOn, v => this.run(() => api('/api/account/sync/settings', { body: { on: v } })), 'Off: this device keeps its changes to itself and receives nothing until you switch it on again.'));
     if (st.conflicts?.length) {
@@ -3333,7 +3355,7 @@ async function renderPerfSettings(p) {
   p.append(rowRange('Size', { min: 75, max: 200, step: 5, value: pm.scale || 100, fmt: v => v + '%', onChange: v => saveSettings({ perfMonitor: { scale: v } }).then(() => preview.style.fontSize = `${v / 100}em`) }));
   p.append(h('h3', {}, 'What it shows'));
   let info; try { info = await api('/api/perf'); } catch { info = { metrics: [] }; }
-  const notes = { cputemp: 'Windows does not give applications a reliable CPU temperature sensor, so this shows N/A.', gputemp: 'Measured on NVIDIA graphics cards (through the NVIDIA driver); N/A on others.', ramspeed: 'The configured memory speed of your RAM modules — a speed, not how much is in use.', fps: 'Frames the game presented in the last second.', frametime: 'Average time per presented frame over the last second.', vram: 'Graphics memory in use, of the card’s total.', gpu: 'Busiest graphics engine (3D) of your graphics card.' };
+  const notes = { cputemp: 'Windows does not give applications a reliable CPU temperature sensor, so this shows N/A.', gputemp: 'Measured on NVIDIA graphics cards (through the NVIDIA driver); N/A on others.', ramspeed: 'The configured memory speed of your RAM modules — a speed, not how much is in use.', fps: 'Frames the game presented in the last second.', frametime: 'Average time per presented frame over the last second.', vram: 'Graphics memory in use, of the card’s total.', gpu: 'Busiest graphics engine (3D) of your graphics card.', shaders: 'Shaders compiling now (these can make a game stutter), cached pipelines still being prepared in the background, or ready with the number compiled this session. A count, not a percentage: a game reveals new shaders as you play.' };
   const sel = pm.metrics || [];
   for (const m of info.metrics) p.append(rowToggle(m.l, sel.includes(m.v), v => save({ metrics: v ? [...sel, m.v] : sel.filter(x => x !== m.v) }), notes[m.v] || ''));
   // live preview while this page is open (stops by itself when the page closes)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 )
@@ -107,7 +108,7 @@ func DefaultSettings() GlobalSettings {
 	s.Display.Fullscreen = true
 	s.Display.Width, s.Display.Height = 1280, 760
 	s.PerfMonitor = PerfMonitorSettings{Mode: "off", Position: "top", Opacity: 80, Scale: 100,
-		Metrics: []string{"fps", "frametime", "cpu", "gpu", "vram", "ram"}}
+		Metrics: []string{"fps", "frametime", "cpu", "gpu", "vram", "ram", "shaders"}, ShadersOffered: true}
 	s.Recording = DefaultRecordingSettings()
 	s.KeysVersion = 3
 	s.Startup.Enabled = true
@@ -165,6 +166,7 @@ func LoadSettings(p *Paths) (*SettingsStore, error) {
 	// Unmarshal over defaults so new fields keep their default values (but not version markers:
 	// a file without one is from before that version).
 	st.s.KeysVersion = 0
+	st.s.PerfMonitor.ShadersOffered = false
 	if err := readJSON(st.path, &st.s); err != nil {
 		st.s = DefaultSettings()
 		return st, err
@@ -195,6 +197,13 @@ func LoadSettings(p *Paths) (*SettingsStore, error) {
 			st.s.Emulator.HomeKey = "Shift+H"
 		}
 		st.s.KeysVersion, changed = 3, true
+	}
+	if !st.s.PerfMonitor.ShadersOffered {
+		// 0.8.0: the performance bar shows shader compilation (once; removing it is respected)
+		if !slices.Contains(st.s.PerfMonitor.Metrics, "shaders") {
+			st.s.PerfMonitor.Metrics = append(st.s.PerfMonitor.Metrics, "shaders")
+		}
+		st.s.PerfMonitor.ShadersOffered, changed = true, true
 	}
 	if _, ok := st.s.Engine["graphics.gpu"]; !ok { // 0.5.0: the fastest graphics card by default
 		st.s.Engine["graphics.gpu"], changed = gpuAuto, true
@@ -279,6 +288,9 @@ type PerfMonitorSettings struct {
 	Opacity  int      `json:"opacity"`          // 30-100 %
 	Scale    int      `json:"scale"`            // 75-200 %
 	Layout   string   `json:"layout,omitempty"` // bar (default: a strip across the picture) | fps (frame rate only, in a corner)
+	// ShadersOffered: the shader reading (0.8.0) was added to these metrics once; removing it
+	// afterwards is respected
+	ShadersOffered bool `json:"shadersOffered,omitempty"`
 }
 
 // PerfMonitorFor: whether the overlay shows for this game.

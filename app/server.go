@@ -2147,6 +2147,11 @@ func (s *Server) routes() {
 	})
 	m.HandleFunc("POST /api/account/signout", func(w http.ResponseWriter, r *http.Request) { acct(w, a.Account.SignOut()) })
 	m.HandleFunc("POST /api/account/refresh", func(w http.ResponseWriter, r *http.Request) { acct(w, a.Account.Refresh()) })
+	m.HandleFunc("POST /api/account/hold", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Send bool }
+		_ = readBody(r, &b)
+		acct(w, a.Account.ReleaseHold(b.Send))
+	})
 	m.HandleFunc("POST /api/account/update", func(w http.ResponseWriter, r *http.Request) {
 		var b map[string]any
 		_ = readBody(r, &b)

@@ -5,6 +5,25 @@ Newest first.
 
 ## 0.8.0 (in development)
 
+### NEXUS Account unsynchronised after a period of inactivity
+- **Problem (13 Nov):** after NEXUS had been left alone, the account showed as unsynchronised or
+  signed out.
+- **Cause (from the code; several):** (1) synchronisation was skipped while any game was running,
+  and NEXUS keeps games running behind Home, possibly for hours; (2) "15 minutes since the last
+  sync" used Go's monotonic clock, which on Windows stops while the computer sleeps, so after a
+  night asleep nothing was pulled until 15 more awake minutes; (3) nothing tried again when the
+  computer woke or NEXUS came to the front, so "offline" could stay for 10-15 minutes; (4) one 401
+  from GitHub deleted the sign-in; (5) one failed read of the stored sign-in at start signed the
+  device out for good.
+- **Fix:** only a game in front waits; wall-clock timing; sync after wake and on coming to the
+  front (at most every 30 s); a 401 is confirmed with `/user` before signing out; an unreadable
+  sign-in is retried five times. Switching to a different account holds this device's uploads
+  until the user chooses (data from one account is never copied into another by accident).
+- **Files:** `app/account.go`, `app/account_github.go`, `app/web/app.js`.
+- **Tests:** `account_session_test.go` (switch hold and release both ways, transient 401 vs
+  revoked, unreadable sign-in retried then ended, a background game does not stop sync). Sleep
+  detection is not unit-tested (it needs a real suspend); check on your PC.
+
 ### Home with a running game: the controller could not reach Close game
 - **Problem (13 Nov):** from NEXUS Home with a game running in the background, a controller
   could not get to the Close game button.

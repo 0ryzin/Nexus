@@ -20,23 +20,25 @@ import (
 )
 
 type PerfSample struct {
-	At         int64    `json:"at"`
-	FPS        *float64 `json:"fps"`         // presented frames per second (nil: no game)
-	FrameMs    *float64 `json:"frameMs"`     // average frame time over the last second
-	CPU        *float64 `json:"cpu"`         // % of all cores
-	CPUTemp    *float64 `json:"cpuTemp"`     // °C
-	GPU        *float64 `json:"gpu"`         // % (3D engine, busiest adapter)
-	GPUTemp    *float64 `json:"gpuTemp"`     // °C
-	VRAMUsedMB *float64 `json:"vramUsedMb"`  // dedicated GPU memory in use
-	VRAMMB     *float64 `json:"vramMb"`      // dedicated GPU memory size
-	RAMUsedMB  *float64 `json:"ramUsedMb"`   // system memory in use
-	RAMMB      *float64 `json:"ramMb"`       // installed system memory
-	RAMSpeed   *float64 `json:"ramSpeedMts"` // configured memory speed, MT/s
-	Notes      []string `json:"notes,omitempty"`
+	At         int64         `json:"at"`
+	FPS        *float64      `json:"fps"`               // presented frames per second (nil: no game)
+	FrameMs    *float64      `json:"frameMs"`           // average frame time over the last second
+	CPU        *float64      `json:"cpu"`               // % of all cores
+	CPUTemp    *float64      `json:"cpuTemp"`           // °C
+	GPU        *float64      `json:"gpu"`               // % (3D engine, busiest adapter)
+	GPUTemp    *float64      `json:"gpuTemp"`           // °C
+	VRAMUsedMB *float64      `json:"vramUsedMb"`        // dedicated GPU memory in use
+	VRAMMB     *float64      `json:"vramMb"`            // dedicated GPU memory size
+	RAMUsedMB  *float64      `json:"ramUsedMb"`         // system memory in use
+	RAMMB      *float64      `json:"ramMb"`             // installed system memory
+	RAMSpeed   *float64      `json:"ramSpeedMts"`       // configured memory speed, MT/s
+	Shaders    *ShaderStatus `json:"shaders,omitempty"` // this session's shaders (engine 0.8)
+	Notes      []string      `json:"notes,omitempty"`
 }
 
 var PerfMetrics = []EmuChoice{{"fps", "FPS"}, {"frametime", "Frame time"}, {"cpu", "CPU usage"}, {"cputemp", "CPU temperature"},
-	{"gpu", "GPU usage"}, {"gputemp", "GPU temperature"}, {"vram", "GPU memory"}, {"ram", "RAM usage"}, {"ramspeed", "RAM speed"}}
+	{"gpu", "GPU usage"}, {"gputemp", "GPU temperature"}, {"vram", "GPU memory"}, {"ram", "RAM usage"}, {"ramspeed", "RAM speed"},
+	{"shaders", "Shader compilation"}}
 
 type perfSampler struct {
 	mu         sync.Mutex
@@ -75,6 +77,7 @@ func (p *perfSampler) Sample(e *Emulator) PerfSample {
 			} else {
 				p.lastFrames, p.lastAt = es.Frames, now
 			}
+			s.Shaders = es.Shaders
 			if p.haveFPS {
 				s.FPS = fptr(p.fps)
 				if p.fps > 0 {
@@ -139,6 +142,9 @@ func formatPerf(s PerfSample, metrics []string, sep string) string {
 			parts = append(parts, "RAM "+v)
 		case "ramspeed":
 			parts = append(parts, "RAM "+f(s.RAMSpeed, "%.0f MT/s"))
+		case "shaders":
+			seg := shaderSegment(s.Shaders)
+			parts = append(parts, strings.TrimSpace("Shaders "+seg.Value+" "+seg.Unit))
 		}
 	}
 	return strings.Join(parts, sep)
@@ -226,9 +232,35 @@ func perfSegments(s PerfSample, metrics []string) []PerfSeg {
 			out = append(out, PerfSeg{"mem", "RAM", v, u})
 		case "ramspeed":
 			out = append(out, PerfSeg{"mem", "RAM", num(s.RAMSpeed, "%.0f"), unit(s.RAMSpeed, "MT/s")})
+		case "shaders":
+			out = append(out, shaderSegment(s.Shaders))
 		}
 	}
 	return out
+}
+
+// shaderSegment: what shader compilation is doing now. Compiling: builds the game waits for or
+// will need (these are the ones that can stutter); preparing: cached pipelines the background
+// prebuild has not built yet (no stutter); ready: nothing building, with the number compiled
+// during this session. No percentage: how many shaders a game will still reveal is unknown.
+func shaderSegment(sh *ShaderStatus) PerfSeg {
+	building, known := sh.Building()
+	switch {
+	case sh == nil || !known:
+		return PerfSeg{"shader", "SHADERS", "N/A", ""}
+	case building > 0:
+		return PerfSeg{"shaderbusy", "SHADERS", fmt.Sprint(building), "compiling"}
+	case sh.BackgroundQueued != nil && *sh.BackgroundQueued > 0:
+		return PerfSeg{"shader", "SHADERS", fmt.Sprint(*sh.BackgroundQueued), "preparing"}
+	}
+	unit := "ready"
+	if sh.Compiled > 0 {
+		unit = fmt.Sprintf("ready · %d new", sh.Compiled)
+	}
+	if sh.Failed != nil && *sh.Failed > 0 {
+		unit += fmt.Sprintf(" · %d failed", *sh.Failed)
+	}
+	return PerfSeg{"shader", "SHADERS", "", unit}
 }
 
 // pxRect is a rectangle in screen pixels.

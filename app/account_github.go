@@ -103,6 +103,11 @@ func (ac *Account) gh(method, rawURL string, body, out any) (int, error) {
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	if resp.StatusCode == 401 && strings.HasPrefix(rawURL, githubAPI) {
+		// One 401 is not proof: GitHub can answer it for a moment during an incident. The sign-in
+		// ends only when GitHub also refuses it for /user; otherwise it is tried again later.
+		if rawURL != githubAPI+"/user" && ac.ghTokenStillValid() {
+			return 401, errOffline
+		}
 		ac.endSession("GitHub no longer accepts NEXUS's sign-in on this device (it was revoked or expired). Sign in with GitHub again.")
 		return 401, errors.New("Signed out: GitHub no longer accepts this device's sign-in.")
 	}
@@ -123,6 +128,26 @@ func (ac *Account) gh(method, rawURL string, body, out any) (int, error) {
 		return resp.StatusCode, fmt.Errorf("GitHub answered %s: %s", resp.Status, e.Message)
 	}
 	return resp.StatusCode, nil
+}
+
+// ghTokenStillValid asks GitHub whether the stored sign-in is still accepted (GET /user).
+// Only a 401 there means no; a network error or any other answer counts as still valid.
+func (ac *Account) ghTokenStillValid() bool {
+	req, err := http.NewRequest("GET", githubAPI+"/user", nil)
+	if err != nil {
+		return true
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "NEXUS/"+AppVersion)
+	ac.mu.Lock()
+	req.Header.Set("Authorization", "Bearer "+ac.token)
+	ac.mu.Unlock()
+	resp, err := ac.client.Do(req)
+	if err != nil {
+		return true
+	}
+	resp.Body.Close()
+	return resp.StatusCode != 401
 }
 
 // StartGitHubSignIn begins GitHub's device flow: the user enters the returned code at the URI.
@@ -244,6 +269,7 @@ func (ac *Account) finishGitHubSignIn(token, deviceName string) error {
 	if ac.st.AccountID != accountID || ac.st.GistID != gistID {
 		ac.st.Cursor, ac.st.Base, ac.st.ProfileMap, ac.st.Conflicts = 0, map[string]syncBase{}, nil, nil
 	}
+	ac.noteAccountSwitchLocked(accountID, "@"+u.Login)
 	ac.st.Provider, ac.st.GistID, ac.st.AccountID = "github", gistID, accountID
 	ac.st.Email, ac.st.DisplayName = "@"+u.Login, firstNonEmpty(u.Name, u.Login)
 	ac.st.DeviceID, ac.st.DeviceName = newAmiiboEntryID()+newAmiiboEntryID(), firstNonEmpty(deviceName, ac.st.DeviceName, defaultDeviceName())

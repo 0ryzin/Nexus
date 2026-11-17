@@ -401,7 +401,8 @@ func (o *perfOverlay) update(sample bool) {
 
 // HUD colours (NEXUS's own palette): labels by kind, values white, units grey.
 var hudLabelColour = map[string]uintptr{"fps": rgb(100, 210, 255), "frame": rgb(100, 210, 255), "cpu": rgb(10, 132, 255),
-	"gpu": rgb(48, 209, 88), "mem": rgb(191, 90, 242), "temp": rgb(255, 159, 10), "rec": rgb(255, 59, 48)}
+	"gpu": rgb(48, 209, 88), "mem": rgb(191, 90, 242), "temp": rgb(255, 159, 10), "rec": rgb(255, 59, 48),
+	"shader": rgb(100, 210, 255), "shaderbusy": rgb(255, 159, 10)}
 
 func rgb(r, g, b uint32) uintptr { return uintptr(r | g<<8 | b<<16) }
 

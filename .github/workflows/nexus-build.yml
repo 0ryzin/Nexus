@@ -50,6 +50,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/uifix" && touch "$RUNNER_TEMP/uifix/portable.txt"
           NEXUS_FIXTURE_ROOT="$RUNNER_TEMP/uifix" go test -count=1 -run 'TestMakeFixtures$' .
           NEXUS_HARDWARE= python3 tools/uitest/controller_close.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
+          NEXUS_HARDWARE= python3 tools/uitest/shader_progress.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
 
   windows:
     name: Engine + NEXUS (Windows x64)

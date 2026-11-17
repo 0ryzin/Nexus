@@ -74,28 +74,35 @@ type SyncEvent struct {
 }
 
 type accountState struct {
-	Server      string                     `json:"server,omitempty"`
-	AccountID   string                     `json:"accountId,omitempty"`
-	Email       string                     `json:"email,omitempty"`
-	DisplayName string                     `json:"displayName,omitempty"`
-	DeviceID    string                     `json:"deviceId,omitempty"`
-	DeviceName  string                     `json:"deviceName,omitempty"`
-	SignedIn    bool                       `json:"signedIn"`
-	Ended       string                     `json:"ended,omitempty"` // why the service signed this device out
-	SyncOn      bool                       `json:"syncOn"`
-	Categories  map[string]bool            `json:"categories"`
-	Cursor      int64                      `json:"cursor"`
-	Base        map[string]syncBase        `json:"base"`
-	ProfileMap  map[string]string          `json:"profileMap,omitempty"` // account user id -> local profile id
-	Conflicts   []AccountConflict          `json:"conflicts,omitempty"`
-	History     []SyncEvent                `json:"history,omitempty"`
-	LastSync    int64                      `json:"lastSync,omitempty"`
-	LastError   string                     `json:"lastError,omitempty"`
-	Offline     bool                       `json:"offline,omitempty"`
-	Devices     []accountDevice            `json:"devices,omitempty"`
-	OnboardSeen bool                       `json:"onboardSeen,omitempty"`
-	Provider    string                     `json:"provider,omitempty"` // github | server
-	GistID      string                     `json:"gistId,omitempty"`
+	Server      string              `json:"server,omitempty"`
+	AccountID   string              `json:"accountId,omitempty"`
+	Email       string              `json:"email,omitempty"`
+	DisplayName string              `json:"displayName,omitempty"`
+	DeviceID    string              `json:"deviceId,omitempty"`
+	DeviceName  string              `json:"deviceName,omitempty"`
+	SignedIn    bool                `json:"signedIn"`
+	Ended       string              `json:"ended,omitempty"` // why the service signed this device out
+	SyncOn      bool                `json:"syncOn"`
+	Categories  map[string]bool     `json:"categories"`
+	Cursor      int64               `json:"cursor"`
+	Base        map[string]syncBase `json:"base"`
+	ProfileMap  map[string]string   `json:"profileMap,omitempty"` // account user id -> local profile id
+	Conflicts   []AccountConflict   `json:"conflicts,omitempty"`
+	History     []SyncEvent         `json:"history,omitempty"`
+	LastSync    int64               `json:"lastSync,omitempty"`
+	LastError   string              `json:"lastError,omitempty"`
+	Offline     bool                `json:"offline,omitempty"`
+	Devices     []accountDevice     `json:"devices,omitempty"`
+	OnboardSeen bool                `json:"onboardSeen,omitempty"`
+	Provider    string              `json:"provider,omitempty"` // github | server
+	GistID      string              `json:"gistId,omitempty"`
+	// HoldUploads: signed in to a different account than before on this device. Downloads go
+	// on; this device's data is not sent to the new account until the user chooses (so data
+	// that came from the other account is never copied into this one by accident).
+	HoldUploads bool   `json:"holdUploads,omitempty"`
+	HoldFrom    string `json:"holdFrom,omitempty"` // the account signed in before
+	// TokenUnread: the stored sign-in could not be read at start; retried before giving up
+	TokenUnread int                        `json:"tokenUnread,omitempty"`
 	Remote      map[string]json.RawMessage `json:"-"`
 }
 
@@ -165,16 +172,74 @@ func NewAccount(a *App) *Account {
 		ac.st.Base = map[string]syncBase{}
 	}
 	if ac.st.SignedIn {
-		if b, err := loadSecretFile(ac.tokenPath()); err == nil && len(b) > 0 {
-			ac.token = string(b)
-		} else {
-			ac.st.SignedIn, ac.st.Ended = false, "The sign-in on this device could not be read. Sign in again."
-		}
+		ac.loadTokenLocked()
 	}
 	return ac
 }
 
 func (ac *Account) tokenPath() string { return filepath.Join(ac.dir, "session.bin") }
+
+// noteAccountSwitchLocked: signing in to another account than the one this device used before
+// holds this device's uploads until the user chooses (ReleaseHold), so data that came from the
+// previous account is not copied into the new one by accident. The same account again, or a
+// device's first account, starts normally.
+func (ac *Account) noteAccountSwitchLocked(newID, newName string) {
+	if ac.st.AccountID != "" && ac.st.AccountID != newID {
+		ac.st.HoldUploads, ac.st.HoldFrom = true, firstNonEmpty(ac.st.Email, ac.st.DisplayName, "another account")
+		ac.noteLocked("held", fmt.Sprintf("Signed in to %s, a different account than before (%s): this device's data is not sent until you choose.", newName, ac.st.HoldFrom))
+	} else if ac.st.AccountID == newID {
+		ac.st.HoldUploads, ac.st.HoldFrom = false, ""
+	}
+}
+
+// ReleaseHold ends the hold after an account switch: send=true lets this device's data go to
+// the new account; false keeps only what the account already has (this device's own users and
+// settings stay on it, unsent; new local changes are sent from now on).
+func (ac *Account) ReleaseHold(send bool) error {
+	ac.mu.Lock()
+	if !ac.st.HoldUploads {
+		ac.mu.Unlock()
+		return nil
+	}
+	if !send {
+		// what is local now counts as agreed: only later changes are sent
+		ac.mu.Unlock()
+		cats, pm, _ := ac.snapshot()
+		local := ac.localItems(cats, pm)
+		ac.mu.Lock()
+		for k, b := range local {
+			if base, ok := ac.st.Base[k]; !ok || base.Hash != hashBytes(b) {
+				ac.st.Base[k] = syncBase{Version: base.Version, Hash: hashBytes(b)}
+			}
+		}
+	}
+	ac.st.HoldUploads, ac.st.HoldFrom = false, ""
+	ac.noteLocked("synced", map[bool]string{true: "This device's data will be sent to the account.", false: "This device keeps its own data; only later changes are sent."}[send])
+	ac.saveLocked()
+	ac.mu.Unlock()
+	ac.changed()
+	ac.Kick()
+	return nil
+}
+
+// loadTokenLocked reads the stored sign-in. A missing or empty file ends the session. A file
+// that cannot be read right now (another program has it open, a passing data-protection error)
+// keeps the device signed in and is tried again at each synchronisation, up to five times,
+// before NEXUS asks to sign in again: one failed read used to sign the device out for good.
+func (ac *Account) loadTokenLocked() bool {
+	b, err := loadSecretFile(ac.tokenPath())
+	if err == nil && len(b) > 0 {
+		ac.token, ac.st.TokenUnread = string(b), 0
+		return true
+	}
+	if err == nil || errors.Is(err, os.ErrNotExist) || ac.st.TokenUnread >= 5 {
+		ac.st.SignedIn, ac.st.Ended, ac.st.TokenUnread = false, "The sign-in on this device could not be read. Sign in again.", 0
+		return false
+	}
+	ac.st.TokenUnread++
+	ac.st.LastError = "The sign-in on this device could not be read just now; NEXUS tries again."
+	return false
+}
 
 func (ac *Account) saveLocked() {
 	if err := writeJSONAtomic(filepath.Join(ac.dir, "account.json"), ac.st); err != nil {
@@ -255,7 +320,9 @@ type AccountStatus struct {
 	Platform     string            `json:"platform"`
 	Ended        string            `json:"ended,omitempty"`
 	SyncOn       bool              `json:"syncOn"`
-	State        string            `json:"state"` // off | synced | syncing | offline | pending | failed | conflict | signedout | unavailable
+	State        string            `json:"state"` // off | synced | syncing | offline | pending | failed | conflict | held | signedout | unavailable
+	HoldUploads  bool              `json:"holdUploads,omitempty"`
+	HoldFrom     string            `json:"holdFrom,omitempty"`
 	Pending      int               `json:"pending"`
 	LastSync     int64             `json:"lastSync,omitempty"`
 	LastError    string            `json:"lastError,omitempty"`
@@ -290,7 +357,8 @@ func (ac *Account) Status() AccountStatus {
 		DeviceID: ac.st.DeviceID, DeviceName: firstNonEmpty(ac.st.DeviceName, defaultDeviceName()), Platform: devicePlatform(), Ended: ac.st.Ended,
 		SyncOn: ac.st.SyncOn, Pending: pending, LastSync: ac.st.LastSync, LastError: ac.st.LastError, Categories: ac.st.Categories,
 		Conflicts: append([]AccountConflict{}, ac.st.Conflicts...), History: append([]SyncEvent{}, ac.st.History...),
-		Devices: append([]accountDevice{}, ac.st.Devices...), OnboardSeen: ac.st.OnboardSeen, TokenStorage: secretStorageName}
+		Devices: append([]accountDevice{}, ac.st.Devices...), OnboardSeen: ac.st.OnboardSeen, TokenStorage: secretStorageName,
+		HoldUploads: ac.st.HoldUploads, HoldFrom: ac.st.HoldFrom}
 	st.Available = st.Server != "" || githubClientID != ""
 	st.Provider = "server"
 	if ac.st.SignedIn && ac.st.Provider == "github" || !ac.st.SignedIn && st.Server == "" {
@@ -316,6 +384,8 @@ func (ac *Account) Status() AccountStatus {
 		st.State = "syncing"
 	case len(st.Conflicts) > 0:
 		st.State = "conflict"
+	case ac.st.HoldUploads:
+		st.State = "held"
 	case ac.st.Offline:
 		st.State = "offline"
 	case st.LastError != "":
@@ -441,6 +511,7 @@ func (ac *Account) startSession(server string, r sessionResult, how string) erro
 	}
 	ac.mu.Lock()
 	sameAccount := ac.st.AccountID == r.Account.ID
+	ac.noteAccountSwitchLocked(r.Account.ID, firstNonEmpty(r.Account.Email, r.Account.DisplayName))
 	ac.token = r.Token
 	ac.st.Server = ""
 	if server != ac.serverLocked() {
@@ -1146,31 +1217,70 @@ func (ac *Account) Kick() {
 }
 
 // Run is the background synchroniser: at start, when kicked, when local changes are pending
-// (checked every 2 minutes) and every 15 minutes. It never blocks NEXUS.
+// (checked every 2 minutes), every 15 minutes, after the computer wakes from sleep, and when
+// NEXUS comes to the front after more than a minute. It never blocks NEXUS. While offline it
+// retries with a growing delay (30 s up to 10 minutes) instead of sending requests constantly;
+// waking up or coming to the front tries again at once (at most every 30 s).
+//
+// Times are wall-clock: Windows' monotonic clock stops while the computer sleeps, so "15 minutes
+// since the last synchronisation" measured with it could take hours of sleep plus 15 awake
+// minutes (docs/REGRESSION_HISTORY.md, account unsynchronised after inactivity).
 func (ac *Account) Run() {
-	tick := time.NewTicker(2 * time.Minute)
+	tick := time.NewTicker(time.Minute)
 	defer tick.Stop()
-	last := time.Time{}
+	ev := ac.app.Events.Subscribe()
+	defer ac.app.Events.Unsubscribe(ev)
+	var last time.Time // wall clock (Round(0) drops the monotonic reading)
+	lastTry := time.Time{}
 	retry := 30 * time.Second
 	timer := time.NewTimer(5 * time.Second)
 	defer timer.Stop()
+	prevWall, prevMono := time.Now().Round(0), time.Now()
 	for {
+		why := ""
 		select {
 		case <-ac.stop:
 			return
 		case <-ac.wake:
+			why = "requested"
 		case <-timer.C:
+			why = "scheduled"
+		case m := <-ev:
+			if !bytes.Contains(m, []byte(`"type":"app.focus","data":true`)) || time.Now().Round(0).Sub(last) < time.Minute || time.Since(lastTry) < 30*time.Second {
+				continue
+			}
+			why = "NEXUS came to the front"
 		case <-tick.C:
-			if time.Since(last) < 15*time.Minute && len(ac.pendingKeys()) == 0 {
+			wall, mono := time.Now().Round(0), time.Now()
+			slept := wall.Sub(prevWall)-mono.Sub(prevMono) > time.Minute
+			prevWall, prevMono = wall, mono
+			switch {
+			case slept:
+				why = "the computer woke up"
+				retry = 30 * time.Second
+			case time.Now().Round(0).Sub(last) >= 15*time.Minute:
+				why = "15 minutes"
+			case len(ac.pendingKeys()) > 0:
+				why = "local changes"
+			default:
 				continue
 			}
 		}
 		st := ac.Status()
-		if !st.SignedIn || !st.SyncOn || ac.app.Emu.State().Running && st.State != "pending" {
+		if !st.SignedIn || !st.SyncOn {
 			continue
 		}
+		// only a game in front waits (NEXUS is busy with it); a game kept running behind Home
+		// does not stop synchronisation, or a session left there for hours would never sync
+		if syncWaitsForGame(ac.app.Emu.State(), st.State) {
+			continue
+		}
+		if why == "the computer woke up" || why == "NEXUS came to the front" {
+			ac.app.Log.Printf("account: synchronising (%s)", why)
+		}
+		lastTry = time.Now()
 		_, err := ac.Sync()
-		last = time.Now()
+		last = time.Now().Round(0)
 		if errors.Is(err, errOffline) { // retry with a growing delay while offline
 			timer.Reset(retry)
 			retry = min(retry*2, 10*time.Minute)
@@ -1178,6 +1288,12 @@ func (ac *Account) Run() {
 			retry = 30 * time.Second
 		}
 	}
+}
+
+// syncWaitsForGame: synchronisation waits only while a game is in front (NEXUS is busy with
+// it) and nothing local is waiting to be sent; a game kept running behind Home does not stop it.
+func syncWaitsForGame(es RunState, state string) bool {
+	return es.Running && !es.Suspended && state != "pending"
 }
 
 func (ac *Account) Close() {
@@ -1201,6 +1317,12 @@ func (ac *Account) Sync() (SyncSummary, error) {
 	if !ac.st.SyncOn {
 		ac.mu.Unlock()
 		return sum, errors.New("Synchronisation is switched off on this device.")
+	}
+	if ac.token == "" && !ac.loadTokenLocked() {
+		ac.saveLocked()
+		ac.mu.Unlock()
+		ac.changed()
+		return sum, errOffline // tried again with the offline back-off
 	}
 	ac.busy = true
 	cursor := ac.st.Cursor
@@ -1428,7 +1550,13 @@ func (ac *Account) syncOnce(cursor int64, sum *SyncSummary) error {
 	local = ac.localItems(cats, pm) // after what arrived (new users, amiibo) was applied
 	pk := ac.pendingKeys()
 	var sent []func()
+	ac.mu.Lock()
+	hold := ac.st.HoldUploads
+	ac.mu.Unlock()
 	for _, k := range pk {
+		if hold {
+			break // a different account than before: nothing is sent until the user chooses
+		}
 		if !cats[keyCategory(k)] || ac.conflicted(k) {
 			continue
 		}
