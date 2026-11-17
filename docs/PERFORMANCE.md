@@ -104,6 +104,24 @@ Times are seconds; the Play click is at most 0.2 s before the session starts (`n
 - **Not measured:** time from selecting a save to control of Link, CPU use per thread. A stutter
   trace (`EDEN_NX2_STUTTER_TRACE=1`) of one save load would show the second.
 
+## 0.8.0: Home layouts, idle cost (Linux, headless Chrome, stand-in engine, 17 Nov)
+
+`tools/perf/idle_baseline.py`, 10 s of doing nothing on each screen, 6 games. It measures this
+machine and headless Chrome, not WebView2 on Windows, so compare builds with it; do not quote
+these as Windows numbers. The GPU cost of the blur cannot be measured headless: *Flat* panels
+avoid it.
+
+| Screen | Page main thread (% of a core) | Script ms/s | Layouts/s | JS heap | NEXUS server CPU / RSS |
+|---|---|---|---|---|---|
+| Home (Classic) | 0.13–0.19 | 0.57–0.67 | 0.0 | 2.5 MB | 0.0 % / 19 MB |
+| Home Cards (picture behind, 3 widgets) | 0.23 | 0.63 | 0.1 | 2.1 MB | 0.0 % / 19 MB |
+| Home Grid (glass, 4 widgets) | 0.18 | 0.64 | 0.1 | 2.2 MB | 0.0 % / 19 MB |
+| Home Grid, flat | 0.14 | 0.56 | 0.0 | 2.4 MB | 0.0 % / 19 MB |
+| Home with a controller connected | 0.65 | 3.84 | 0.2 | 2.4 MB | 0.1 % / 19 MB |
+| Game in front | 0.09 | 0.57 | 0.0 | 2.1 MB | 0.6 % / 19 MB |
+
+The layouts add no timers or polling. Their small difference is within run-to-run noise.
+
 ## 0.8.0: idle interface, measured (Linux, headless Chrome, stand-in engine)
 
 Measured with `tools/perf/idle_baseline.py` on the development machine (Linux, headless Chrome

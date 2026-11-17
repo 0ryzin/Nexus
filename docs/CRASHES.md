@@ -135,3 +135,31 @@ background, which is normal. Shader preparation stays on.
   - NEXUS now carries that library with a fix (`app/third_party/go-webview2`): a failed WebView2
     start returns an error instead.
   - NEXUS then tries twice more, 2 and 3 s apart, before falling back to Edge's app window.
+
+## Engine symbols (0.8.0)
+
+Every Windows build ships `Engine\nexus_engine.symbols.gz`, the engine's functions by address.
+NEXUS uses it to name the engine frames of a crash.
+
+- **Made in CI** from the link map of exactly that DLL (`lld-link -MAP`) by
+  `app/tools/release/make_symbols.py`. Names are undecorated with `llvm-undname`, or a simple
+  form when that is not available.
+- **First line:** `NEXUSSYM 1 <SHA-256 of nexus_engine.dll> <image base> <count>`.
+- **The build fails** when:
+  - fewer than 1,000 symbols are read;
+  - any function the DLL exports does not resolve to a symbol of its own name (the map is not
+    that DLL's, or was misread);
+  - the table is missing (`NEXUS_REQUIRE_SYMBOLS` in `package_engine.py`, engine patch 0029);
+  - the packaged table's hash does not name the packaged DLL (fresh-extract check).
+- **Packaged** next to the DLL and hashed in `engine.json`, so NEXUS's engine check covers it. No
+  separate download.
+- **In a crash report** ("Engine functions in the crash stack"):
+  - Each `nexus_engine.dll+0x…` frame becomes `Function+0x…  (object.obj)`.
+  - This happens only when the table's SHA-256 is the one recorded for the engine that crashed
+    (the session record keeps the engine's folder, DLL hash and commit).
+  - A table of another build is refused ("for another engine build"). So are a missing table and a
+    damaged one ("not decoded: …").
+  - The decoded lines are also in the report's technical details.
+- **Limits:**
+  - Function and object file, not source line: release builds carry no line tables.
+  - Frames in other modules (the GPU driver, overlays) are named by module and offset only.

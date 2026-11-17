@@ -83,6 +83,75 @@ percentage: how many shaders a game will still reveal is unknown.
 - Fritchii code was not copied into NEXUS. NEXUS's preparation uses Lichii's precache builder (part
   of the engine NEXUS is based on) and NEXUS's own engine interface (`nexus_engine_prepare_shaders`).
 
+## Shared shader cache (0.8.0, engine patch 0030)
+
+One shader cache for every NEXUS user of the PC:
+
+- the profiles of one NEXUS (these always shared one engine folder);
+- other Windows users, each with their own NEXUS data.
+
+The second person to play a game starts with what the first one's sessions built.
+
+| Data | Where | Shared? | Why |
+|---|---|---|---|
+| Shader cache v2 log (`lichii-cache.v2.bin`): guest shader programs, graphics and compute pipeline keys, used lists | `%ProgramData%\NEXUS\ShaderCache\<title id>\` | **Yes** | Describes the game's shaders and pipeline state, the same on any GPU. Every engine builds its pipelines from it. |
+| Precache file (`warm-compute.bin`, `.count`, `precache-graphics.bin`) made by shader preparation | same | **Yes** | The game's own shader programs, from its files. |
+| Driver blobs, Vulkan pipeline cache, static pipeline cache | the user's `Engine\cache\shader\…` | No | Compiled for one GPU and driver. |
+| Precache `.done` marker and `.partial` progress, boot marker | the user's `Engine\cache\shader\<title id>\` | No | They mean "this user's GPU driver has these programs". The NVIDIA and AMD drivers keep their caches per Windows user. |
+| The GPU driver's own cache | the driver's (`%LOCALAPPDATA%\NVIDIA\…`) | No | Not NEXUS's. |
+
+Compatibility: each layer checks what it reads.
+
+- The v2 log has a format version. A file of another version is not used by that engine, and
+  NEXUS shows it as "another cache version". Each record is hashed, so damaged records are skipped.
+- Pipelines are built from the shared records for the current GPU. If the GPU or driver differs,
+  only the per-user, driver-specific files start over: the shared portable data is kept.
+- The precache marker checks the precache contents, the driver, the device, the cache version and
+  the settings variant.
+- Game version and update: the records are keyed by the guest shaders' hashes, so another version
+  of the game simply has other keys.
+
+Safety:
+
+- The engine appends to the log under its file lock (`lichii-cache.v2.bin.lock`, LockFileEx).
+  Records are framed and hashed, and a cut-off tail is skipped and padded past.
+- NEXUS takes the same lock and only appends: importing shader data, and adding a user's earlier
+  private cache once at start (the user's own files are left as they were).
+- Shader preparation takes `warm-compute.bin.lock`. A second NEXUS preparing the same game waits
+  ("Waiting for another NEXUS user"), then finds the file current.
+- The folder is created with SYSTEM and Administrators full control and Users modify, inherited by
+  every file, so a file one user made can be extended by another.
+- Indexes: the engine reads its log once per boot. NEXUS's status reads a log only when its size
+  or modification time changed (kept in memory).
+
+Settings:
+
+- *Game sessions & saves › Shader cache* shows the cache, its games and sizes, and *Share shaders
+  with other NEXUS users on this PC* (on by default).
+- Off: the user's own folder, as before.
+- A portable NEXUS (portable.txt) always keeps its own, so nothing is left in a PC's ProgramData.
+- *Game information* says how many pipelines are ready and whether they are shared.
+
+What it does not do:
+
+- **No uploads.** It is a local cache between the users of one PC.
+- The second user is not stutter-free. Effects nobody has met yet are still built when first met,
+  and each user's GPU driver compiles its own copy of the shared pipelines once (at boot, from
+  the cache).
+
+Tested:
+
+- `sharedcache_test.go`, with the stand-in engine, which writes the same log format:
+  - two NEXUS data folders (two Windows users): the second starts with all 40 pipelines the
+    first built and builds none;
+  - after a restart nothing is rebuilt;
+  - four concurrent writers leave one valid log with every pipeline;
+  - a user's earlier cache is added once without changing it, and the driver marker is never
+    shared;
+  - a damaged log is reported.
+- Engine: the shared/per-user split and its precache paths (`shader_precache.cpp` test).
+- **Not tested with the real engine, a real game or two Windows accounts.**
+
 ## A precache that is skipped keeps its work (0.8.0, engine patch 0028)
 
 The boot precache ("Compiling the game's shaders") builds the precache file's compute programs

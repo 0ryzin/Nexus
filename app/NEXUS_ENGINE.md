@@ -1,8 +1,8 @@
 # The NEXUS engine: investigation, architecture, status and plan
 
-## NEXUS Engine 0.8.0 (in development): Lichii build 316, patches 0018-0028
+## NEXUS Engine 0.8.0 (in development): Lichii build 316, patches 0018-0030
 
-Base: Lichii `build-316` (`5a66c8959`), 28 NEXUS patches. Interface version stays 2; the additions
+Base: Lichii `build-316` (`5a66c8959`), 30 NEXUS patches. Interface version stays 2; the additions
 below are optional exports that NEXUS looks up by name (older engine builds simply lack them).
 
 | Patch | What |
@@ -18,6 +18,8 @@ below are optional exports that NEXUS looks up by name (older engine builds simp
 | 0026 | Port of Lichii #2062 (after build 316): the texture cache unregisters an image from its own address space's page table |
 | 0027 | The engine installs Lichii's Windows crash handler when its log starts: a `Host crash` line and `eden_crash.dmp` instead of a silent end (docs/CRASHES.md) |
 | 0028 | The boot precache keeps the programs it built when it is skipped (*Start now*) or stopped (`<precache>.partial`), so the next boot builds only the rest (docs/SHADERS.md) |
+| 0029 | `package_engine.py` packages `nexus_engine.symbols.gz` (checked to name this DLL's SHA-256) next to the DLL; `NEXUS_REQUIRE_SYMBOLS` (docs/CRASHES.md, "Engine symbols") |
+| 0030 | Shared shader cache: request field `"shaderDir"` (session and preparation); portable data there, this GPU's and driver's files and the precache markers in the user's own folder (`common/fs/nexus_shared_cache.h`); preparing a title serialised by `warm-compute.bin.lock` (docs/SHADERS.md) |
 
 `nexus_engine_prepare_shaders(json)`: `{"game", "dataDir", "configFile", "titleId": "<hex>",
 "contents": [...], "force": false}`; 0 started, -1 a game or preparation runs, -2 bad request. It

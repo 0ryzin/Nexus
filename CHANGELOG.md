@@ -84,7 +84,25 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
   it; keyboard and controller focus is a separate outline.
 - NEXUS tries WebView2 again when it fails to start (it ended NEXUS once right after a crash). The
   engine's play-time and TAS folders are created (the engine logged errors without them).
-- CI also publishes the engine's link map, so crash reports can be read.
+- **Crash reports name the engine's functions.** Every build ships the engine's symbol table
+  next to the engine (no separate download). It is used only for the exact engine build that
+  crashed (docs/CRASHES.md).
+- **Shared shader cache:** shaders one NEXUS user's games built are ready for every NEXUS user of
+  the PC (`%ProgramData%\NEXUS\ShaderCache`). Only data that works on any graphics card is
+  shared; each user's driver-specific files stay theirs. Can be turned off per user; a portable
+  NEXUS keeps its own. Tested with the stand-in engine and two NEXUS data folders, **not yet with
+  a game on two Windows accounts** (docs/SHADERS.md).
+- **Home screen layouts:** Classic (as before), **Cards** (large cards, the selected game's
+  picture and details) and **Grid** (games, folders and widgets in a grid, shortcuts down the
+  side). Per user:
+  - favourites, folders, custom pages (shoulder buttons), games hidden from Home;
+  - order: recently played, A–Z, play time, date added, my order;
+  - shortcut order and visibility, optional widgets, glass or flat panels;
+  - a plain background colour;
+  - Restore defaults.
+  
+  Per game: background and title pictures, display name. After HomeNX's ideas; no HomeNX code or
+  assets (docs/HOME.md).
 
 ## 0.6.0 — test build (pre-release)
 

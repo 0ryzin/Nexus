@@ -28,7 +28,7 @@ async def main():
             pg = await b.new_page(viewport={"width": 1440, "height": 860})
             t = time.perf_counter()
             await pg.goto(f"http://localhost:{PORT}/")
-            await pg.wait_for_function("typeof S!=='undefined' && !!S.screen && S.games && S.games.length>0", timeout=20000)
+            await pg.wait_for_function("typeof S!=='undefined' && !!S.screen && (S.screen === 'who' || (S.games && S.games.length>0))", timeout=20000)
             out["page_ready_ms"].append(round((time.perf_counter() - t) * 1000, 1))
             await pg.close(); p.terminate(); p.wait()
         p, _ = start()
@@ -40,6 +40,11 @@ async def main():
         for name, js in [("home", "goHome()"), ("home+pad", "(window.__connectPad(), goHome())"),
                          ("library+pad", "showLibrary()"), ("settings+pad", "showSettings('appearance')"),
                          ("home (pad removed)", "(window.__disconnectPad(), goHome())"),
+                         # the Home layouts (web/home.js), each with its panel and widgets
+                         ("home cards", "homePatch({ layout: 'cards', gameBackground: true, widgets: { details: true, recent: true, playtime: true } }).then(goHome)"),
+                         ("home grid", "homePatch({ layout: 'grid', widgets: { details: true, recent: true, playtime: true, storage: true } }).then(goHome)"),
+                         ("home grid flat", "homePatch({ layout: 'grid', effects: 'flat' }).then(goHome)"),
+                         ("home classic", "homePatch({ layout: 'classic', effects: 'glass' }).then(goHome)"),
                          ("game in front", "launchGame(S.games.find(isPlayable).key, true)")]:
             await pg.evaluate("() => { void (" + js + ") }"); await pg.wait_for_timeout(2500)
             if name == "game in front":  # the interface stays behind a running game (Windows)
