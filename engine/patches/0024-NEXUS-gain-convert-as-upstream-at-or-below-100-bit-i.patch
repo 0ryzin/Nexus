@@ -1,7 +1,7 @@
 From b11f2b3afd4c877b2c9c30e3ce0d2546590baf24 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Tue, 17 Nov 2026 12:50:46 +0000
-Subject: [PATCH 24/27] NEXUS gain: convert as upstream at or below 100 %
+Subject: [PATCH 24/28] NEXUS gain: convert as upstream at or below 100 %
  (bit-identical output)
 
 NEXUS's gain helper rounded samples where Lichii truncates, so output at

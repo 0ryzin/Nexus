@@ -1,7 +1,7 @@
 From 12d623f0d561696ad7fdca8ea34e3ce3cc9bfb00 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Tue, 17 Nov 2026 13:50:16 +0000
-Subject: [PATCH 27/27] nexus_engine: install the engine crash handler when the
+Subject: [PATCH 27/28] nexus_engine: install the engine crash handler when the
  log starts
 
 NEXUS loads the engine in-process and the Go runtime sets SEM_NOGPFAULTERRORBOX, so a native

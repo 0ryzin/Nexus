@@ -83,6 +83,23 @@ percentage: how many shaders a game will still reveal is unknown.
 - Fritchii code was not copied into NEXUS. NEXUS's preparation uses Lichii's precache builder (part
   of the engine NEXUS is based on) and NEXUS's own engine interface (`nexus_engine_prepare_shaders`).
 
+## A precache that is skipped keeps its work (0.8.0, engine patch 0028)
+
+The boot precache ("Compiling the game's shaders") builds the precache file's compute programs
+only to fill the GPU driver's cache, and a `.done` marker skips it next time. Until 0.8.0 the
+marker was written only when the precache ran to the end. *Start now*, or closing the game during
+it, threw its work away, and every boot started from zero. On the user's PC that meant 4,671
+programs every time (docs/PERFORMANCE.md).
+
+Now the built programs are written to `<precache>.partial`:
+
+- **When:** every 20 s, and when the precache ends without finishing.
+- **What it records:** each program's key hash, under the same stamp as the marker (precache
+  contents, driver, device, cache version, variant).
+- **Next boot:** it leaves these out, and the loading screen counts only the rest.
+- **Ignored when:** the stamp differs, or the file is cut short.
+- **Removed:** with the precache files, and when a precache finishes.
+
 ## Remaining time (0.8.0)
 
 The loading screen and *Prepare Shaders Now* show how long the measured shader work has left

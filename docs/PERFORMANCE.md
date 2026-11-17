@@ -55,6 +55,55 @@ This matters most while a game runs in the background behind NEXUS Home.
 3. **The running-game dot and the recording indicator** pulsed with `box-shadow`. They now use `opacity`.
 4. **The loading bar** moved with `left`, which forces a layout on every frame while a game is loading, exactly when the CPU is busy compiling shaders. It now moves with `transform`.
 
+## Ocarina of Time loading, measured from the user's logs (17 Nov 2026)
+
+Source: the engine log (`eden_log.txt`) and `nexus.log` of two real sessions on the user's PC.
+
+- **PC:** RTX 4060, driver 621.14, 6.3 GiB VRAM shown to Vulkan.
+- **Game and engine:** NEXUS Engine 0.8.0 on build 316.
+- **Settings:** resolution setup 3, async shaders on, shader preparation "Always", FSR3 frame
+  generation on.
+
+Times are seconds; the Play click is at most 0.2 s before the session starts (`nexus.log`).
+
+| Step | 13:31 session (first after preparing) | 14:39 session |
+|---|---|---|
+| Shader preparation (convert the game's shaders) | 14.3 s | 0.0 s (already current) |
+| Game loading starts (after the session starts) | 2.5 s | 2.0 s |
+| Pipelines from the shader cache (1,304) | 75.0 s | 5.8 s |
+| **Boot precache of compute programs** | **512.8 s**: 4,141 of 4,671 built, then *Start now* | **81.9 s**: 4,250 of 4,671 built, then *Start now* |
+| First frame (title screen), after the session started | 600 s | **99.3 s** |
+| Loading the save: from the first unmapped reads to normal frames | — (NEXUS closed; fixed since) | about 12 s (191.7 → 203.6 s); one 8.7 s frame |
+
+### What these show
+
+- **The boot precache was most of the wait, and its work was thrown away.**
+  - It builds the game's 4,794 compute programs once to fill the GPU driver's cache.
+  - Only a precache that ran to the end was remembered. After *Start now*, the next boot again
+    had "4,671 of 4,794 to build", although 4,141 and then 4,250 had already been built.
+  - The second run was 6× faster only because the driver's own cache answered.
+- **Fix: engine patch 0028.** The programs built are recorded next to the precache file, every
+  20 s and when it ends early. The next boot builds only what is left, about 420 programs here.
+  - Safety: the same checks as the "done" marker (precache contents, driver, device, cache
+    version, settings variant).
+  - **Not measured yet:** the expected next boot is roughly 10 s plus the remaining programs,
+    instead of 100 s. That is not claimed until a session on that PC shows it.
+- **Pipelines from the cache:** 75.0 s the first time (cold driver cache), then 5.8 s. Nothing to
+  change.
+- **Save load (about 12 s).** In the log:
+  - 277 ASTC textures decoded on the GPU (11.9 s of decode time over the window);
+  - five graphics pipelines not in the cache, built asynchronously but finishing together after
+    5.5–7.9 s;
+  - 1.5 s trimming zero pages.
+  
+  The pipelines reach the cache for the next load. Why their builds waited is not known from the
+  log (no stutter trace). Nothing was changed there without a measurement.
+- **CPU and RAM:** the engine log records memory, not CPU. About 4.2 GB of guest memory was
+  resident after the load, with 2.9–3.1 GB of Windows commit left. NEXUS's own interface process
+  was idle.
+- **Not measured:** time from selecting a save to control of Link, CPU use per thread. A stutter
+  trace (`EDEN_NX2_STUTTER_TRACE=1`) of one save load would show the second.
+
 ## 0.8.0: idle interface, measured (Linux, headless Chrome, stand-in engine)
 
 Measured with `tools/perf/idle_baseline.py` on the development machine (Linux, headless Chrome

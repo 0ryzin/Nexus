@@ -1,0 +1,307 @@
+From 92a0c7ed4e2f07786341640c7358b93b36017612 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 17 Nov 2026 16:19:09 +0000
+Subject: [PATCH 28/28] shader precache: keep the progress of a precache that
+ is skipped or stopped
+
+The boot precache builds the game's compute programs only to fill the GPU driver's cache, and
+a marker that skips it next time was written only when it ran to the end. Skipped with "Start
+now" or ended with the game, its work was forgotten: on an RTX 4060 every boot of Ocarina of
+Time again had "4671 of 4794 compute programs to build" (512.8 s the first time, 81.9 s the
+next with the driver cache warm), even though 4141 and then 4250 had been built.
+
+The programs built are now recorded next to the precache file (.partial), for the same stamp
+as the marker (contents, driver, device, cache version, variant), every 20 s and when the
+precache ends unfinished; the next boot leaves them out and builds only the rest. A finished
+precache removes the file; a different stamp or a damaged file is ignored.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01X7yw1ZJY9GYi2KYHfiXxvY
+---
+ src/tests/video_core/shader_precache.cpp      | 38 +++++++++++++
+ .../renderer_vulkan/vk_pipeline_cache.cpp     | 57 +++++++++++++++++--
+ .../shader_warm/shader_warm_builder.cpp       | 57 ++++++++++++++++++-
+ .../shader_warm/shader_warm_builder.h         | 18 ++++++
+ 4 files changed, 164 insertions(+), 6 deletions(-)
+
+diff --git a/src/tests/video_core/shader_precache.cpp b/src/tests/video_core/shader_precache.cpp
+index fca51230e..4c0cbbc60 100644
+--- a/src/tests/video_core/shader_precache.cpp
++++ b/src/tests/video_core/shader_precache.cpp
+@@ -107,6 +107,44 @@ TEST_CASE("ShaderPrecache: the marker matches only the same file and driver", "[
+     REQUIRE_FALSE(marker->Matches(*ShaderWarm::CurrentWarmStamp(warm, 12, 0x1234, 0x2206, 53)));
+ }
+ 
++// NEXUS: a precache skipped or stopped part-way keeps what it built for the next boot.
++TEST_CASE("ShaderPrecache: progress of an unfinished precache is kept for the same stamp",
++          "[video_core]") {
++    TempDir dir;
++    const auto warm = dir.path / "warm-compute.bin";
++    WriteBytes(warm, "precache");
++    const auto stamp = *ShaderWarm::CurrentWarmStamp(warm, 4794, 0x1234, 0x2206, 53, 0x77);
++    REQUIRE(ShaderWarm::ReadWarmProgress(warm, stamp).empty());
++    REQUIRE(ShaderWarm::WarmProgressPath(warm) == dir.path / "warm-compute.partial");
++
++    const std::vector<u64> built{0x1ULL, 0xdeadbeefcafef00dULL, 0xffffffffffffffffULL};
++    REQUIRE(ShaderWarm::WriteWarmProgress(warm, stamp, built));
++    const auto back = ShaderWarm::ReadWarmProgress(warm, stamp);
++    REQUIRE(back == std::unordered_set<u64>(built.begin(), built.end()));
++    // a stamp taken before the entries are counted still matches (as for the marker)
++    REQUIRE(ShaderWarm::ReadWarmProgress(
++                warm, *ShaderWarm::CurrentWarmStamp(warm, 0, 0x1234, 0x2206, 53, 0x77))
++                .size() == built.size());
++    // another driver, variant or file: nothing is trusted
++    REQUIRE(ShaderWarm::ReadWarmProgress(
++                warm, *ShaderWarm::CurrentWarmStamp(warm, 0, 0x1235, 0x2206, 53, 0x77))
++                .empty());
++    REQUIRE(ShaderWarm::ReadWarmProgress(
++                warm, *ShaderWarm::CurrentWarmStamp(warm, 0, 0x1234, 0x2206, 53, 0x78))
++                .empty());
++    WriteBytes(warm, "precachf");
++    REQUIRE(ShaderWarm::ReadWarmProgress(
++                warm, *ShaderWarm::CurrentWarmStamp(warm, 0, 0x1234, 0x2206, 53, 0x77))
++                .empty());
++    // a file cut short is not trusted at all
++    WriteBytes(warm, "precache");
++    WriteBytes(ShaderWarm::WarmProgressPath(warm),
++               fmt::format("v1 {} {} {} {} {} {} {} 3\n1\n2\n", stamp.size, stamp.content_hash,
++                           stamp.entries, stamp.driver, stamp.device_id, stamp.cache_version,
++                           stamp.variant));
++    REQUIRE(ShaderWarm::ReadWarmProgress(warm, stamp).empty());
++}
++
+ TEST_CASE("ShaderPrecache: a rebuild with the same contents keeps the marker", "[video_core]") {
+     TempDir dir;
+     const auto warm = dir.path / "warm-compute.bin";
+diff --git a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp b/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
+index eeff8715e..b439cd91e 100644
+--- a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
++++ b/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
+@@ -2025,6 +2025,10 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::stop_token stop_loading,
+     std::error_code ec;
+     const auto current = stamp(0);
+     const auto marker = ShaderWarm::ReadWarmMarker(warm_file);
++    // NEXUS: programs an earlier boot built before its precache was skipped or stopped
++    std::unordered_set<u64> earlier;
++    std::vector<u64> job_hashes;
++    size_t earlier_skipped = 0;
+     if (!std::filesystem::exists(warm_file, ec)) {
+         LOG_INFO(Render_Vulkan, "Shader precache: no precache file at {}", path);
+     } else if (current && marker && marker->Matches(*current)) {
+@@ -2053,6 +2057,9 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::stop_token stop_loading,
+                             path, version, CACHE_VERSION);
+                 throw std::runtime_error("wrong version");
+             }
++            if (current) {
++                earlier = ShaderWarm::ReadWarmProgress(warm_file, *current);
++            }
+             while (file.tellg() != end) {
+                 u32 num_envs{};
+                 file.read(reinterpret_cast<char*>(&num_envs), sizeof(num_envs));
+@@ -2069,6 +2076,12 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::stop_token stop_loading,
+                 if (compute_cache.contains(key)) {
+                     continue;
+                 }
++                const u64 key_hash = static_cast<u64>(key.Hash());
++                if (earlier.contains(key_hash)) {
++                    ++earlier_skipped;
++                    continue;
++                }
++                job_hashes.push_back(key_hash);
+                 const u64 cpu_bytes = TranslationBytes(env.MemorySize());
+                 jobs.push_back({
+                     .translate = [this, key,
+@@ -2093,6 +2106,9 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::stop_token stop_loading,
+         } catch (const std::exception& e) {
+             LOG_WARNING(Render_Vulkan, "Shader precache: reading {} failed: {}", path, e.what());
+             jobs.clear();
++            job_hashes.clear();
++            earlier.clear();
++            earlier_skipped = 0;
+             file_entries = 0;
+         }
+     }
+@@ -2103,11 +2119,29 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::stop_token stop_loading,
+ 
+     const auto begin = std::chrono::steady_clock::now();
+     const size_t num_threads = GetTotalPipelineWorkers();
+-    std::vector<u8> built(jobs.size());
++    std::vector<std::atomic<u8>> built(jobs.size());
+     std::atomic<size_t> done{};
+     bool skipped = false;
+-    LOG_INFO(Render_Vulkan, "Shader precache: {} of {} compute programs to build on {} threads",
+-             jobs.size(), file_entries, num_threads);
++    LOG_INFO(Render_Vulkan,
++             "Shader precache: {} of {} compute programs to build on {} threads ({} built by an "
++             "earlier boot)",
++             jobs.size(), file_entries, num_threads, earlier_skipped);
++    // NEXUS: what has been built so far, kept for the next boot (WarmProgressPath)
++    const auto save_progress = [&] {
++        if (!current) {
++            return;
++        }
++        std::vector<u64> hashes(earlier.begin(), earlier.end());
++        for (size_t index = 0; index < built.size(); ++index) {
++            if (built[index].load(std::memory_order_relaxed) != 0) {
++                hashes.push_back(job_hashes[index]);
++            }
++        }
++        if (hashes.size() != earlier.size() || !jobs.empty()) {
++            ShaderWarm::WriteWarmProgress(warm_file, *current, hashes);
++        }
++    };
++    auto last_progress_save = std::chrono::steady_clock::now();
+     VideoCommon::StutterTrace::BootMarker("precache_begin", fmt::format("jobs={}", jobs.size()));
+     if (!jobs.empty()) {
+         // Background jobs of the shader workers, each built and destroyed: only the driver's
+@@ -2137,7 +2171,7 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::stop_token stop_loading,
+                         }
+                         return [&built, &done, index, build = std::move(build)]() mutable {
+                             try {
+-                                built[index] = build();
++                                built[index].store(build() ? 1 : 0, std::memory_order_relaxed);
+                             } catch (const std::exception& e) {
+                                 LOG_DEBUG(Render_Vulkan, "Shader precache: {}", e.what());
+                             }
+@@ -2157,16 +2191,29 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::stop_token stop_loading,
+             if (callback) {
+                 callback(VideoCore::LoadCallbackStage::Warm, done, jobs.size());
+             }
++            // a long precache that ends with the process (closed, crashed) keeps its work too
++            if (std::chrono::steady_clock::now() - last_progress_save > std::chrono::seconds{20}) {
++                save_progress();
++                last_progress_save = std::chrono::steady_clock::now();
++            }
+             std::this_thread::sleep_for(std::chrono::milliseconds{100});
+         }
+         batch.Wait();
+     }
+-    const size_t total_built = static_cast<size_t>(std::count(built.begin(), built.end(), u8{1}));
++    const size_t total_built = static_cast<size_t>(std::ranges::count_if(
++        built, [](const std::atomic<u8>& b) { return b.load(std::memory_order_relaxed) != 0; }));
++    const bool finished = compute_pending && !skipped && !stop_loading.stop_requested();
+     if (compute_pending && !skipped) {
+         if (const auto stamp_done = stamp(file_entries)) {
+             ShaderWarm::WriteWarmMarker(warm_file, *stamp_done);
+         }
+     }
++    if (finished) {
++        std::error_code ignored;
++        std::filesystem::remove(ShaderWarm::WarmProgressPath(warm_file), ignored);
++    } else if (compute_pending) {
++        save_progress();
++    }
+     if (!stop_loading.stop_requested() && total_built != 0) {
+         // Without this, the builds reach the file only at the next boot, game change or clean
+         // close, and are lost if the app ends otherwise.
+diff --git a/src/video_core/shader_warm/shader_warm_builder.cpp b/src/video_core/shader_warm/shader_warm_builder.cpp
+index 63b173e5f..a45ac6963 100644
+--- a/src/video_core/shader_warm/shader_warm_builder.cpp
++++ b/src/video_core/shader_warm/shader_warm_builder.cpp
+@@ -383,6 +383,61 @@ bool WriteWarmMarker(const fs::path& warm_file, const WarmStamp& stamp) {
+     return static_cast<bool>(out);
+ }
+ 
++fs::path WarmProgressPath(const fs::path& warm_file) {
++    fs::path progress = warm_file;
++    progress.replace_extension(".partial");
++    return progress;
++}
++
++std::unordered_set<u64> ReadWarmProgress(const fs::path& warm_file, const WarmStamp& current) {
++    std::unordered_set<u64> built;
++    std::ifstream in(WarmProgressPath(warm_file));
++    std::string format;
++    WarmStamp stamp;
++    u64 count{};
++    if (!(in >> format) || format != "v1" ||
++        !(in >> stamp.size >> stamp.content_hash >> stamp.entries >> stamp.driver >>
++          stamp.device_id >> stamp.cache_version >> stamp.variant >> count) ||
++        !stamp.Matches(current)) {
++        return {};
++    }
++    built.reserve(static_cast<size_t>(std::min<u64>(count, 1u << 20)));
++    u64 hash{};
++    while (built.size() < count && (in >> std::hex >> hash)) {
++        built.insert(hash);
++    }
++    if (built.size() != count) {
++        return {}; // cut short: trust none of it
++    }
++    return built;
++}
++
++bool WriteWarmProgress(const fs::path& warm_file, const WarmStamp& stamp,
++                       const std::vector<u64>& built) {
++    const fs::path path = WarmProgressPath(warm_file);
++    fs::path tmp = path;
++    tmp += ".tmp";
++    {
++        std::ofstream out(tmp, std::ios::trunc);
++        out << "v1 " << stamp.size << ' ' << stamp.content_hash << ' ' << stamp.entries << ' '
++            << stamp.driver << ' ' << stamp.device_id << ' ' << stamp.cache_version << ' '
++            << stamp.variant << ' ' << built.size() << '\n'
++            << std::hex;
++        for (const u64 hash : built) {
++            out << hash << '\n';
++        }
++        out.close();
++        if (!out) {
++            std::error_code ignored;
++            fs::remove(tmp, ignored);
++            return false;
++        }
++    }
++    std::error_code ec;
++    fs::rename(tmp, path, ec);
++    return !ec;
++}
++
+ void DropStaleWarmMarker(const fs::path& warm_file, const fs::path& new_file) {
+     if (const auto marker = ReadWarmMarker(warm_file)) {
+         const auto incoming = CurrentWarmStamp(new_file, 0, 0, 0, 0);
+@@ -424,7 +479,7 @@ bool DeleteWarmFiles(u64 title_id, std::string* error) {
+     tmp += ".tmp";
+     bool ok = true;
+     for (const auto& path :
+-         {warm, WarmMarkerPath(warm), WarmCountPath(warm), tmp,
++         {warm, WarmMarkerPath(warm), WarmCountPath(warm), WarmProgressPath(warm), tmp,
+           TitleDir(title_id) / "precache-graphics.bin"}) {
+         std::error_code ec;
+         fs::remove(path, ec);
+diff --git a/src/video_core/shader_warm/shader_warm_builder.h b/src/video_core/shader_warm/shader_warm_builder.h
+index 36b5b0656..5205555b5 100644
+--- a/src/video_core/shader_warm/shader_warm_builder.h
++++ b/src/video_core/shader_warm/shader_warm_builder.h
+@@ -9,6 +9,8 @@
+ #include <optional>
+ #include <stop_token>
+ #include <string>
++#include <unordered_set>
++#include <vector>
+ 
+ #include "common/common_types.h"
+ #include "common/settings_enums.h"
+@@ -81,6 +83,22 @@ std::optional<WarmStamp> ReadWarmMarker(const std::filesystem::path& warm_file);
+ /// Writes the marker of `warm_file`. Returns false when it cannot be written.
+ bool WriteWarmMarker(const std::filesystem::path& warm_file, const WarmStamp& stamp);
+ 
++/// Progress of a precache that did not run to the end (NEXUS): the compute programs it built,
++/// for the same stamp as a marker (extension .partial). Skipping the precache ("Start now") or
++/// closing the game during it no longer throws its work away: the next boot builds only what is
++/// left. The programs are built to fill the GPU driver's own cache, like the whole precache, so a
++/// program in the list is in that cache exactly as much as one covered by a finished marker.
++std::filesystem::path WarmProgressPath(const std::filesystem::path& warm_file);
++
++/// The built programs (ComputePipelineCacheKey hashes) recorded for `current`; empty when there is
++/// no progress file or it was written for other contents, driver, device, cache version or variant.
++std::unordered_set<u64> ReadWarmProgress(const std::filesystem::path& warm_file,
++                                         const WarmStamp& current);
++
++/// Writes the progress of `warm_file` (replacing the file in one step). False when it cannot.
++bool WriteWarmProgress(const std::filesystem::path& warm_file, const WarmStamp& stamp,
++                       const std::vector<u64>& built);
++
+ /// Removes the marker of `warm_file` before `new_file` replaces it, unless the marker was written
+ /// for the same contents: a rebuild that comes out identical stays done.
+ void DropStaleWarmMarker(const std::filesystem::path& warm_file,
