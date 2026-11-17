@@ -140,6 +140,32 @@ Newest first.
 
 ## 0.7.0 (in development)
 
+### Signed out of GitHub again and again (17 Nov)
+- **Problem:** NEXUS kept signing the user out of the connected GitHub account (three times
+  between 12 and 17 Nov), with nothing in `nexus.log`.
+- **Diagnosis:** `account.json`'s own history (read on the user's PC; no credentials read): every
+  sign-out was "GitHub no longer accepts NEXUS's sign-in", i.e. a 401 from GitHub confirmed by
+  `GET /user`, never NEXUS deleting the token by itself. Sign-in 17 Nov 13:31 still worked at
+  18:12 (4 h 41 min) and was refused at 22:03 (8 h 32 min); the other two failures also came
+  after more than eight hours. Since August 2026 GitHub gives new OAuth apps (NEXUS's included)
+  eight-hour access tokens with a six-month refresh token; NEXUS kept only the access token and
+  discarded the refresh token. The new download folders each time were a coincidence (the data
+  folder and the DPAPI-encrypted `session.bin` do not depend on it).
+- **Files:** `app/account_github.go`, `app/account_github_cred.go`, `app/account.go`,
+  `app/web/app.js` (AccountUI).
+- **Fix:** the whole sign-in (access token, refresh token, expiry times) is kept, encrypted with
+  Windows data protection as before; renewed 10 min before it expires and after a 401, with the
+  request retried; the rotated refresh token is saved at once. The sign-in ends only on
+  Disconnect or when GitHub refuses the refresh token itself (`bad_refresh_token` /
+  `invalid_grant`). Network errors, 5xx and unknown renewal errors keep it. Device flow asks for
+  `gist offline_access`. Reconnecting the same account keeps the device's entry (the user's list
+  had three "Toms_Pc").
+- **Tests:** `account_persist_test.go` (the brief's seven steps against a GitHub stand-in with
+  expiring tokens, plus revocation, 503 while renewing, old-format sign-in), run on Linux and in
+  the Windows CI job (DPAPI; also checks the file holds no token in plain text). **Not yet
+  confirmed on the user's PC against github.com:** the existing sign-in has no refresh token, so
+  one more Connect is needed after updating.
+
 ### Ocarina of Time: about 100 s (once 10 min) before the title screen at every start (17 Nov)
 - **Problem:** every start of Ocarina of Time built the shader precache again, until *Start now*.
 - **Diagnosis:** the user's engine logs (two sessions). "Shader precache: 4671 of 4794 compute

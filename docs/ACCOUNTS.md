@@ -157,6 +157,30 @@ would move it to PostgreSQL behind the same API.
   DPAPI error) is retried at the next five synchronisations before NEXUS asks to sign in again. Idle cost when nothing changes:
   no measurable CPU (0 ticks in 60 s in the measurement below).
 
+### GitHub sign-in that lasts (`app/account_github_cred.go`, 0.8.0)
+
+- GitHub gives OAuth apps registered since August 2026 (NEXUS's included) **eight-hour access
+  tokens** and a **refresh token** valid for six months from its last use. NEXUS asks for
+  `gist offline_access` so it always gets the renewable kind.
+- `session.bin` holds the whole sign-in as JSON (`v`, `access`, `refresh`, `expires`,
+  `refreshExpires`), encrypted with DPAPI on Windows. A `session.bin` from 0.7 or earlier (the
+  access token alone) is still read; it cannot be renewed, so it lasts as long as GitHub accepts
+  it. No token is ever written to `account.json` or to the log.
+- Before each API request the access token is renewed if it expires within 10 minutes; after a
+  401 it is renewed and the request is tried once more. GitHub rotates the refresh token at each
+  renewal, so the new pair is written at once (and kept in memory and written again later if
+  that fails). One renewal at a time.
+- The sign-in ends only when the user disconnects, or when GitHub refuses the refresh token
+  itself (`bad_refresh_token`, `invalid_grant`: revoked at github.com, or six months unused). A
+  network failure, a 5xx answer or an unknown error keeps it and is retried with the offline
+  back-off. A token without a refresh token is ended only when GitHub also refuses `GET /user`.
+- Status `connection`: `connected`, `notconnected`, `reconnecting` (renewing), `expired` (GitHub
+  refused it; the identity stays on screen with *Reconnect*), `problem` (cannot reach GitHub;
+  still connected), `syncing`. `POST /api/account/test` checks the connection.
+- Reconnecting the same GitHub account keeps this device's ID and its entry in the device list.
+- The NEXUS user on screen ("Who's playing?") is separate: switching or adding users never
+  touches the GitHub connection.
+
 ### Tests
 
 - `app/accountd/accountd_test.go`:

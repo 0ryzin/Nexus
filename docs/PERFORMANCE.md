@@ -104,6 +104,43 @@ Times are seconds; the Play click is at most 0.2 s before the session starts (`n
 - **Not measured:** time from selecting a save to control of Link, CPU use per thread. A stutter
   trace (`EDEN_NX2_STUTTER_TRACE=1`) of one save load would show the second.
 
+## 0.8.0: startup, measured (17 Nov)
+
+**On the user's PC (Windows, from `nexus.log`, before the change; not re-measured after):**
+
+| Start (17 Nov) | core ready | window created | window shown | WebView2 ready | interface loaded |
+|---|---|---|---|---|---|
+| 13:30 (first after a new download) | 527 ms | 535 ms | ~1.26 s | +2.58 s | 4.16 s |
+| 14:50 | | | | +518 ms | 1.15 s |
+| 18:02 | 82 ms | 89 ms | 1.64 s | +927 ms | 3.14 s |
+| 18:22 | 16 ms | 24 ms | 180 ms | +1.47 s | 1.85 s |
+| 22:03 | 16 ms | 23 ms | 753 ms | +870 ms | 1.90 s |
+
+With the startup animation on (the default) Home appears about 4.3 s after the interface loads.
+The account synchronisation already ran in the background and did not delay any of these.
+From 0.8.0 the log also records *home interactive*, *library available*, *account restored* and
+*first background sync finished*, and how long showing the window and bringing it to the front
+took (the 0.15–1.6 s between "window created" and "window shown" is not explained yet).
+
+**Interface part, before and after** (`app/tools/perf/startup_timings.py`: Linux build, stand-in
+engine, Chrome opened as soon as the server answers; median of 9 starts; ms from process start):
+
+| | before | after |
+|---|---|---|
+| Server answers | 12 | 11–13 |
+| Interface has its data | 76–80 | 70–84 |
+| Game list available (animation off) | 183 | 79 |
+| Home interactive (animation off) | 235 | 147 |
+| Home interactive (animation on) | 4394 | 4407 (the animation) |
+| Account restored | 1 | 1 |
+
+Causes and changes: the 14 interface sounds were requested before the game list, and the browser
+opens six connections to NEXUS at a time, so the game list waited behind them; without the
+animation start-up still waited up to 0.6 s for the sounds and decoded the animation's artwork;
+two requests were made only after the animation. Now the first `/api/state` (`?boot=1`) carries
+the game list of the user picked automatically, sounds load in the background unless the
+animation needs them, and the remaining requests are made at once.
+
 ## 0.8.0: Home layouts, idle cost (Linux, headless Chrome, stand-in engine, 17 Nov)
 
 `tools/perf/idle_baseline.py`, 10 s of doing nothing on each screen, 6 games. It measures this

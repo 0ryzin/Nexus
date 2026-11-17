@@ -14,6 +14,20 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
 
 ## 0.8.0 — in development (not released)
 
+- **GitHub stays connected.** NEXUS signed out of GitHub about eight hours after each sign-in:
+  GitHub's sign-ins now last eight hours and come with a refresh token that NEXUS threw away.
+  NEXUS now keeps it (encrypted with Windows data protection) and renews the sign-in by itself;
+  only *Disconnect* or revoking NEXUS on GitHub ends it, never a network problem. Connect once
+  more after updating. The account panel shows the connection on its own (Connected, Reconnecting,
+  Authentication expired, Temporary connection problem, …) with *Synchronise now*, *Test
+  connection*, *Reconnect* and *Disconnect*.
+- **Settings regrouped** (General, Personalisation, Games, Controllers, Graphics & performance,
+  Accounts & cloud, Advanced, About) with a **search box**, a *Changed* mark on settings that
+  differ from the default, and *Advanced* sections for rarely used options. New panels: General,
+  Shader management, About NEXUS. No setting or value was removed or reset (docs/SETTINGS.md).
+- **Faster start without the startup animation:** Home in 147 ms instead of 235 ms after the
+  interface loads (measured, Linux test build); the game list arrives with the first answer.
+  The startup log records when Home became usable, the library, the account and the first sync.
 - **NEXUS Engine 0.8.0 on Lichii build 177** (was build 160): 87 upstream engine changes, among
   them updates no longer applied over NUP programs (a likely cause of Ocarina of Time staying
   black after a save loads), Switch 2 GPU-service waits that could never end, faster x86-64 code
