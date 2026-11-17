@@ -38,6 +38,9 @@ import (
 type sessionRecord struct {
 	NEXUS       string            `json:"nexus"`
 	Engine      string            `json:"engine,omitempty"`
+	EngineDir   string            `json:"engineDir,omitempty"` // the engine's folder (for its symbols)
+	EngineSHA   string            `json:"engineSha256,omitempty"`
+	Commit      string            `json:"engineCommit,omitempty"`
 	PID         int               `json:"pid"`
 	Started     time.Time         `json:"started"`
 	Updated     time.Time         `json:"updated"`
@@ -289,6 +292,10 @@ func (a *App) writeCrashReport(rec sessionRecord, now time.Time) (*CrashNotice, 
 	fmt.Fprintf(&b, "The game session below ended without NEXUS seeing it end: NEXUS itself closed.\n\n")
 	fmt.Fprintf(&b, "Game:           %s (%s)\n", rec.Game, firstNonEmpty(rec.TitleID, "?"))
 	fmt.Fprintf(&b, "NEXUS / engine: %s / %s\n", rec.NEXUS, firstNonEmpty(rec.Engine, "?"))
+	if rec.EngineSHA != "" {
+		fmt.Fprintf(&b, "Engine build:   commit %.12s, nexus_engine.dll SHA-256 %.16s…\n", firstNonEmpty(rec.Commit, "?"), rec.EngineSHA)
+	}
+	fmt.Fprintf(&b, "Renderer:       %s\n", rendererName(rec.Settings["backend"]))
 	fmt.Fprintf(&b, "Session start:  %s\n", rec.Started.Format(time.RFC1123))
 	fmt.Fprintf(&b, "Last update:    %s (%s after the start)\n", rec.Updated.Format(time.RFC1123), rec.Updated.Sub(rec.Started).Round(time.Second))
 	fmt.Fprintf(&b, "Phase / stage:  %s / %s\n", firstNonEmpty(rec.Phase, "?"), firstNonEmpty(rec.Stage, "-"))
@@ -317,6 +324,7 @@ func (a *App) writeCrashReport(rec sessionRecord, now time.Time) (*CrashNotice, 
 	}
 
 	// the engine's own crash report, when its handler ran
+	var decoded []string
 	hostCrash := reportLines(engineLog, 8, func(l string) bool { return strings.Contains(l, "Host crash") })
 	b.WriteString("\n--- Engine crash handler\n")
 	if len(hostCrash) == 0 {
@@ -325,6 +333,25 @@ func (a *App) writeCrashReport(rec sessionRecord, now time.Time) (*CrashNotice, 
 	}
 	for _, l := range hostCrash {
 		b.WriteString(l + "\n")
+	}
+	// the engine frames decoded with the symbols shipped with that very engine build
+	if len(hostCrash) > 0 {
+		b.WriteString("\n--- Engine functions in the crash stack\n")
+		dir, sha := rec.EngineDir, rec.EngineSHA
+		if dir == "" {
+			dir = a.Emu.Builds.ActiveDir()
+		}
+		if sha == "" {
+			sha = engineDLLHash(dir) // older record: the engine in use now (checked against the table)
+		}
+		if syms, err := loadEngineSymbols(dir, sha); err != nil {
+			fmt.Fprintf(&b, "(not decoded: %v)\n", err)
+		} else if frames := syms.decodeEngineFrames(hostCrash); len(frames) > 0 {
+			b.WriteString(strings.Join(frames, "\n") + "\n")
+			decoded = frames
+		} else {
+			b.WriteString("(no engine frames in the stack: the crash happened outside the engine's own code)\n")
+		}
 	}
 	dump := filepath.Join(a.Emu.DataDir(), "log", "eden_crash.dmp")
 	if fi, err := os.Stat(dump); err == nil && !fi.ModTime().Before(rec.Started) {
@@ -361,7 +388,7 @@ func (a *App) writeCrashReport(rec sessionRecord, now time.Time) (*CrashNotice, 
 	if rec.Phase == "starting" && rec.Stage == "prepare" {
 		where = "while preparing shaders"
 	}
-	tech := strings.TrimSpace(strings.Join(hostCrash, "\n"))
+	tech := strings.TrimSpace(strings.Join(append(append([]string{}, hostCrash...), decoded...), "\n"))
 	if tech == "" {
 		tech = strings.Join(errs[max(0, len(errs)-8):], "\n")
 	}
@@ -419,4 +446,17 @@ func (a *App) takeCrashNotice() *CrashNotice {
 	n := a.crashNotice
 	a.crashNotice = nil
 	return n
+}
+
+// rendererName: the session's graphics backend in words.
+func rendererName(backend string) string {
+	switch backend {
+	case "1":
+		return "Vulkan"
+	case "0":
+		return "OpenGL"
+	case "":
+		return "?"
+	}
+	return "backend " + backend
 }

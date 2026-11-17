@@ -252,12 +252,20 @@ jobs:
         working-directory: engine-src
         run: python tools/nexus/abi_smoke.py build/bin/nexus_engine.dll
 
+      # the engine's symbol table from this build's link map, checked against the DLL's exports
+      # (docs/CRASHES.md, "Engine symbols"); packaged next to the DLL below
+      - name: Engine symbols
+        working-directory: engine-src
+        shell: bash
+        run: python ../app/tools/release/make_symbols.py build/bin/nexus_engine.dll build/bin/nexus_engine.map build/bin/nexus_engine.symbols.gz --undname "$LLVM_ROOT/bin/llvm-undname.exe"
+
       - name: Package the engine
         working-directory: engine-src
         shell: bash
         env:
           NEXUS_ENGINE_UPSTREAM_BASE: ${{ steps.lock.outputs.base }}
           NEXUS_ENGINE_PATCHSET: ${{ steps.lock.outputs.patchset }}
+          NEXUS_REQUIRE_SYMBOLS: "1"
         # package_engine.py takes the version from GITHUB_REF_NAME; the runner's own value (the
         # branch name) wins over a step env entry, so it is set on the command itself
         run: GITHUB_REF_NAME="engine-v${{ steps.lock.outputs.version }}" python tools/nexus/package_engine.py build/bin ../engine-out
@@ -286,9 +294,14 @@ jobs:
           $fresh = Join-Path $env:RUNNER_TEMP 'fresh extract'
           Expand-Archive $z.FullName -DestinationPath $fresh
           $n = Join-Path $fresh 'NEXUS'
-          foreach ($f in 'NEXUS.exe', 'nexus_capture.dll', 'Engine/nexus_engine.dll', 'Engine/engine.json') {
+          foreach ($f in 'NEXUS.exe', 'nexus_capture.dll', 'Engine/nexus_engine.dll', 'Engine/engine.json', 'Engine/nexus_engine.symbols.gz') {
             if (!(Test-Path (Join-Path $n $f))) { throw "$f missing from the ZIP" }
           }
+          # the symbol table is the one of this DLL (its first line names the DLL's SHA-256)
+          $dllSha = (Get-FileHash (Join-Path $n 'Engine/nexus_engine.dll') -Algorithm SHA256).Hash.ToLower()
+          $gz = [IO.Compression.GZipStream]::new([IO.File]::OpenRead((Join-Path $n 'Engine/nexus_engine.symbols.gz')), [IO.Compression.CompressionMode]::Decompress)
+          $head = ([IO.StreamReader]::new($gz)).ReadLine(); $gz.Dispose()
+          if ($head -notmatch "^NEXUSSYM 1 $dllSha ") { throw "the packaged engine symbols are not for this nexus_engine.dll: $head" }
           # every DLL the engine imports is either in the package or a Windows system DLL
           $libs = @(Get-ChildItem (Join-Path $n 'Engine') -Recurse -Filter *.dll | ForEach-Object { $_.Name.ToLower() })
           $deps = dumpbin /dependents (Join-Path $n 'Engine/nexus_engine.dll') | Select-String '^\s+(\S+\.dll)$' | ForEach-Object { $_.Matches[0].Groups[1].Value.ToLower() }
@@ -339,17 +352,6 @@ jobs:
           name: NEXUS-${{ env.NEXUS_VERSION }}-Windows-x64
           path: out/*
           retention-days: 30
-
-      # the engine's link map: turns the module+offset frames of a crash report ("Host crash",
-      # docs/CRASHES.md) into function names. Kept apart from the download (testers do not need it).
-      - uses: actions/upload-artifact@v4
-        continue-on-error: true
-        timeout-minutes: 10
-        with:
-          name: NEXUS-${{ env.NEXUS_VERSION }}-engine-map
-          path: engine-src/build/bin/nexus_engine.map
-          if-no-files-found: warn
-          retention-days: 90
 
       # A release is published when a v* tag is pushed, or when main is built with a version
       # (app/VERSION) that has no release yet and has its notes in docs/releases/v<version>.md.
