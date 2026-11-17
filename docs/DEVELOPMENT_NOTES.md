@@ -70,3 +70,10 @@ texture cache's host-memory cap. Parsing is header-only so its tests run on Wind
   changes). Linux and headless Chrome: compare builds, do not quote as Windows figures.
 - Windows-only Go tests with real windows (`window_windows_test.go`) run in the Windows CI gate.
 
+### Edit the working copy, not `app/` directly
+`app/` is replaced from the working copy on every sync. A file edited only in the repository's
+`app/` (17 Nov: `engine.lock` and `NEXUS_ENGINE.md`) is silently reverted by the next sync; the
+engine base went back to build 177 in three commits that way before CI showed it ("HEAD is now at
+87d84d5" in the checkout step). After changing the engine base, check `app/engine.lock` in the
+commit.
+
