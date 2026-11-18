@@ -3558,6 +3558,7 @@ const Panels = {
     p.append(changedMark(rowChoice('On-screen keyboard', kbChoices, oskMode(), v => saveSettings({ input: { keyboard: v } }).then(rebuildPanel),
       oskMode() === 'steam' ? 'NEXUS asks Steam for its keyboard when you choose a text field (Steam must be running). If Steam does not answer, NEXUS\u2019s own keyboard opens.'
         : 'Automatic: on a Steam Deck and in Steam\u2019s Gaming Mode the keyboard opens whenever you choose a text field (touch, trackpad or controller); elsewhere only with a controller. A physical keyboard always types directly.'), 'input.keyboard'));
+    if (S.platform?.platform === 'linux') steamRows(p);
     p.append(h('h3', {}, 'Sounds'));
     p.append(changedMark(rowToggle('Interface sounds', S.settings.sound?.enabled, v => saveSettings({ sound: { enabled: v } }).then(rebuildPanel)), 'sound.enabled'));
     p.append(changedMark(rowRange('Sound volume', { min: 0, max: 100, step: 10, value: Math.round((S.settings.sound?.volume ?? .7) * 100), fmt: v => v + '%', onChange: (v, commit) => { S.settings.sound.volume = v / 100; if (commit) { saveSettings({ sound: { volume: v / 100 } }); Sound.play('select'); } } }), 'sound.volume'));
@@ -3569,6 +3570,29 @@ const Panels = {
   },
   startup(p) { this.general(p); },
 };
+// Steam (Linux): app menu entry and library artwork, each only on request (steam.go)
+function steamRows(p) {
+  const box = h('div');
+  p.append(h('h3', {}, 'Steam'), box);
+  const draw = st => {
+    box.replaceChildren();
+    box.append(rowButton(st.menuEntry ? 'App menu entry: installed' : st.menuStale ? 'Update the app menu entry' : 'Add NEXUS to the app menu', {
+      icon: I.plus, sub: st.menuEntry ? 'NEXUS appears in your app menu with its name and icon, and Steam\u2019s \u201cAdd a Non-Steam Game\u201d lists it that way.'
+        : `Adds NEXUS (${st.launcher}) with its icon to your app menu, in your own folders only. Then Steam \u203a Games \u203a Add a Non-Steam Game lists it as NEXUS with its icon.`,
+      onClick: async () => { try { draw(await api('/api/steam/menu-entry', { body: {} })); toast('NEXUS is in your app menu', I.check); } catch (e) { alertDlg('App menu entry', e.message); } } }));
+    const sc = st.shortcuts || [];
+    const art = sc.length && sc.every(x => x.artDone);
+    box.append(rowButton(art ? 'Steam artwork: in place' : 'Add NEXUS artwork to Steam', {
+      icon: I.image || I.plus,
+      sub: sc.length ? `NEXUS is in Steam ${sc.length === 1 ? 'once' : sc.length + ' times'}. Steam does not let a program set its own artwork; NEXUS copies its library images into Steam\u2019s custom artwork folder for that entry (your own images there are kept). Restart Steam (or the Steam Deck) to see them.`
+        : 'Add NEXUS to Steam first (Desktop Mode: right-click the AppImage \u203a Add to Steam, or Steam \u203a Games \u203a Add a Non-Steam Game), then come back here.',
+      onClick: async () => {
+        if (!await confirmDlg('Add NEXUS artwork to Steam?', 'NEXUS copies five images (library tile, wide tile, header, logo, icon) into Steam\u2019s custom artwork folder for its own entry. Steam\u2019s other files and your other games are not changed, and images you set yourself are kept.', 'Add artwork')) return;
+        try { const r = await api('/api/steam/artwork', { body: {} }); draw(r.status); toast(r.installed ? 'Artwork added. Restart Steam to see it.' : 'Your own artwork is already set', I.check, 5000); } catch (e) { alertDlg('Steam artwork', e.message); }
+      } }));
+  };
+  api('/api/steam').then(draw).catch(() => { });
+}
 function startupRows(p) {
   const st = S.settings.startup || {};
   const oot = st.animation === 'oot';

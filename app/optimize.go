@@ -322,6 +322,48 @@ func switch2Limits(v, why map[string]string) {
 	}
 }
 
+// isSteamDeckHW: the hardware is a Steam Deck (its APU, detected in hardware_sysfs.go).
+func isSteamDeckHW(h Hardware) bool {
+	for _, g := range h.GPUs {
+		if g.VendorID == vendorAMD && steamDeckGPUs[g.DeviceID] != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// steamDeckSwitch2 tunes a Switch 2 game for the Steam Deck (8 RDNA 2 compute units, 4 Zen 2
+// cores, 16 GB shared by CPU and GPU, a 1280x800 screen). Like Fritchii's handheld tuning for the
+// ROG Ally X (handheld mode, Low GPU accuracy, asynchronous shaders, upscaling to the screen),
+// scaled down for the Deck: the game's handheld 1080p rendered at 0.75x (810p, the Deck's screen)
+// in Balanced/Quality and 0.5x (540p, upscaled with FSR) in Performance, and a 30 fps cap so the
+// Deck's GPU and battery are not spent on frames it cannot hold (an uneven 30-40 fps looks worse
+// than a steady 30). Reactive flushing and conservative video memory stay as switch2Limits sets.
+func steamDeckSwitch2(v, why map[string]string, p OptProfile) {
+	v["system.docked"] = "handheld"
+	why["system.docked"] = "Steam Deck: handheld mode renders Switch 2 games at 1080p instead of docked 1440p-4K."
+	v["graphics.scale"] = "0.75"
+	why["graphics.scale"] = "Steam Deck: 0.75x of handheld 1080p is 810p, the Deck's own screen resolution."
+	if p == OptPerformance {
+		v["graphics.scale"] = "0.5"
+		why["graphics.scale"] = "Steam Deck (Performance): 0.5x of handheld 1080p is 540p, upscaled to the screen with FSR."
+	}
+	v["adv.filter"] = "fsr1"
+	why["adv.filter"] = "AMD FSR 1 upscales to the Deck's screen sharply at almost no cost."
+	v["adv.gpu_accuracy"] = "low"
+	why["adv.gpu_accuracy"] = "Low GPU accuracy is what Fritchii's handheld tuning uses; High costs the Deck's small GPU too much."
+	v["adv.async_shaders"] = "true"
+	why["adv.async_shaders"] = "Shaders compile in the background, so new effects pop in instead of freezing the game."
+	v["graphics.aa"] = "none"
+	why["graphics.aa"] = "No anti-aliasing: FSR's upscale and the small screen hide edges; the GPU is better spent on frame rate."
+	v["graphics.vsync"] = "mailbox"
+	why["graphics.vsync"] = "Mailbox: no tearing without standard VSync's extra wait."
+	v["graphics.fps_limit"] = "30"
+	why["graphics.fps_limit"] = "A steady 30 fps on the Deck instead of an uneven rate that drains the battery."
+	v["adv.astc"] = "gpu"
+	why["adv.astc"] = "The Deck's GPU decodes ASTC textures faster than its 4-core CPU."
+}
+
 func atofSafe(s string) float64 {
 	var f float64
 	_, err := fmt.Sscanf(s, "%g", &f)
@@ -359,6 +401,10 @@ func (e *Emulator) Plan(p OptProfile, gameKey string) (OptPlan, error) {
 	if game != nil && isSwitch2Title(game.TitleID) {
 		switch2Limits(vals, why)
 		plan.Notes = append(plan.Notes, game.Title+" is a Switch 2 game, so NEXUS keeps the settings the engine is tested with: reactive flushing on, conservative video memory and no resolution scaling above 1x.")
+		if isSteamDeckHW(h) {
+			steamDeckSwitch2(vals, why, p)
+			plan.Notes = append(plan.Notes, "Steam Deck: handheld mode at about the Deck's own screen resolution, low GPU accuracy, background shader compilation and a steady 30 fps. The Deck has about half the graphics and processor power of a ROG Ally X, so Switch 2 games run well below the Ally X's frame rates; these settings aim for a steady, playable rate.")
+		}
 	}
 	caps := EngineCaps()
 	global := e.GlobalNexusSettings()

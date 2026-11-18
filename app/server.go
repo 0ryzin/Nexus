@@ -2374,6 +2374,23 @@ func (s *Server) routes() {
 		writeJSON(w, map[string]any{"status": st, "account": a.Account.Status()})
 	})
 	m.HandleFunc("POST /api/account/link/cancel", func(w http.ResponseWriter, r *http.Request) { a.Account.CancelLink(); acct(w, nil) })
+	// Steam integration (steam.go), each step on request
+	m.HandleFunc("GET /api/steam", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, a.SteamStatus()) })
+	m.HandleFunc("POST /api/steam/menu-entry", func(w http.ResponseWriter, r *http.Request) {
+		if err := a.InstallMenuEntry(); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, a.SteamStatus())
+	})
+	m.HandleFunc("POST /api/steam/artwork", func(w http.ResponseWriter, r *http.Request) {
+		n, err := a.InstallSteamArtwork()
+		if err != nil {
+			writeErr(w, 409, err)
+			return
+		}
+		writeJSON(w, map[string]any{"installed": n, "status": a.SteamStatus()})
+	})
 	// game saves through the account (savesync.go)
 	m.HandleFunc("GET /api/saves/sync", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, a.SaveSync.Status()) })
 	m.HandleFunc("POST /api/saves/sync/resolve", func(w http.ResponseWriter, r *http.Request) {

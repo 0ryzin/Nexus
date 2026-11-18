@@ -356,6 +356,14 @@ jobs:
           name: NEXUS-${{ env.NEXUS_VERSION }}-Windows-x64
           path: out/*
           retention-days: 30
+      # for testers: the ZIP on its own, as a direct file (not inside another ZIP)
+      - uses: actions/upload-artifact@v7
+        continue-on-error: true
+        timeout-minutes: 10
+        with:
+          path: out/NEXUS-${{ env.NEXUS_VERSION }}-Windows-x64.zip
+          archive: false
+          retention-days: 30
 
       # A release is published when a v* tag is pushed, or when main is built with a version
       # (app/VERSION) that has no release yet and has its notes in docs/releases/v<version>.md.

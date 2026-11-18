@@ -371,6 +371,23 @@ jobs:
           docker run --rm -v "$PWD:/w" -w /w ubuntu:24.04 bash -c \
             "apt-get update >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb xauth imagemagick libgl1 libegl1 libgles2 libgbm1 libdrm2 libasound2t64 libgtk-3-0t64 >/dev/null && ! ls /usr/lib/*/libwebkit2gtk-4.1.so* 2>/dev/null && APPIMAGE_EXTRACT_AND_RUN=1 bash app/tools/release/linux/smoke.sh /w/$ai /w/smoke-ubuntu ubuntu"
 
+      # for testers: each download on its own, not zipped (a direct file, like on a release page)
+      - name: Find the downloads
+        id: files
+        run: |
+          echo "appimage=$(ls out/NEXUS-*-Linux-${{ matrix.arch }}.AppImage)" >> "$GITHUB_OUTPUT"
+          echo "tar=$(ls out/NEXUS-*-Linux-${{ matrix.arch }}.tar.gz)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          path: ${{ steps.files.outputs.appimage }}
+          archive: false
+          retention-days: 14
+      - uses: actions/upload-artifact@v7
+        with:
+          path: ${{ steps.files.outputs.tar }}
+          archive: false
+          retention-days: 14
+      # everything with the test logs and screenshots (the release workflow takes the files from here)
       - uses: actions/upload-artifact@v4
         if: always()
         with:

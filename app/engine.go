@@ -471,6 +471,7 @@ func (e *Emulator) Launch(g *Game, profileID string) error {
 	if p, ok := e.app.Profiles.Get(profileID); ok {
 		pr = &p
 	}
+	e.steamDeckFirstLaunch(g)
 	cfg, err := e.writeSessionConfig(g, pr)
 	if err != nil {
 		return &LaunchError{Code: "config", Message: "Could not prepare the game's settings.", Detail: err.Error()}
@@ -1032,8 +1033,8 @@ func (e *Emulator) checkMemoryLayout(g *Game, s GlobalSettings) error {
 				g.Title, float64(total)/1024)})
 		}
 	}
-	if gb <= 4 {
-		return nil
+	if gb <= 4 || g != nil && isSwitch2Title(g.TitleID) {
+		return nil // Switch 2 programs get 12 GB from the engine whatever is set (warned above)
 	}
 	total := e.app.DetectHardware(false).Memory.TotalMB
 	if total <= 0 {
@@ -1075,4 +1076,23 @@ func frameGenShown(fg *FrameGenStatus, on bool) string {
 		return ""
 	}
 	return fg.State
+}
+
+// steamDeckFirstLaunch: the first time a Switch 2 game starts on a Steam Deck and the user has
+// not set anything for it, NEXUS applies its Steam Deck settings for that game (optimize.go,
+// steamDeckSwitch2) once, as a game-specific optimisation that Game settings › Optimise can
+// restore. The global settings are not touched, and nothing is applied a second time.
+func (e *Emulator) steamDeckFirstLaunch(g *Game) {
+	if g == nil || !isSwitch2Title(g.TitleID) || !isSteamDeckHW(e.app.DetectHardware(false)) {
+		return
+	}
+	if len(gameNexusSettings(e.app.Library.GP.Get(g.Key))) > 0 || e.OptBackupInfo(g.Key) != nil {
+		return
+	}
+	if _, err := e.ApplyPlan(OptBalanced, g.Key, nil); err != nil {
+		e.app.Log.Printf("optimiser: Steam Deck settings for %s: %v", g.Title, err)
+		return
+	}
+	e.app.Log.Printf("optimiser: Steam Deck settings applied to %s (first start on this Deck)", g.Title)
+	e.app.Events.Emit("launch.warning", map[string]any{"message": "Steam Deck settings were applied to " + g.Title + " (handheld mode, about 810p, steady 30 fps). Game settings › Optimise for my device changes or restores them."})
 }
