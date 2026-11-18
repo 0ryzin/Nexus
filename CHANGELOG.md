@@ -18,7 +18,8 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
   AMD64 Linux PC and the Steam Deck, plus ARM64; each as an AppImage (everything inside) and a
   tar.gz (uses the system's WebKitGTK 4.1). Gaming Mode is detected: full screen, no window
   decoration, F11 off. Linux updates are announced, with a link to the release page.
-  See docs/LINUX.md. Not yet tested on a Steam Deck.
+  See docs/LINUX.md. Not yet tested on a Steam Deck. Known issue: Switch 2 games' AV1 movies
+  do not play on Linux yet (the Linux engine has no AV1 decoder).
 - **Frame generation shows the truth:** while a game runs, NEXUS shows whether frame generation
   is really running or why not (engine patch 0033). The built-in method is named for what it is,
   NEXUS's optical-flow interpolation on any Vulkan GPU, instead of "AMD FSR 3".
