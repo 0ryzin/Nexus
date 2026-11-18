@@ -562,6 +562,9 @@ func (e *Emulator) startEngine(host EngineHost, req EngineRequest, st RunState) 
 // WaitMonitors waits until every session's monitor has finished its last writes.
 func (e *Emulator) WaitMonitors() { e.monitors.Wait() }
 
+// sleepGap: a pause of the 250 ms session ticker this long means the computer was asleep.
+var sleepGap = 10 * time.Second
+
 // checkpointEvery is how often an in-progress session is saved so that a crash of NEXUS or of
 // the PC loses at most this much play time.
 var checkpointEvery = 30 * time.Second
@@ -600,7 +603,22 @@ func (e *Emulator) monitor(host EngineHost, st RunState, frameGenOn bool) {
 	tick := time.NewTicker(250 * time.Millisecond)
 	defer tick.Stop()
 	var final EngineStatus
+	lastMono, lastWall := time.Now(), time.Now().Round(0)
 	for range tick.C {
+		// the computer slept (Steam Deck suspend, a laptop lid): the ticker stops while asleep.
+		// Linux's monotonic clock stops too, so only the wall clock shows the gap; Windows's
+		// keeps running, so time asleep must be taken out of play time here.
+		monoGap, wallGap := time.Since(lastMono), time.Now().Round(0).Sub(lastWall)
+		lastMono, lastWall = time.Now(), time.Now().Round(0)
+		if monoGap > sleepGap || wallGap > sleepGap {
+			if monoGap > sleepGap && st.Phase == "playing" && !st.Suspended {
+				playStart = playStart.Add(monoGap)
+			}
+			e.app.Log.Printf("engine: the computer was asleep for about %s; not counted as play time", max(monoGap, wallGap).Round(time.Second))
+			if e.app.Account != nil {
+				e.app.Account.Kick() // saves and play time catch up after waking
+			}
+		}
 		es := host.Status()
 		if es.System != "" {
 			gameSystem = es.System

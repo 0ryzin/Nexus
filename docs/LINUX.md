@@ -153,6 +153,22 @@ On Linux, NEXUS checks for new versions and shows them. Its button opens the rel
 does not replace its own files. AppImages can be in read-only places, and the tar.gz may be
 packaged by a distribution.
 
+Every file is downloaded on its own: each build is a separate CI artifact and a separate
+release asset (no nested `Nexus/out` folders). The tar.gz unpacks to one `NEXUS-<v>-Linux-<arch>`
+folder. On Windows, the updater downloads the same ZIP as the release page, because NEXUS and
+its engine must match; separate engine updates are not offered.
+
+## Sleep, wake and controllers (0.8.0)
+
+- **Sleep** (Steam Deck suspend, a laptop lid): the game is frozen by the system and continues
+  on wake. Time asleep is not counted as play time (`engine.go`: a pause of the session ticker
+  longer than 10 s), and the NEXUS Account synchronises saves and play time after waking.
+  Not tested on a Deck.
+- **Controllers** coming and going: NEXUS's menus follow the Gamepad API (a controller that
+  returns with a button held does not press it; `controller_prompts.py`); in a game the engine
+  (SDL) picks a reconnected controller up again. Not tested with the Deck's own controls.
+- **After a game** NEXUS's window comes back to the front (and full screen in Gaming Mode).
+
 ## Switch 2 controllers
 
 | Controller | Linux status |
