@@ -5,6 +5,18 @@ Newest first.
 
 ## 0.8.0 (in development)
 
+### Play time nearly doubled on the Steam Deck (15.5 h shown as ~31 h, 18 Nov)
+- **Evidence (the user's PC data):** the account listed the PC three times ("Toms_Pc", three
+  device IDs, one per earlier sign-in) plus the Deck. Each PC ID's last upload of its play time
+  was kept, and every device added up all other devices' uploads. The PC's 55,770 s were added two
+  or three times on the Deck. (The PC's `adjusted` field, 53,989 s, is only a note of a manual
+  correction and is not counted again.)
+- **Fix:** `ProfileStore.Stats` adds another device's record only if it is not an older upload of
+  one already counted: records that share a session start second or the first-play second come
+  from the same install, and only the newest counts. Applies to this device's own older uploads
+  too. Nothing is deleted or rewritten. (Re-sign-in already keeps the device ID since 0.7.)
+- **Test:** `TestStatsOneDeviceUnderSeveralIDs` (the user's numbers).
+
 ### "MiNS" could not be deleted (Steam Deck report, 18 Nov)
 - **Problem:** typing the user's name in the delete dialog and pressing Enter did not delete it.
 - **Causes (three):**

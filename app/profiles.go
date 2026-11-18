@@ -452,22 +452,52 @@ func (st *ProfileStore) statsPath(id string) string {
 	return filepath.Join(st.profileDir(id), "stats.json")
 }
 
-// Stats is the user's play statistics: this device's own, plus — for a user linked to other
-// devices (experimental Device Linking) — the play time those devices reported, added up.
+// Stats is the user's play statistics: this device's own, plus the play time other devices
+// reported (NEXUS Account, Device Linking), added up.
+//
+// One device can appear under several device IDs: each sign-in on a PC used to give it a new
+// one, and the account keeps every ID's last upload. Adding them all counted that device's time
+// two or three times (a user's 15.5 h showed as 31 h on the Steam Deck). A record is therefore
+// added only when it is not an older copy of one already counted: records that share a session
+// (the same start second) or the same first-play second come from the same install, and only the
+// newest of them counts. This device's own older uploads are recognised the same way. Nothing
+// is deleted; this only decides what is added up.
 func (st *ProfileStore) Stats(id string) ProfileStats {
 	out := st.LocalStats(id)
 	entries, _ := os.ReadDir(filepath.Join(st.profileDir(id), "stats-devices"))
+	byGame := map[string][]*GameStat{}
 	for _, e := range entries {
 		var snap struct {
 			Stats ProfileStats `json:"stats"`
 		}
-		if readJSON(filepath.Join(st.profileDir(id), "stats-devices", e.Name()), &snap) != nil {
+		if !strings.HasSuffix(e.Name(), ".json") || readJSON(filepath.Join(st.profileDir(id), "stats-devices", e.Name()), &snap) != nil {
 			continue
 		}
 		for k, g := range snap.Stats.Games {
-			if g == nil {
+			if g != nil {
+				byGame[k] = append(byGame[k], g)
+			}
+		}
+	}
+	for k, recs := range byGame {
+		// newest first, so an older copy of the same install is the one left out
+		sort.SliceStable(recs, func(i, j int) bool { return recs[i].LastPlayed > recs[j].LastPlayed })
+		var counted []*GameStat
+		if cur := out.Games[k]; cur != nil {
+			counted = append(counted, cur)
+		}
+		for _, g := range recs {
+			dup := false
+			for _, c := range counted {
+				if sameStatLineage(g, c) {
+					dup = true
+					break
+				}
+			}
+			if dup {
 				continue
 			}
+			counted = append(counted, g)
 			cur := out.Games[k]
 			if cur == nil {
 				c := *g
@@ -505,6 +535,26 @@ func (st *ProfileStore) Stats(id string) ProfileStats {
 		}
 	}
 	return out
+}
+
+// sameStatLineage: two records of one game come from the same install (one is an older upload
+// of the other): they share a session start second, or the same first-play second.
+func sameStatLineage(a, b *GameStat) bool {
+	if a.FirstPlay != 0 && a.FirstPlay == b.FirstPlay {
+		return true
+	}
+	starts := map[int64]bool{}
+	for _, s := range b.History {
+		if s.Start != 0 {
+			starts[s.Start] = true
+		}
+	}
+	for _, s := range a.History {
+		if starts[s.Start] {
+			return true
+		}
+	}
+	return false
 }
 
 // LocalStats is the play time recorded on this device only.
