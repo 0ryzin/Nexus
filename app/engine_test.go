@@ -461,7 +461,7 @@ func fakeDLL(tag string) []byte {
 // makeEngineZip builds a packaged engine in the layout package_engine.py produces:
 // nexus_engine.dll, Libraries/SDL3.dll, engine.json with the SHA-256 of both.
 func makeEngineZip(t *testing.T, version string, api int, corrupt bool) string {
-	files := map[string][]byte{"nexus_engine.dll": fakeDLL(version), "Libraries/SDL3.dll": fakeDLL("sdl" + version)}
+	files := map[string][]byte{engineLibName: fakeDLL(version), "Libraries/SDL3.dll": fakeDLL("sdl" + version)}
 	m := EngineManifest{Name: "NEXUS Engine", Version: version, API: api, Commit: "abc", UpstreamBase: "build-130", Files: map[string]string{}}
 	for n, d := range files {
 		sum := sha256.Sum256(d)
@@ -569,7 +569,7 @@ func TestEngineBuildsInstallActivateRollback(t *testing.T) {
 	if _, err := b.Rollback(); err == nil {
 		t.Fatal("nothing earlier than the bundled engine")
 	}
-	os.WriteFile(filepath.Join(b.BuildsDir(), "1.1.0", "nexus_engine.dll"), []byte("MZ broken"), 0o644)
+	os.WriteFile(filepath.Join(b.BuildsDir(), "1.1.0", engineLibName), []byte("MZ broken"), 0o644)
 	if err := b.Activate("1.1.0"); err == nil {
 		t.Fatal("damaged build activated")
 	}

@@ -68,7 +68,7 @@ func (b *EngineBuilds) currentFile() string { return filepath.Join(b.BuildsDir()
 
 // BundledPresent: the NEXUS folder contains an engine.
 func (b *EngineBuilds) BundledPresent() bool {
-	return fileExists(filepath.Join(b.Root(), "engine.json")) && fileExists(filepath.Join(b.Root(), "nexus_engine.dll"))
+	return fileExists(filepath.Join(b.Root(), "engine.json")) && fileExists(filepath.Join(b.Root(), engineLibName))
 }
 
 // selection is the side build the user switched to ("" = the bundled engine).
@@ -78,7 +78,7 @@ func (b *EngineBuilds) selection() string {
 		return ""
 	}
 	v := strings.TrimSpace(string(data))
-	if !safeVersion.MatchString(v) || v == bundledVersion || !fileExists(filepath.Join(b.BuildsDir(), v, "nexus_engine.dll")) {
+	if !safeVersion.MatchString(v) || v == bundledVersion || !fileExists(filepath.Join(b.BuildsDir(), v, engineLibName)) {
 		return ""
 	}
 	return v
@@ -122,7 +122,7 @@ func (b *EngineBuilds) ActiveDir() string {
 
 func (b *EngineBuilds) HasActive() bool {
 	d := b.ActiveDir()
-	return d != "" && fileExists(filepath.Join(d, "nexus_engine.dll"))
+	return d != "" && fileExists(filepath.Join(d, engineLibName))
 }
 
 // VerifyActive checks the engine in use against its manifest once per run.
@@ -178,8 +178,8 @@ func verifyBuild(dir string) (EngineManifest, error) {
 	if m.API != engineAPIVersion {
 		return m, fmt.Errorf("this engine build uses interface version %d; this NEXUS needs version %d", m.API, engineAPIVersion)
 	}
-	if _, ok := m.Files["nexus_engine.dll"]; !ok {
-		return m, errors.New("the build does not contain nexus_engine.dll")
+	if _, ok := m.Files[engineLibName]; !ok {
+		return m, errors.New("the build does not contain " + engineLibName)
 	}
 	for name, want := range m.Files {
 		if strings.ContainsAny(name, `\:`) || strings.Contains(name, "..") || strings.HasPrefix(name, "/") {

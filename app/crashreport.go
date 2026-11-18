@@ -293,7 +293,7 @@ func (a *App) writeCrashReport(rec sessionRecord, now time.Time) (*CrashNotice, 
 	fmt.Fprintf(&b, "Game:           %s (%s)\n", rec.Game, firstNonEmpty(rec.TitleID, "?"))
 	fmt.Fprintf(&b, "NEXUS / engine: %s / %s\n", rec.NEXUS, firstNonEmpty(rec.Engine, "?"))
 	if rec.EngineSHA != "" {
-		fmt.Fprintf(&b, "Engine build:   commit %.12s, nexus_engine.dll SHA-256 %.16s…\n", firstNonEmpty(rec.Commit, "?"), rec.EngineSHA)
+		fmt.Fprintf(&b, "Engine build:   commit %.12s, %s SHA-256 %.16s…\n", firstNonEmpty(rec.Commit, "?"), engineLibName, rec.EngineSHA)
 	}
 	fmt.Fprintf(&b, "Renderer:       %s\n", rendererName(rec.Settings["backend"]))
 	fmt.Fprintf(&b, "Session start:  %s\n", rec.Started.Format(time.RFC1123))

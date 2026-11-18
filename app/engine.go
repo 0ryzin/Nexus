@@ -211,7 +211,7 @@ func (e *Emulator) Host() (EngineHost, error) {
 func (e *Emulator) EngineAvailable() (bool, string) {
 	if !fakeEngineEnabled() {
 		if !e.Builds.HasActive() {
-			return false, "The NEXUS engine is missing from the NEXUS folder (Engine\\nexus_engine.dll). Extract the complete NEXUS ZIP again, keeping all folders together."
+			return false, fmt.Sprintf("The NEXUS engine is missing from the NEXUS folder (%s). Extract the complete NEXUS download again, keeping all folders together.", filepath.Join("Engine", engineLibName))
 		}
 		if err := e.Builds.VerifyActive(); err != nil {
 			return false, "The NEXUS engine files are damaged or incomplete: " + err.Error() + " Extract the complete NEXUS ZIP again."

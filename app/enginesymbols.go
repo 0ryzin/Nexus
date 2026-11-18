@@ -124,7 +124,7 @@ func (s *engineSymbols) decodeEngineFrames(lines []string) []string {
 // engineDLLHash: the SHA-256 of the engine in dir, from its engine.json (verified when loaded).
 func engineDLLHash(dir string) string {
 	if m, err := readManifest(dir); err == nil {
-		return strings.ToLower(m.Files["nexus_engine.dll"])
+		return strings.ToLower(m.Files[engineLibName])
 	}
 	return ""
 }
