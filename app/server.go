@@ -2542,6 +2542,14 @@ func (s *Server) routes() {
 		a.SteamOffered(b.What)
 		writeJSON(w, a.SteamStatus())
 	})
+	m.HandleFunc("POST /api/steam/add", func(w http.ResponseWriter, r *http.Request) {
+		res, err := a.AddNexusToSteam()
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, map[string]any{"added": res.Added, "already": res.Already, "appId": res.AppID, "art": res.Art, "status": a.SteamStatus()})
+	})
 	m.HandleFunc("POST /api/steam/artwork", func(w http.ResponseWriter, r *http.Request) {
 		n, err := a.InstallSteamArtwork()
 		if err != nil {

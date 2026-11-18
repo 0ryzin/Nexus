@@ -129,6 +129,22 @@ folders). A downloaded AppImage or an unpacked tar.gz has no entry there until s
 one; its executable permission does not matter for that list. Right-click › *Add to Steam*
 (KDE/Dolphin) adds the file itself, so Steam gets no icon. Steam does not discover AppImages.
 
+**Add NEXUS to Steam (0.8.0):** *Settings › General › Steam › Add NEXUS to Steam* adds one
+non-Steam entry, "NEXUS", for every Steam user on the device: the AppImage (or the tar.gz's
+`nexus`) as the program, its folder as the start folder, NEXUS's icon, the Steam overlay allowed,
+and NEXUS's artwork for that entry. Steam has no supported interface for this; its own dialog
+and tools such as Steam ROM Manager (which EmuDeck uses) write the same file,
+`userdata/<id>/config/shortcuts.vdf`. NEXUS only adds while Steam is closed (Steam rewrites the
+file on exit), keeps a backup, inserts its entry without changing a byte of the others, never
+adds NEXUS twice, and restores the backup if the result does not read back correctly
+(`steam_add.go`, `TestAddNexusToSteam`). Not yet tested with Steam on a Deck.
+
+**The Steam overlay:** the engine runs inside the NEXUS process (it is a library NEXUS loads, not
+a second program), and the game is drawn by that process. Steam's overlay is loaded into the
+program Steam starts (`LD_PRELOAD`), which NEXUS's launcher keeps, so the overlay should show
+over NEXUS and over the game alike; Steam tracks NEXUS's play time, not the game's. Not yet
+confirmed on a Deck.
+
 **What NEXUS does:** on the first Home after start in Desktop Mode, NEXUS offers once to add
 itself to the app menu (asks; nothing changes without *Add to app menu*). The entry starts the
 AppImage itself (`$APPIMAGE`) or the tar.gz's `nexus`, in its own folder, with NEXUS's name and

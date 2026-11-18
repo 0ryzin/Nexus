@@ -43,7 +43,7 @@ func steamRunning() bool {
 	home, _ := os.UserHomeDir()
 	for _, p := range []string{home + "/.steam/steam.pid", home + "/.local/share/Steam/steam.pid"} {
 		if b, err := os.ReadFile(p); err == nil {
-			if pid := strings.TrimSpace(string(b)); pid != "" && fileExists("/proc/"+pid) {
+			if pid := strings.TrimSpace(string(b)); pid != "" && dirExists("/proc/"+pid) { // /proc/<pid> is a folder (fileExists was always false)
 				return true
 			}
 		}

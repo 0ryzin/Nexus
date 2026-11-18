@@ -3744,6 +3744,20 @@ function steamRows(p) {
         : `Adds NEXUS (${st.launcher}) with its icon to your app menu, in your own folders only. Then Steam \u203a Games \u203a Add a Non-Steam Game lists it as NEXUS with its icon.`,
       onClick: async () => { try { draw(await api('/api/steam/menu-entry', { body: {} })); toast('NEXUS is in your app menu', I.check); } catch (e) { alertDlg('App menu entry', e.message); } } }));
     const sc = st.shortcuts || [];
+    box.append(rowButton(sc.length ? 'NEXUS is in Steam' : 'Add NEXUS to Steam', {
+      icon: I.plus,
+      sub: sc.length ? `In your Steam library${sc.length > 1 ? ` (${sc.length} entries)` : ''}. In Gaming Mode it is under Library \u203a Non-Steam.`
+        : st.steamFound ? 'Adds NEXUS to your Steam library as a non-Steam game (name, icon, artwork, the Steam overlay allowed), so it starts from Gaming Mode like any game. Steam must be closed while NEXUS adds it.'
+        : 'Steam was not found on this device.',
+      onClick: async () => {
+        if (sc.length) { alertDlg('NEXUS is in Steam', 'NEXUS is already in your Steam library; it is not added twice.'); return; }
+        if (!await confirmDlg('Add NEXUS to Steam?', 'NEXUS adds one entry, \u201cNEXUS\u201d, to your Steam library\u2019s non-Steam games (Steam\u2019s shortcuts file), with its icon and artwork. Your other games and shortcuts are not changed, and a backup of the file is kept.\n\nSteam must be closed first (Desktop Mode: Steam \u203a Exit). Start Steam again afterwards; in Gaming Mode NEXUS is under Library \u203a Non-Steam.', 'Add to Steam')) return;
+        try {
+          const r = await api('/api/steam/add', { body: {} });
+          draw(r.status);
+          alertDlg('NEXUS was added to Steam', r.added.length ? `Added for ${r.added.length} Steam user${r.added.length > 1 ? 's' : ''}${r.art ? ', with its artwork' : ''}. Start Steam to see it.` : 'NEXUS was already in Steam.');
+        } catch (e) { alertDlg('Add NEXUS to Steam', e.message); }
+      } }));
     const art = sc.length && sc.every(x => x.artDone);
     box.append(rowButton(art ? 'Steam artwork: in place' : 'Add NEXUS artwork to Steam', {
       icon: I.image || I.plus,
