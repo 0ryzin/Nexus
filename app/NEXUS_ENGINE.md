@@ -1,8 +1,8 @@
 # The NEXUS engine: investigation, architecture, status and plan
 
-## NEXUS Engine 0.8.0 (in development): Lichii build 316, patches 0018-0030
+## NEXUS Engine 0.8.0 (in development): Lichii build 316, patches 0018-0038
 
-Base: Lichii `build-316` (`5a66c8959`), 30 NEXUS patches. Interface version stays 2; the additions
+Base: Lichii `build-316` (`5a66c8959`), 38 NEXUS patches. Interface version stays 2; the additions
 below are optional exports that NEXUS looks up by name (older engine builds simply lack them).
 
 | Patch | What |
@@ -20,6 +20,10 @@ below are optional exports that NEXUS looks up by name (older engine builds simp
 | 0028 | The boot precache keeps the programs it built when it is skipped (*Start now*) or stopped (`<precache>.partial`), so the next boot builds only the rest (docs/SHADERS.md) |
 | 0029 | `package_engine.py` packages `nexus_engine.symbols.gz` (checked to name this DLL's SHA-256) next to the DLL; `NEXUS_REQUIRE_SYMBOLS` (docs/CRASHES.md, "Engine symbols") |
 | 0030 | Shared shader cache: request field `"shaderDir"` (session and preparation); portable data there, this GPU's and driver's files and the precache markers in the user's own folder (`common/fs/nexus_shared_cache.h`); preparing a title serialised by `warm-compute.bin.lock` (docs/SHADERS.md) |
+| 0031 | Port of Lichii `9f5aa40e5` (build-341): SDL 3.4.20 with libusb and its two Switch 2 sensor fixes; the Switch 2 Pro Controller is named as such. Gives SDL's Switch 2 driver (USB) on Windows and Linux. Lichii's udev rule is shipped for Linux as `72-nexus-switch2.rules` |
+| 0032 | Build part of Lichii `d48582e89`: SDL3 skips its static export when not installed (needed with libusb). The Windows-only Bluetooth backend (`b5047b237`) is not taken |
+| 0033 | The status JSON reports `"frameGen": {"state", "generated"}`, the renderer's real frame generation state; NEXUS shows it while a game runs |
+| 0034-0038 | Ports of Lichii build-341 fixes that affect Switch 1 games: `d4acca920` dynarmic code-page invalidation without a race; `62fa4e1c4` + `22550579c` (#1925) slope depth bias scaled to guest pixels only on rescaled targets; `833fdf671` (#2070) VP9 range encoder carries; `31f1378a3` (#2074) output stage buffer read back (Switch Sports black water, #2066) |
 
 `nexus_engine_prepare_shaders(json)`: `{"game", "dataDir", "configFile", "titleId": "<hex>",
 "contents": [...], "force": false}`; 0 started, -1 a game or preparation runs, -2 bad request. It

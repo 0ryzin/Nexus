@@ -14,6 +14,19 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
 
 ## 0.8.0 — in development (not released)
 
+- **Linux and Steam Deck (built and tested by CI, not released):** one AMD64 build for every
+  AMD64 Linux PC and the Steam Deck, plus ARM64; each as an AppImage (everything inside) and a
+  tar.gz (uses the system's WebKitGTK 4.1). Gaming Mode is detected: full screen, no window
+  decoration, F11 off. Linux updates are announced, with a link to the release page.
+  See docs/LINUX.md. Not yet tested on a Steam Deck.
+- **Frame generation shows the truth:** while a game runs, NEXUS shows whether frame generation
+  is really running or why not (engine patch 0033). The built-in method is named for what it is,
+  NEXUS's optical-flow interpolation on any Vulkan GPU, instead of "AMD FSR 3".
+- **Switch 2 Pro Controller over USB (experimental):** SDL 3.4.20 with libusb from Lichii
+  build-341 (engine patches 0031/0032). On Linux it needs a udev rule the user installs (shipped,
+  never installed by NEXUS). Not tested with the controller.
+- **Switch 1 fixes from Lichii build-341** (engine patches 0034-0038): dynarmic invalidation race,
+  slope depth bias at higher resolutions, VP9 video, Switch Sports black water.
 - **Game menu with a controller on Home:** X (the Search button) on a game opens the same menu
   as a right-click (Options/Y and keyboard X still work); also from the Cards/Grid details panel.
   X elsewhere on Home still opens the Library search.

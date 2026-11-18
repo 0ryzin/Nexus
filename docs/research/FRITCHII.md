@@ -22,6 +22,7 @@ GitHub release pages themselves could not be read from this environment.
 | v5.7 | 36 | **Texture-cache ceiling 7680 MiB** (VRAM 10 → ~6 GB over 30 min at 58.8 fps, upstream); **EXP49 async read-back** (Stalchild fight 51.9 → 56.9 fps); JIT warm-up; zero-page pass (trim untouched pages); no 40 MB/s game-file read pacing; one barrier pair for runs of uploads (Lichii #1245) |
 | v5.8 | 16 | Own data folder imported automatically; **EXP48** stop write-protecting guest pages the CPU rewrites every frame; **EXP63** per-thread GPU page-translation cache; NVN conditional render macro on the back thread; skip dynarmic IR verification; **do not wait for time services when settings are applied during loading** (#1168, UI froze until loading ended); 16-byte block-linear swizzle |
 | v5.8.1 … v5.8.4 | 12 | Save tools; DLSS quality per game; **EXP47 reverted** (read-back lock bits) |
+| v6 / v6.1 (18 Nov) | ~2,000 after Lichii build-341 | Built on Lichii build-341. **Removes frame generation completely** (`9f95262d0`: LSFG, the built-in optical-flow interpolation, settings and UI; FSR 3.1 upscaling and DLSS super resolution kept). Relocation memory for the texture cache, compute skip built in, window filter Auto, Windows exe renamed `fritchii.exe`. A `linux-port` branch builds an AppImage (Steam shader cache size, Linux crash handler) |
 
 ## Relevance to NEXUS
 

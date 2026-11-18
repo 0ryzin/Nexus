@@ -15,6 +15,24 @@ Sources examined: the engine fork's local history (tags `build-65` … `build-16
 the 30 commits `build-150..build-160` and the OoT-related commits `build-130..build-150`, read
 from their commit messages and diffs.
 
+## Build 316 → 341 (145 commits, tag 17 Nov 2026) - studied 18 Nov
+
+Mostly Switch 2 (NX2) texture-cache write-back work (about 40 commits), shader lowering for
+Switch 2 programs, Nextendo accounts and Ocarina-specific passes. The 30 NEXUS patches re-apply on
+build-341 without a conflict (`git am --3way`, checked 18 Nov), so a rebase is possible. It was
+not done for this release: the write-back series changes the texture cache's behaviour for every
+game and could not be tested with games here. Taken instead (engine patches 0031-0038):
+
+- `9f5aa40e5` SDL 3.4.20 with libusb (Switch 2 Pro Controller over USB) → 0031; build part of
+  `d48582e89` → 0032. Not taken: `b5047b237` Switch 2 Bluetooth (WinRT, Windows only).
+- Switch 1 fixes: `d4acca920` (dynarmic invalidation race), `62fa4e1c4`/`22550579c` (slope depth
+  bias on rescaled targets, #1925), `833fdf671` (VP9 carries, #2070), `31f1378a3` (Switch Sports
+  black water, #2074) → 0034-0038.
+- Already in NEXUS: `bfc2359f0` (#2041, patch 0025).
+- Noted: `settings: don't wait for compiling shaders by default` changes a default; NEXUS sets
+  its own shader settings and does not need it.
+- No frame generation changes between 316 and 341.
+
 ## Build 177 → 316 (283 commits) - now in the NEXUS Engine
 
 ### After build 316: ported into NEXUS (17 Nov 2026)

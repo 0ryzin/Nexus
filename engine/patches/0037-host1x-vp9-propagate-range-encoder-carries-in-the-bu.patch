@@ -1,0 +1,169 @@
+From e58895ebf64271e2b64bf09c076fed4ba73e5ec7 Mon Sep 17 00:00:00 2001
+From: Zortos <zortosdev@proton.me>
+Date: Tue, 17 Nov 2026 14:37:30 +0100
+Subject: [PATCH 37/38] host1x/vp9: propagate range encoder carries in the
+ buffer (#2070)
+
+A carry in VpxRangeEncoder::Write walked back through Common::Stream.
+Stream::Seek ignores the offset while the position is at the end, so
+PeekByte read past the buffer and threw std::out_of_range, which killed
+the CDmaPusher thread (FF Resonance cutscene, #1896). Carry into the
+written bytes as libvpx's vpx_write does.
+
+Co-authored-by: capy-ai[bot] <230910855+capy-ai[bot]@users.noreply.github.com>
+(cherry picked from commit 833fdf671d8ca27601b950f6a564000e65c64e28)
+---
+ src/tests/CMakeLists.txt                   |  1 +
+ src/tests/video_core/vp9_range_encoder.cpp | 75 ++++++++++++++++++++++
+ src/video_core/host1x/codecs/vp9.cpp       | 20 ++----
+ src/video_core/host1x/codecs/vp9.h         |  1 -
+ 4 files changed, 81 insertions(+), 16 deletions(-)
+ create mode 100644 src/tests/video_core/vp9_range_encoder.cpp
+
+diff --git a/src/tests/CMakeLists.txt b/src/tests/CMakeLists.txt
+index fd864b178..fefe52ff9 100644
+--- a/src/tests/CMakeLists.txt
++++ b/src/tests/CMakeLists.txt
+@@ -261,6 +261,7 @@ add_executable(tests
+     video_core/nx2_perf_draw_binds.cpp
+     video_core/nx2_perf_texture_writes.cpp
+     video_core/h264_packet.cpp
++    video_core/vp9_range_encoder.cpp
+     video_core/nx2_gpu_mapping.cpp
+     video_core/vertex_repack.cpp
+     video_core/ampere_lowering.cpp
+diff --git a/src/tests/video_core/vp9_range_encoder.cpp b/src/tests/video_core/vp9_range_encoder.cpp
+new file mode 100644
+index 000000000..45d34f6c7
+--- /dev/null
++++ b/src/tests/video_core/vp9_range_encoder.cpp
+@@ -0,0 +1,75 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++
++#include <bit>
++#include <random>
++#include <vector>
++
++#include <catch2/catch_test_macros.hpp>
++
++#include "video_core/host1x/codecs/vp9.h"
++
++namespace {
++
++// libvpx vpx_dsp/bitwriter.h vpx_write
++struct ReferenceWriter {
++    std::vector<u8> buffer;
++    u32 low_value{};
++    u32 range{255};
++    s32 count{-24};
++    int carries{};
++
++    void Write(bool bit, s32 probability) {
++        const u32 split = 1 + (((range - 1) * static_cast<u32>(probability)) >> 8);
++        u32 local_range = split;
++        if (bit) {
++            low_value += split;
++            local_range = range - split;
++        }
++        s32 shift = std::countl_zero(local_range) - 24;
++        local_range <<= shift;
++        count += shift;
++        if (count >= 0) {
++            const s32 offset = shift - count;
++            if ((low_value << (offset - 1)) & 0x80000000) {
++                ++carries;
++                std::size_t index = buffer.size() - 1;
++                while (buffer[index] == 0xff) {
++                    buffer[index--] = 0;
++                }
++                ++buffer[index];
++            }
++            buffer.push_back(static_cast<u8>(low_value >> (24 - offset)));
++            low_value <<= offset;
++            shift = count;
++            low_value &= 0xffffff;
++            count -= 8;
++        }
++        low_value <<= shift;
++        range = local_range;
++    }
++};
++
++} // namespace
++
++TEST_CASE("VP9 range encoder propagates carries like libvpx", "[video_core][vp9]") {
++    std::mt19937 rng(757);
++    int carries = 0;
++    for (int run = 0; run < 2000; ++run) {
++        Tegra::Decoders::VpxRangeEncoder encoder;
++        ReferenceWriter reference;
++        reference.Write(false, 128);
++        for (int i = 0; i < 2000; ++i) {
++            const s32 probability = static_cast<s32>(1 + rng() % 255);
++            const bool bit = rng() % 256 >= static_cast<u32>(probability);
++            encoder.Write(bit, probability);
++            reference.Write(bit, probability);
++        }
++        encoder.End();
++        for (int i = 0; i < 32; ++i) {
++            reference.Write(false, 128);
++        }
++        REQUIRE(encoder.GetBuffer() == reference.buffer);
++        carries += reference.carries;
++    }
++    REQUIRE(carries > 0);
++}
+diff --git a/src/video_core/host1x/codecs/vp9.cpp b/src/video_core/host1x/codecs/vp9.cpp
+index dd91f7f1b..afd0d6b54 100644
+--- a/src/video_core/host1x/codecs/vp9.cpp
++++ b/src/video_core/host1x/codecs/vp9.cpp
+@@ -900,15 +900,12 @@ void VpxRangeEncoder::Write(bool bit, s32 probability) {
+         const s32 offset = shift - count;
+ 
+         if (((low_value << (offset - 1)) >> 31) != 0) {
+-            const s32 current_pos = static_cast<s32>(base_stream.GetPosition());
+-            base_stream.Seek(-1, Common::SeekOrigin::FromCurrentPos);
+-            while (PeekByte() == 0xff) {
+-                base_stream.WriteByte(0);
+-
+-                base_stream.Seek(-2, Common::SeekOrigin::FromCurrentPos);
++            auto& buffer = base_stream.GetBuffer();
++            std::size_t index = buffer.size() - 1;
++            while (buffer[index] == 0xff) {
++                buffer[index--] = 0;
+             }
+-            base_stream.WriteByte(static_cast<u8>((PeekByte() + 1)));
+-            base_stream.Seek(current_pos, Common::SeekOrigin::SetOrigin);
++            ++buffer[index];
+         }
+         base_stream.WriteByte(static_cast<u8>((low_value >> (24 - offset))));
+ 
+@@ -928,13 +925,6 @@ void VpxRangeEncoder::End() {
+     }
+ }
+ 
+-u8 VpxRangeEncoder::PeekByte() {
+-    const u8 value = base_stream.ReadByte();
+-    base_stream.Seek(-1, Common::SeekOrigin::FromCurrentPos);
+-
+-    return value;
+-}
+-
+ VpxBitStreamWriter::VpxBitStreamWriter() = default;
+ 
+ VpxBitStreamWriter::~VpxBitStreamWriter() = default;
+diff --git a/src/video_core/host1x/codecs/vp9.h b/src/video_core/host1x/codecs/vp9.h
+index f0265669b..de30886a1 100644
+--- a/src/video_core/host1x/codecs/vp9.h
++++ b/src/video_core/host1x/codecs/vp9.h
+@@ -60,7 +60,6 @@ public:
+     }
+ 
+ private:
+-    u8 PeekByte();
+     Common::Stream base_stream{};
+     u32 low_value{};
+     u32 range{0xff};
+-- 
+2.43.0
+

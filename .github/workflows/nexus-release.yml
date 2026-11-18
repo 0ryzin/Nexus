@@ -1,0 +1,102 @@
+# Publishes a NEXUS release with every download: Windows (AMD64 ZIP) and Linux (AMD64 and ARM64,
+# each as an AppImage and a tar.gz). Run by hand only, after the owner approves the release.
+#
+# It publishes nothing that was not built and tested by CI: the files come from a successful
+# nexus-build run (Windows) and a successful nexus-linux run (Linux) of the same commit, the page
+# is generated from those files (release_body.py refuses a page with a file missing), and every
+# published file is downloaded again and compared. On any mismatch the release goes back to draft.
+name: nexus-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      windows_run:
+        description: "Run id of the successful nexus-build (Windows) run"
+        required: true
+      linux_run:
+        description: "Run id of the successful nexus-linux run of the same commit"
+        required: true
+      confirm:
+        description: "Type: publish v<version>  (e.g. publish v0.7.0)"
+        required: true
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the request
+        id: v
+        run: |
+          set -euo pipefail
+          v=$(cat app/VERSION); tag="v$v"
+          [[ "${{ inputs.confirm }}" == "publish $tag" ]] || { echo "::error::confirm must be 'publish $tag'"; exit 1; }
+          test -f "docs/releases/$tag.md" || { echo "::error::docs/releases/$tag.md is missing"; exit 1; }
+          if gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo "::error::$tag already exists"; exit 1; fi
+          for id in "${{ inputs.windows_run }}" "${{ inputs.linux_run }}"; do
+            j=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id")
+            echo "$id: $(jq -r '.name+" "+.conclusion+" "+.head_sha' <<<"$j")"
+            [[ "$(jq -r .conclusion <<<"$j")" == success ]] || { echo "::error::run $id did not succeed"; exit 1; }
+            [[ "$(jq -r .head_sha <<<"$j")" == "$GITHUB_SHA" ]] || { echo "::error::run $id built another commit"; exit 1; }
+          done
+          echo "version=$v" >> "$GITHUB_OUTPUT"; echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch the tested files
+        run: |
+          set -euo pipefail
+          v=${{ steps.v.outputs.version }}
+          gh run download "${{ inputs.windows_run }}" -R "$GITHUB_REPOSITORY" -n "NEXUS-$v-Windows-x64" -D dl/win
+          gh run download "${{ inputs.linux_run }}" -R "$GITHUB_REPOSITORY" -n NEXUS-linux-amd64 -D dl/amd64
+          gh run download "${{ inputs.linux_run }}" -R "$GITHUB_REPOSITORY" -n NEXUS-linux-arm64 -D dl/arm64
+          mkdir -p out/linux
+          cp "dl/win/NEXUS-$v-Windows-x64.zip" "dl/win/NEXUS-$v-Windows-x64.zip.sha256" out/
+          for a in amd64 arm64; do
+            for f in "NEXUS-$v-Linux-$a.AppImage" "NEXUS-$v-Linux-$a.tar.gz"; do
+              src=$(find "dl/$a" -name "$f" | head -1); test -n "$src" || { echo "::error::$f missing"; exit 1; }
+              cp "$src" "$src.sha256" out/linux/
+            done
+          done
+          chmod +x out/linux/*.AppImage
+          (cd out && sha256sum -c *.sha256) && (cd out/linux && sha256sum -c *.sha256)
+          ls -la out out/linux
+
+      - name: Compose the release page
+        run: |
+          python app/tools/release/release_body.py --version "${{ steps.v.outputs.version }}" --repo "$GITHUB_REPOSITORY" \
+            --zip "out/NEXUS-${{ steps.v.outputs.version }}-Windows-x64.zip" --linux-dir out/linux \
+            --notes "docs/releases/${{ steps.v.outputs.tag }}.md" --out out/release-body.md
+
+      - name: Publish
+        run: |
+          set -euo pipefail
+          tag=${{ steps.v.outputs.tag }}; v=${{ steps.v.outputs.version }}
+          pre=(); grep -q '<!-- nexus:prerelease -->' "docs/releases/$tag.md" && pre=(--prerelease)
+          [[ "$v" == *-* ]] && pre=(--prerelease)
+          gh release create "$tag" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "NEXUS $v — Windows and Linux" \
+            --notes-file out/release-body.md "${pre[@]}" out/*.zip out/*.sha256 out/linux/*
+
+      - name: Check the published downloads
+        run: |
+          set -uo pipefail
+          tag=${{ steps.v.outputs.tag }}; ok=true
+          mkdir -p verify && cd verify
+          gh release download "$tag" -R "$GITHUB_REPOSITORY" || ok=false
+          for f in ../out/*.zip ../out/*.sha256 ../out/linux/*; do
+            n=$(basename "$f")
+            cmp -s "$f" "$n" || { echo "::error::$n differs or is missing"; ok=false; }
+          done
+          [[ -x ../out/linux/NEXUS-*-Linux-amd64.AppImage ]] || ok=false
+          n=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" -q '.assets | length')
+          [[ "$n" == "10" ]] || { echo "::error::expected 10 assets, found $n"; ok=false; }
+          if ! $ok; then
+            gh release edit "$tag" -R "$GITHUB_REPOSITORY" --draft=true
+            echo "::error::a published download did not check out; $tag was set back to draft"; exit 1
+          fi
+          echo "$tag: all 10 files are downloadable and match the tested builds"

@@ -379,6 +379,12 @@ jobs:
               publish=true
             fi
           fi
+          # notes marked <!-- nexus:with-linux --> belong to a release with the Linux downloads too:
+          # that one is published only by hand (nexus-release.yml), never by this build
+          if $publish && grep -q '<!-- nexus:with-linux -->' "docs/releases/$tag.md" 2>/dev/null; then
+            echo "::notice::$tag includes Linux: publish it with the nexus-release workflow"
+            publish=false
+          fi
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           # notes marked <!-- nexus:prerelease --> are published as a pre-release (a download for

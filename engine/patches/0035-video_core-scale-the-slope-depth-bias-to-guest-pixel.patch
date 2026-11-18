@@ -1,0 +1,77 @@
+From a3d80f05829fa4307865519f4292e2325b2e1695 Mon Sep 17 00:00:00 2001
+From: zortos293 <65777760+zortos293@users.noreply.github.com>
+Date: Tue, 17 Nov 2026 07:40:44 +0000
+Subject: [PATCH 35/38] video_core: scale the slope depth bias to guest pixels
+ on rescaled targets (#1925)
+
+The slope term of the depth bias is computed from the host depth slope per
+pixel. A target rendered at a resolution scale has a slope per host pixel that
+is smaller by that scale, so a game's slope bias shrank with the resolution.
+Link's Awakening's shadow map got self-shadow stripes above 1X because of it.
+Multiply the factor by the up factor on rescaled targets, on Vulkan and OpenGL.
+
+(cherry picked from commit 62fa4e1c40d3cf1c44ebc57e510ead0a6fc88da6)
+---
+ src/video_core/renderer_opengl/gl_rasterizer.cpp | 7 +++++--
+ src/video_core/renderer_opengl/gl_rasterizer.h   | 1 +
+ src/video_core/renderer_vulkan/vk_rasterizer.cpp | 4 ++++
+ 3 files changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/src/video_core/renderer_opengl/gl_rasterizer.cpp b/src/video_core/renderer_opengl/gl_rasterizer.cpp
+index 2ca3c0b64..fdcfce357 100644
+--- a/src/video_core/renderer_opengl/gl_rasterizer.cpp
++++ b/src/video_core/renderer_opengl/gl_rasterizer.cpp
+@@ -1362,10 +1362,13 @@ void RasterizerOpenGL::SyncLineState() {
+ 
+ void RasterizerOpenGL::SyncPolygonOffset() {
+     auto& flags = maxwell3d->dirty.flags;
+-    if (!flags[Dirty::PolygonOffset]) {
++    const float slope_scale =
++        texture_cache.IsRescaling() ? Settings::values.resolution_info.up_factor : 1.0f;
++    if (!flags[Dirty::PolygonOffset] && slope_scale == polygon_offset_slope_scale) {
+         return;
+     }
+     flags[Dirty::PolygonOffset] = false;
++    polygon_offset_slope_scale = slope_scale;
+ 
+     const auto& regs = maxwell3d->regs;
+     if (far_plane_draw) {
+@@ -1384,7 +1387,7 @@ void RasterizerOpenGL::SyncPolygonOffset() {
+     if (regs.polygon_offset_fill_enable || regs.polygon_offset_line_enable ||
+         regs.polygon_offset_point_enable) {
+         // Hardware divides polygon offset units by two
+-        glPolygonOffsetClamp(regs.slope_scale_depth_bias, regs.depth_bias / 2.0f,
++        glPolygonOffsetClamp(regs.slope_scale_depth_bias * slope_scale, regs.depth_bias / 2.0f,
+                              regs.depth_bias_clamp);
+     }
+ }
+diff --git a/src/video_core/renderer_opengl/gl_rasterizer.h b/src/video_core/renderer_opengl/gl_rasterizer.h
+index c89bdedd9..b8262adec 100644
+--- a/src/video_core/renderer_opengl/gl_rasterizer.h
++++ b/src/video_core/renderer_opengl/gl_rasterizer.h
+@@ -271,6 +271,7 @@ private:
+     bool has_written_global_memory = false;
+     /// The draw's pipeline puts every vertex on the far plane and the game set no polygon offset
+     bool far_plane_draw = false;
++    float polygon_offset_slope_scale = 1.0f;
+ 
+     u32 last_clip_distance_mask = 0;
+     bool depth_zero_to_one = false;
+diff --git a/src/video_core/renderer_vulkan/vk_rasterizer.cpp b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+index 706af7230..618c77ba0 100644
+--- a/src/video_core/renderer_vulkan/vk_rasterizer.cpp
++++ b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+@@ -4546,6 +4546,10 @@ void RasterizerVulkan::UpdateDepthBias(Tegra::Engines::Maxwell3D::Regs& regs) {
+     }
+     float clamp = regs.depth_bias_clamp;
+     float factor = regs.slope_scale_depth_bias;
++    if (texture_cache.IsRescaling()) {
++        // The slope term is per pixel, so a rescaled target needs it scaled back to guest pixels.
++        factor *= Settings::values.resolution_info.up_factor;
++    }
+     if (far_plane_draw) {
+         const bool reversed =
+             regs.viewport_scale_offset_enabled && regs.viewport_transform[0].scale_z < 0.0f;
+-- 
+2.43.0
+
