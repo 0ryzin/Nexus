@@ -1,0 +1,42 @@
+# Quick check of NEXUS's Linux window code (GTK/WebKitGTK) without the long engine build:
+# compiles, vets and tests NEXUS with -tags webkitgtk on AMD64 and ARM64.
+name: nexus-linux-app
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ["app/**", ".github/workflows/nexus-linux-app.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    name: NEXUS for Linux ${{ matrix.arch }} (compile and test)
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install WebKitGTK and GTK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: app/go.sum
+      - name: Build, vet and test
+        working-directory: app
+        run: |
+          set -euo pipefail
+          go vet -tags webkitgtk .
+          CGO_ENABLED=1 go build -tags webkitgtk -trimpath -o /tmp/nexus .
+          file /tmp/nexus
+          go test -count=1 ./...
+          go test -count=1 -tags webkitgtk -run 'TestNoEmulatorProgramsRemain|TestFrameGen' .

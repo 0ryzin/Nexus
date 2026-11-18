@@ -4422,6 +4422,9 @@ Approve only if this is your own device and you started the link.`, buttons: [{ 
   es.onerror = () => { /* EventSource reconnects automatically */ };
 }
 
+// controller navigation needs the Gamepad API (WebView2; WebKitGTK with libmanette): say once in the
+// log whether this window has it, so a missing one is visible in a report (Linux, Steam Deck)
+api('/api/app/log', { body: { level: 'info', message: `ui: gamepad API ${typeof navigator.getGamepads === 'function' ? 'available' : 'MISSING'}` } }).catch(() => { });
 window.addEventListener('error', e => { api('/api/app/log', { body: { level: 'error', message: `${e.message} @ ${e.filename}:${e.lineno}` } }).catch(() => { }); });
 window.addEventListener('unhandledrejection', e => { api('/api/app/log', { body: { level: 'error', message: 'promise: ' + (e.reason?.stack || e.reason) } }).catch(() => { }); });
 

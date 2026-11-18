@@ -33,4 +33,6 @@ run desktop || ok=1
 # Steam's Gaming Mode sets SteamGamepadUI=1 for the games it starts: NEXUS must go full screen
 run gamingmode SteamGamepadUI=1 SteamDeck=1 || ok=1
 grep -q "Gaming Mode true" "$out/$label-gamingmode.log" 2>/dev/null || { echo "::error::$label: Gaming Mode was not recognised"; ok=1; }
+# controller navigation in NEXUS needs the web view's Gamepad API (WebKitGTK built with libmanette)
+grep -q "gamepad API available" "$out/$label-desktop.log" 2>/dev/null || { echo "::error::$label: the web view has no Gamepad API (no controller navigation)"; ok=1; }
 exit $ok
