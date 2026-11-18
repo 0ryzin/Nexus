@@ -100,7 +100,8 @@ jobs:
             -DLICHII_USE_BUNDLED_SDL3=ON \
             -DVulkanHeaders_FORCE_BUNDLED=ON -DVulkanUtilityLibraries_FORCE_BUNDLED=ON \
             -DENABLE_UPDATE_CHECKER=OFF -DENABLE_WEB_SERVICE=OFF -DUSE_DISCORD_PRESENCE=OFF \
-            -DENABLE_WERROR=OFF -DUSE_CCACHE=ON
+            -DENABLE_WERROR=OFF -DUSE_CCACHE=ON \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON
 
       - name: Build the engine and its tests
         working-directory: engine-src
