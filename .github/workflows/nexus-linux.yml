@@ -1,0 +1,156 @@
+# NEXUS for Linux: the engine (upstream Lichii + engine/patches) and NEXUS for AMD64 and ARM64,
+# tested and packed as an AppImage and a tar.gz per architecture. One AMD64 build serves every
+# AMD64 Linux PC and the Steam Deck (docs/LINUX.md). Releases are never published from here.
+name: nexus-linux
+
+on:
+  push:
+    branches: [main, "build/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nexus-linux-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  engine:
+    name: Engine (Linux ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/engine-src/.ccache
+      CCACHE_MAXSIZE: 3G
+      CCACHE_COMPILERCHECK: content
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read engine.lock
+        id: lock
+        run: |
+          set -euo pipefail
+          get() { grep "^$1=" app/engine.lock | cut -d= -f2; }
+          echo "repo=$(get upstream)" >> "$GITHUB_OUTPUT"
+          echo "commit=$(get upstreamCommit)" >> "$GITHUB_OUTPUT"
+          echo "base=$(get upstreamBase)" >> "$GITHUB_OUTPUT"
+          echo "version=$(get version)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the upstream engine base
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.lock.outputs.repo }}
+          ref: ${{ steps.lock.outputs.commit }}
+          path: engine-src
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Apply the NEXUS engine patches
+        working-directory: engine-src
+        run: |
+          set -euo pipefail
+          git tag "${{ steps.lock.outputs.base }}" HEAD
+          git -c user.name="NEXUS CI" -c user.email="nexus-ci@users.noreply.github.com" am ../engine/patches/*.patch
+
+      # the packages upstream's Linux builds use, without Qt (the engine library has no Qt)
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf cmake g++ gcc git glslang-tools libglu1-mesa-dev \
+            libpulse-dev libtool libudev-dev mesa-common-dev nasm ninja-build \
+            libavfilter-dev libavcodec-dev libswscale-dev pkg-config zlib1g-dev libva-dev libvdpau-dev \
+            spirv-tools spirv-headers libusb-1.0-0-dev \
+            libboost-dev libboost-fiber-dev libboost-context-dev \
+            libopus-dev libasound2-dev ccache python3-zstandard \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxkbcommon-dev \
+            libwayland-dev wayland-protocols libdecor-0-dev libdbus-1-dev libibus-1.0-dev \
+            mesa-vulkan-drivers patchelf
+
+      - name: Restore dependencies and compiler objects
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            engine-src/.cache/cpm
+            engine-src/.ccache
+          key: nexus-linux-${{ matrix.arch }}-${{ steps.lock.outputs.commit }}-${{ github.run_id }}
+          restore-keys: |
+            nexus-linux-${{ matrix.arch }}-${{ steps.lock.outputs.commit }}-
+            nexus-linux-${{ matrix.arch }}-
+
+      - name: Configure the engine
+        working-directory: engine-src
+        run: |
+          set -euo pipefail
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DNEXUS_ENGINE=ON \
+            -DNEXUS_ENGINE_VERSION=${{ steps.lock.outputs.version }} \
+            -DBUILD_TESTING=ON -DLICHII_TESTS=ON \
+            -DENABLE_QT=OFF -DLICHII_CMD=OFF -DLICHII_ROOM=OFF -DLICHII_ROOM_STANDALONE=OFF \
+            -DLICHII_USE_BUNDLED_SDL3=ON \
+            -DVulkanHeaders_FORCE_BUNDLED=ON -DVulkanUtilityLibraries_FORCE_BUNDLED=ON \
+            -DENABLE_UPDATE_CHECKER=OFF -DENABLE_WEB_SERVICE=OFF -DUSE_DISCORD_PRESENCE=OFF \
+            -DENABLE_WERROR=OFF -DUSE_CCACHE=ON
+
+      - name: Build the engine and its tests
+        working-directory: engine-src
+        run: |
+          ccache -z || true
+          cmake --build build --target nexus_engine tests config_tests profile_import_tests --parallel "$(nproc)"
+          ccache -s || true
+
+      - name: Save dependencies and compiler objects
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            engine-src/.cache/cpm
+            engine-src/.ccache
+          key: nexus-linux-${{ matrix.arch }}-${{ steps.lock.outputs.commit }}-${{ github.run_id }}
+
+      - name: Engine tests (gate)
+        working-directory: engine-src
+        run: |
+          set -euo pipefail
+          ls build/bin
+          ./build/bin/tests
+          ./build/bin/config_tests
+          ./build/bin/profile_import_tests
+
+      - name: Engine interface smoke test
+        working-directory: engine-src
+        run: |
+          set -euo pipefail
+          lib=$(ls build/bin/nexus_engine.so build/lib/nexus_engine.so 2>/dev/null | head -1)
+          echo "library: $lib"; ldd "$lib"
+          python3 tools/nexus/abi_smoke.py "$lib"
+
+      - name: Collect the engine
+        working-directory: engine-src
+        run: |
+          set -euo pipefail
+          mkdir -p ../engine-out
+          lib=$(ls build/bin/nexus_engine.so build/lib/nexus_engine.so 2>/dev/null | head -1)
+          cp "$lib" ../engine-out/
+          # shared libraries the build produced that the engine links (bundled SDL3 etc.)
+          for d in $(ldd "$lib" | awk '/=> \//{print $3}'); do
+            case "$d" in "$PWD"/*) cp -L "$d" ../engine-out/ ;; esac
+          done
+          git log -1 --format=%H > ../engine-out/COMMIT
+          ls -la ../engine-out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nexus-engine-linux-${{ matrix.arch }}
+          path: engine-out
+          retention-days: 7
