@@ -134,10 +134,17 @@ const isPlayable = g => g.kind !== 'update' && g.kind !== 'dlc';
 // ------------------------------------------------------------------ sound
 const Sound = {
   ctx: null, buf: {}, gain: null,
+  // makeup: per sound, the gain that brings its peak to -1 dBFS at 100 % (at most x4). The files
+  // peak between -2 and -10 dBFS and the short ones (move: 45 ms at -9 dBFS) were hard to hear on
+  // a Steam Deck's speakers; a limiter on the output keeps overlapping sounds from clipping.
+  makeup: {},
   init() {
     try {
       this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-      this.gain = this.ctx.createGain(); this.gain.connect(this.ctx.destination);
+      this.gain = this.ctx.createGain();
+      const lim = this.ctx.createDynamicsCompressor();
+      lim.threshold.value = -3; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.002; lim.release.value = 0.08;
+      this.gain.connect(lim); lim.connect(this.ctx.destination);
     } catch { this.ctx = null; }
   },
   failed: [],
@@ -148,7 +155,12 @@ const Sound = {
       try {
         const r = await fetch(`/res/sounds/${n}.wav`);
         if (!r.ok) throw new Error('HTTP ' + r.status);
-        this.buf[n] = await this.ctx.decodeAudioData(await r.arrayBuffer()); ok++;
+        const b = await this.ctx.decodeAudioData(await r.arrayBuffer());
+        let peak = 0;
+        for (let c = 0; c < b.numberOfChannels; c++) { const d = b.getChannelData(c); for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > peak) peak = v; } }
+        // navigation sounds only: the start-up and launch sounds are mixed against each other
+        if (/^(move|select|back|error|connect|home_pop)$/.test(n)) this.makeup[n] = peak > 0 ? Math.min(4, 0.89 / peak) : 1;
+        this.buf[n] = b; ok++;
       } catch (e) { errs.push(`${n}: ${e?.message || e}`); }
     }));
     this.report(names.length, ok, errs.slice(0, 3).join('; '));
@@ -159,17 +171,24 @@ const Sound = {
     api('/api/app/log', { body: { level: ok === total ? 'info' : 'error', message: `ui: sounds loaded ${ok}/${total} (audio ${st})${why ? ' - ' + why : ''}` } }).catch(() => { });
   },
   live: new Set(),
+  // the same sound at most this many times at once: quick navigation stays audible (each move
+  // sounds) without a pile-up; the oldest copy fades out quickly to make room
+  maxSame: 3,
   play(n, vol = 1, { at = 0, pan = 0, rate = 1, force = false } = {}) {
     const s = S.settings.sound || {};
     if (!this.ctx || (!s.enabled && !force) || !this.buf[n]) return null;
-    if (this.ctx.state === 'suspended') this.ctx.resume();
+    const same = [...this.live].filter(r => r.n === n);
+    if (same.length >= this.maxSame) { const o = same[0]; try { o.g.gain.setTargetAtTime(0, this.ctx.currentTime, .005); o.src.stop(this.ctx.currentTime + .02); } catch { } this.live.delete(o); }
     const src = this.ctx.createBufferSource(); src.buffer = this.buf[n]; src.playbackRate.value = rate;
-    const g = this.ctx.createGain(); g.gain.value = (s.volume ?? .7) * vol;
+    const g = this.ctx.createGain(); g.gain.value = (s.volume ?? .7) * vol * (this.makeup[n] || 1);
     let node = src.connect(g);
     if (pan && this.ctx.createStereoPanner) { const p = this.ctx.createStereoPanner(); p.pan.value = pan; node = g.connect(p); node.connect(this.gain); }
     else g.connect(this.gain);
-    src.start(this.ctx.currentTime + Math.max(0, at));
-    const rec = { src, g }; this.live.add(rec); src.onended = () => this.live.delete(rec);
+    const rec = { src, g, n }; this.live.add(rec); src.onended = () => this.live.delete(rec);
+    // a sound asked for while the audio is still waking up (after a pause, or the first one) is
+    // started once it runs, instead of being scheduled in the past and cut short or lost
+    const start = () => src.start(this.ctx.currentTime + Math.max(0, at));
+    if (this.ctx.state === 'suspended') this.ctx.resume().then(start, () => this.live.delete(rec)); else start();
     return rec;
   },
   stopAll(fade = .15) {
@@ -218,7 +237,7 @@ const Nav = {
     else if (document.activeElement && document.activeElement !== el && document.activeElement.matches('input') && !OSK.target) document.activeElement.blur();
     if (scroll) el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: S.anim === 'off' ? 'auto' : 'smooth' });
     el.dispatchEvent(new CustomEvent('navfocus'));
-    if (!silent) Sound.play('move', .6);
+    if (!silent) Sound.play('move', .8);
   },
   move(dir) {
     const layer = this.top(); if (!layer) return;
