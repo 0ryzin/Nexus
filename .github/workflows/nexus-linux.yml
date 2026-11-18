@@ -91,6 +91,8 @@ jobs:
       # FFmpeg is built from source too, static and position-independent with only the decoders the
       # engine uses (H.264, VP8, VP9) and no VA-API/VDPAU: the system's libavcodec differs between
       # distributions (Ubuntu 24.04 has .so.60, Arch .so.61) and is not on every Steam Deck.
+      # -Bsymbolic: FFmpeg's x86 assembly refers to its own tables PC-relatively, which a shared
+      # library allows only when its symbols bind locally (FFmpeg's advice for static linking).
       # SDL3 is built from source (cpmfile.json: 3.4.20 with libusb, engine patch 0031): the prebuilt
       # static SDL3 is not position-independent on ARM64, and has no libusb (Switch 2 over USB)
       - name: Configure the engine
@@ -108,7 +110,8 @@ jobs:
             -DVulkanHeaders_FORCE_BUNDLED=ON -DVulkanUtilityLibraries_FORCE_BUNDLED=ON \
             -DENABLE_UPDATE_CHECKER=OFF -DENABLE_WEB_SERVICE=OFF -DUSE_DISCORD_PRESENCE=OFF \
             -DENABLE_WERROR=OFF -DUSE_CCACHE=ON \
-            -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-Bsymbolic"
 
       - name: Build the engine and its tests
         working-directory: engine-src
