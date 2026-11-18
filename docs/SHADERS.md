@@ -221,6 +221,47 @@ code, and NEXUS does not upload game content to the cloud. A cloud-safe version 
 pipeline keys and render states (like Fritchii's recipes) and rebuild the code from each device's
 own copy of the game; that needs the recipe assembly described above and is future work.
 
+## Importing shader caches from a ZIP (0.8.0, `app/shaderzip.go`)
+
+A game's *Import Shader Data…* also takes a ZIP of original cache files, for example a cache
+someone shared. The ZIP only carries the files and is never used as a cache. NEXUS:
+- reads every file inside it, in nested folders too, in memory;
+- refuses unsafe paths;
+- skips lock and temporary files, and files under another game's title ID;
+- recognises each cache by its own header, not its name.
+
+| Format (header) | What NEXUS does |
+|---|---|
+| `LXSHCACH` v2 log (NEXUS, Lichii, Fritchii `lichii-cache.v2.bin`) | Its portable records are added to the game's log (same merge as a shader pack: nothing replaced, backup kept) |
+| `NXSHPACK` (NEXUS shader pack) | Imported as a pack |
+| `yuzucach` version 52-54 (NEXUS/Lichii fork disk cache `vulkan.fork-v<N>.bin`) | Installed for the engine's own migration into a v2 log at the next start, only while the game has no log yet (the engine migrates only then) |
+| `yuzucach`, another version (yuzu, Eden, Citron, Sudachi, older forks) | Not converted: another record layout. Reported |
+| `yuzuvkch` (Vulkan driver cache) | Not used: compiled for one GPU and driver. Reported |
+| `*.toc` / `*.data` (Ryujinx, Ryubing) | Not converted: Ryujinx's own format. Reported |
+
+The result lists every file with what happened and why.
+
+## Compiling shaders while playing (0.8.0)
+
+What the NEXUS engine genuinely does in the background (Lichii's own mechanisms, not a NEXUS
+imitation):
+- With *Compile shaders in the background while playing* on (`use_asynchronous_shaders`), a
+  shader seen for the first time is built on worker threads while the game goes on. The effect
+  appears a moment later instead of the game pausing.
+- Pipelines from earlier sessions are built in the background after the last two sessions' ones
+  (Lichii #1803).
+
+| Setting | Effect |
+|---|---|
+| Background compilation › Full speed | Engine default: all but one CPU thread compile. |
+| Background compilation › Reduced resource use | Engine patch 0041, `shader_worker_limit` = 2 threads, so the game keeps more of the processor. The optimiser picks it on a Steam Deck. |
+
+Both are global settings and per-game overrides.
+
+Not available: the engine has no measure of "game under pressure" to pause or speed up compilation
+by itself, so NEXUS does not claim adaptive throttling. A fixed smaller number of threads is what it
+offers.
+
 ## Not measured
 
 No game was run for this work: there are no before/after numbers for stuttering. To compare on your

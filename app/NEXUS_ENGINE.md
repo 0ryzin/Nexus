@@ -1,8 +1,8 @@
 # The NEXUS engine: investigation, architecture, status and plan
 
-## NEXUS Engine 0.8.0 (in development): Lichii build 316, patches 0018-0040
+## NEXUS Engine 0.8.0 (in development): Lichii build 316, patches 0018-0041
 
-Base: Lichii `build-316` (`5a66c8959`), 40 NEXUS patches. Interface version stays 2; the additions
+Base: Lichii `build-316` (`5a66c8959`), 41 NEXUS patches. Interface version stays 2; the additions
 below are optional exports that NEXUS looks up by name (older engine builds simply lack them).
 
 | Patch | What |
@@ -26,6 +26,7 @@ below are optional exports that NEXUS looks up by name (older engine builds simp
 | 0034-0038 | Ports of Lichii build-341 fixes that affect Switch 1 games: `d4acca920` dynarmic code-page invalidation without a race; `62fa4e1c4` + `22550579c` (#1925) slope depth bias scaled to guest pixels only on rescaled targets; `833fdf671` (#2070) VP9 range encoder carries; `31f1378a3` (#2074) output stage buffer read back (Switch Sports black water, #2066) |
 | 0039 | Test only: the commit-room test expects a value on Linux, which patch 0020 reports |
 | 0040 | Build only: FFmpeg builds natively from source on Linux (one `--cc` argument with ccache, native builds no longer treated as cross builds, linked with the compiler driver) |
+| 0041 | `shader_worker_limit` (Renderer): how many threads compile shaders while a game runs (0: the engine's choice). NEXUS: Background compilation › Reduced = 2 |
 
 `nexus_engine_prepare_shaders(json)`: `{"game", "dataDir", "configFile", "titleId": "<hex>",
 "contents": [...], "force": false}`; 0 started, -1 a game or preparation runs, -2 bad request. It

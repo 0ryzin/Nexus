@@ -360,6 +360,8 @@ func steamDeckSwitch2(v, why map[string]string, p OptProfile) {
 	why["graphics.vsync"] = "Mailbox: no tearing without standard VSync's extra wait."
 	v["graphics.fps_limit"] = "30"
 	why["graphics.fps_limit"] = "A steady 30 fps on the Deck instead of an uneven rate that drains the battery."
+	v["adv.shader_threads"] = "reduced"
+	why["adv.shader_threads"] = "Two of the Deck's eight processor threads compile shaders; the rest stay with the game."
 	v["adv.astc"] = "gpu"
 	why["adv.astc"] = "The Deck's GPU decodes ASTC textures faster than its 4-core CPU."
 }

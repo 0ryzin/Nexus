@@ -92,6 +92,61 @@ Add NEXUS to Steam:
 Steam Input presents the Deck's controls (and any paired controller) as a standard gamepad. The
 engine reads that through SDL. Keep Steam Input enabled for NEXUS.
 
+## Typing on a Steam Deck (0.8.0)
+
+Settings › General › On-screen keyboard:
+- *Automatic* (default): on a Steam Deck (Valve Jupiter/Galileo, from the firmware) or in Gaming
+  Mode, NEXUS's keyboard opens whenever a text field is chosen. That covers touch, the trackpad,
+  a controller, and the Deck's controls arriving as keys in Desktop Mode. Elsewhere it opens only
+  with a controller.
+- *Always*.
+- *With a controller only*.
+- *Steam keyboard*: NEXUS asks Steam for its keyboard (`steam://open/keyboard`, Steam running),
+  and its own keyboard opens if Steam does not answer.
+
+NEXUS's keyboard types into the field itself (letters, symbols, space, backspace, Enter, cursor).
+Not tested on a Steam Deck yet: which Steam keyboard mechanism works in Gaming Mode for a
+non-Steam game is to be confirmed on the device.
+
+## Interface sound (0.8.0)
+
+The interface plays its sounds through WebKit's Web Audio, which uses GStreamer. Fixes:
+- The AppImage now bundles GStreamer's `interleave` plugin and a few audio parsers.
+- Autoplay is allowed, because controller presses are not "user gestures" to WebKit.
+- How many sounds loaded is written to the log (`ui: sounds loaded n/m`).
+
+CI checks two things on both architectures:
+- every sound loads;
+- the start-up sound reaches a PulseAudio sink, recorded and measured.
+
+Not yet confirmed on a Steam Deck.
+
+## Steam (0.8.0, Settings › General › Steam)
+
+- *Add NEXUS to the app menu*: a desktop file and icon in the user's own folders. Steam's *Add a
+  Non-Steam Game* then lists NEXUS by name with its icon.
+- *Add NEXUS artwork to Steam*: Steam has no way for a program to set a non-Steam game's artwork.
+  NEXUS finds its own shortcut in `shortcuts.vdf` (only read) and copies its artwork (made from the
+  NEXUS wordmark) into Steam's custom-artwork folder for that shortcut, keeping images the user set.
+  Steam shows them after a restart.
+
+## Steam Deck settings for Switch 2 games (0.8.0)
+
+On a Steam Deck the optimiser tunes Switch 2 games (`optimize.go`, `steamDeckSwitch2`):
+- handheld mode;
+- resolution 0.75x of 1080p, which is 810p, about the Deck's screen (0.5x in Performance);
+- FSR 1 upscaling;
+- Low GPU accuracy;
+- background shader compilation with reduced threads;
+- a steady 30 fps.
+
+It is applied once per game on its first start on a Deck when the user set nothing for it, and Game
+settings › Optimise restores it.
+
+The Deck has 8 RDNA 2 compute units and 4 Zen 2 cores; a ROG Ally X has 12 RDNA 3 compute units and
+8 Zen 4 cores. So the Ally X's 30-40 fps in Ocarina of Time does not carry over. Not measured on a
+Deck.
+
 ## Updates
 
 On Linux, NEXUS checks for new versions and shows them. Its button opens the release page; it

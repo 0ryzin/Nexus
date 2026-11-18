@@ -1,0 +1,58 @@
+From 14748575163eb66df8374753fb3e6e26054b32d4 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 18 Nov 2026 18:07:12 +0000
+Subject: [PATCH] NEXUS: shader_worker_limit, how many threads compile shaders
+ while a game runs
+
+0 keeps the engine's choice (all but one hardware thread). NEXUS's 'reduced' background
+compilation sets 2 on a handheld, so the game keeps the CPU while shaders compile.
+---
+ src/common/settings.h                                | 5 +++++
+ src/video_core/renderer_vulkan/vk_pipeline_cache.cpp | 8 +++++++-
+ 2 files changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/src/common/settings.h b/src/common/settings.h
+index 24c576033..09a6335cd 100644
+--- a/src/common/settings.h
++++ b/src/common/settings.h
+@@ -803,6 +803,11 @@ struct Values {
+     SwitchableSetting<bool> use_asynchronous_shaders{linkage, false, "use_asynchronous_shaders",
+                                                      Category::RendererHacks};
+ 
++    /// NEXUS: how many CPU threads compile shaders while a game runs (0: the engine's own choice,
++    /// all but one hardware thread). A small number leaves the cores to the game on a handheld.
++    SwitchableSetting<u32, true> shader_worker_limit{linkage, 0, 0, 16, "shader_worker_limit",
++                                                    Category::RendererHacks};
++
+     SwitchableSetting<GpuUnswizzleSize> gpu_unswizzle_texture_size{linkage,
+                                                   GpuUnswizzleSize::Large,
+                                                   "gpu_unswizzle_texture_size",
+diff --git a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp b/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
+index 8eb96ce93..e3b518f74 100644
+--- a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
++++ b/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
+@@ -529,6 +529,11 @@ size_t GetTotalPipelineWorkers() {
+     }
+     return std::min(max_core_threads, desired);
+ #else
++    // NEXUS: Settings › shader compilation (Background, reduced) limits the workers so the game
++    // keeps the CPU on a handheld
++    if (const u32 limit = Settings::values.shader_worker_limit.GetValue(); limit > 0) {
++        return std::min<size_t>(max_core_threads, std::max<u32>(limit, 1));
++    }
+     return max_core_threads;
+ #endif
+ }
+@@ -860,7 +865,8 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
+     const size_t driver_threads =
+         device.HasBrokenParallelShaderCompiling()
+             ? 1
+-            : std::min(cpu_threads, std::max<size_t>(std::thread::hardware_concurrency() / 2, 2));
++            : std::min(cpu_threads, std::max<size_t>(std::thread::hardware_concurrency() / 2,
++                                                     Settings::values.shader_worker_limit.GetValue() > 0 ? 1 : 2));
+     shader_jobs.emplace(VideoCommon::ShaderJobConfig{
+         .cpu_threads = cpu_threads,
+         .driver_threads = driver_threads,
+-- 
+2.43.0
+

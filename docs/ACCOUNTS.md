@@ -51,10 +51,11 @@ duplicated. If their details differ, NEXUS asks which version to keep.
 | NEXUS preferences | Sounds, start-up animation, shortcut keys, Home behaviour, game window | On |
 | Amiibo library | Names, details and owners of all entries; the data of NEXUS virtual amiibo | On |
 | Emulation settings | Global and per-game emulation settings (never the graphics-card choice) | **Off**: a Steam Deck and a gaming PC usually need different settings |
+| Game saves (0.8.0, GitHub accounts) | Each user's game saves: every save folder (all slots) and the game's device save | On |
 
 **Never synchronised:** games, updates and DLC, keys, firmware, imported amiibo dumps (only their
 details: on another device they show *Imported on Tom's PC*), shader caches, screenshots and
-recordings. **Game saves** also stay on each device for now (see *Not done yet*).
+recordings.
 
 Each category can be switched off under *What synchronises*; *Synchronise this device* switches all
 of it off for this device.
@@ -62,6 +63,47 @@ of it off for this device.
 - **Not synchronised: shader caches.** They contain the game's shader code and can be hundreds of
   MB; use a game's *Export Shader Data* / *Import Shader Data* between your own devices instead
   (docs/SHADERS.md).
+
+### Game saves (0.8.0)
+
+How it works (`app/savesync.go`):
+- Each save (one game, one user) is a ZIP in a secret Gist of its own in your GitHub account
+  ("NEXUS save: <game> (<user>)"). GitHub keeps every earlier version in the Gist's history.
+- An index in the NEXUS sync Gist (`nexussaves-index.json`) lists each save with its version, a
+  content hash (every file's path and SHA-256), its size, the device that sent it, and the raw
+  address of exactly that version.
+- A save is sent only when its contents changed since this device last agreed with the account,
+  and received only when the account's changed and this device's did not.
+- Before a received save replaces this device's copy, it is unpacked next to it and checked
+  against the hash. This device's copy is backed up first (Save Data › Backups, "before-sync").
+- If both changed, nothing is overwritten on either side. *NEXUS Account › Game saves* shows it with
+  both devices' save times, and you choose (*Keep this device's* / *Use <device>'s*).
+- Saves of a user whose game is running wait until it closes.
+- Nothing is ever deleted by synchronisation, and saves over 20 MB (ZIP) are not synchronised.
+- It runs with the account's synchronisation: when a game closes, at start, on wake, and with
+  *Synchronise now*. Offline changes wait for the next one.
+
+Tested with automated tests only: `TestSaveSyncWindowsToDeck` plays a PC and a Steam Deck against
+a simulated GitHub. It covers:
+- first sign-in on an empty device;
+- both directions;
+- several slots, users and device saves;
+- no resend of unchanged saves;
+- a conflict and its resolution;
+- offline, then reconnecting.
+
+It has not been tested between real devices yet.
+
+### First start on a new device (0.8.0)
+
+The first screen offers:
+- *Sign in with my NEXUS account*: the account's users and their saves come to this device, so no
+  throwaway local user is needed.
+- *Create a NEXUS account*: a free GitHub account, then sign in.
+- *Continue with a local user*.
+
+A local user you created only to get in can be deleted later (Users › the user › Delete). Deleting
+a user is never synchronised and does not touch the account's users or saves.
 
 ### Offline and conflicts
 

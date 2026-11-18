@@ -56,6 +56,8 @@ var EmuOptions = []EmuOption{
 	{ID: "Renderer/use_disk_shader_cache", Label: "Disk shader cache", Group: "Performance", Kind: "bool", PerGame: true},
 	{ID: "Renderer/use_asynchronous_shaders", Label: "Asynchronous shader building", Group: "Performance", Kind: "bool", PerGame: true,
 		Help: "Reduces stutter while shaders compile; may cause brief visual glitches."},
+	{ID: "Renderer/shader_worker_limit", Label: "Shader compiler threads", Group: "Performance", Kind: "int", Min: 0, Max: 16, Step: 1, PerGame: true,
+		Help: "How many CPU threads compile shaders while a game runs. 0: the engine's choice (all but one). 2 leaves the processor to the game on a handheld (NEXUS engine patch 0041)."},
 	{ID: "Renderer/use_reactive_flushing", Label: "Reactive flushing", Group: "Performance", Kind: "bool", PerGame: true,
 		Help: "Improves accuracy in some games at a performance cost."},
 	{ID: "Renderer/accelerate_astc", Label: "ASTC texture decoding", Group: "Performance", Kind: "enum", PerGame: true,

@@ -1904,12 +1904,25 @@ async function shaderExport(g) {
   } catch (e) { alertDlg('Export failed', e.message); }
 }
 async function shaderImport(g) {
-  const f = await pickFile('.nxshaders'); if (!f) return;
+  const f = await pickFile('.nxshaders,.zip'); if (!f) return;
+  if (/\.zip$/i.test(f.name)) return shaderImportZip(g, f);
   try {
     toast('Importing shader data…', I.chip);
     const r = await api(`/api/games/${encodeURIComponent(g.key)}/shaders/import`, { body: f });
     if (!r.added) toast(`${g.title}: nothing new: this device already has all of it (${r.present} entries).`, I.check, 6000);
     else toast(`${g.title}: ${r.added.toLocaleString()} shader entries added; they are built before you play.${r.present ? ` ${r.present.toLocaleString()} were already here and were kept.` : ''}`, I.check, 8000);
+  } catch (e) { alertDlg('Import failed', e.message); }
+}
+
+// a ZIP of original shader-cache files (shaderzip.go): what was converted, and why the rest was not
+async function shaderImportZip(g, f) {
+  try {
+    toast('Reading the shader caches in the ZIP…', I.chip);
+    const r = await api(`/api/games/${encodeURIComponent(g.key)}/shaders/import-zip`, { body: f });
+    const lines = r.files.map(x => `\u2022 ${x.name}${x.format ? ` (${x.format})` : ''}: ${x.action === 'added' ? `${x.added.toLocaleString()} new entries added` : x.action === 'installed' ? 'installed' : 'not used'}${x.reason ? ` \u2014 ${x.reason}` : ''}`);
+    const head = r.usable ? (r.added ? `${r.added.toLocaleString()} shader entries were added to ${g.title}; they are built before you play.` : `The shader data for ${g.title} was installed.`)
+      : `Nothing in this ZIP could be used for ${g.title}. Nothing was changed.`;
+    alertDlg('Import Shaders', head + '\n\n' + lines.slice(0, 12).join('\n') + (lines.length > 12 ? `\n\u2026 and ${lines.length - 12} more file(s)` : ''));
   } catch (e) { alertDlg('Import failed', e.message); }
 }
 

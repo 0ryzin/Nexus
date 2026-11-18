@@ -635,6 +635,33 @@ func (s *Server) routes() {
 		}
 		writeJSON(w, res)
 	})
+	// Import Shaders from a ZIP of original cache files (shaderzip.go): converted where the
+	// engine can use the format, reported otherwise; the ZIP is read, never kept as a cache
+	m.HandleFunc("POST /api/games/{key}/shaders/import-zip", func(w http.ResponseWriter, r *http.Request) {
+		g, ok := a.Library.Get(r.PathValue("key"))
+		if !ok {
+			writeErr(w, 404, errors.New("No such game."))
+			return
+		}
+		tmp, err := os.CreateTemp(a.Paths.System, "shader-import-*.zip")
+		if err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		defer os.Remove(tmp.Name())
+		_, err = io.Copy(tmp, io.LimitReader(r.Body, 4<<30))
+		tmp.Close()
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		res, err := a.Emu.ImportShaderZip(tmp.Name(), &g)
+		if err != nil {
+			writeErr(w, 409, err)
+			return
+		}
+		writeJSON(w, res)
+	})
 	// the shader cache NEXUS uses (shared by the PC's NEXUS users unless turned off; sharedcache.go)
 	m.HandleFunc("GET /api/shaders/cache", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, a.Emu.SharedCacheStatus())
