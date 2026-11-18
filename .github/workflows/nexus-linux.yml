@@ -162,10 +162,10 @@ jobs:
             case "$d" in "$PWD"/*) cp -L "$d" ../engine-out/ ;; esac
           done
           # system libraries the engine needs: only ones every Linux desktop and SteamOS has. Libraries
-          # whose version differs between distributions (FFmpeg, Boost, OpenSSL, SDL ...) must be
+          # whose version differs between distributions (FFmpeg, Boost, SDL ...; stable sonames such as OpenSSL 3, libusb-1.0, lz4, zstd, opus are fine) must be
           # built in, or the tar.gz and AppImage would not load on other systems
           echo "NEEDED:"; readelf -d "$lib" | awk '/NEEDED/{print "  "$5}'
-          if readelf -d "$lib" | awk '/NEEDED/{print $5}' | grep -E 'libav|libsw|libva|libvdpau|libboost|libopus|libfmt|libzstd|liblz4|libssl|libcrypto|libSDL|libusb|libenet|libcurl'; then
+          if readelf -d "$lib" | awk '/NEEDED/{print $5}' | grep -E 'libav|libsw|libva|libvdpau|libboost|libfmt|libSDL|libenet|libcurl|libvpx|libdav1d|libx26'; then
             echo "::error::the engine links a distribution-specific library (above)"; exit 1
           fi
           git log -1 --format=%H > ../engine-out/COMMIT
