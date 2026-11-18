@@ -4,6 +4,9 @@ name: nexus-linux-app
 
 on:
   workflow_dispatch:
+  push:
+    branches: [android-dev, "build/**"]
+    paths: ["app/**", ".github/workflows/nexus-linux-app.yml"]
   pull_request:
     paths: ["app/**", ".github/workflows/nexus-linux-app.yml"]
 
