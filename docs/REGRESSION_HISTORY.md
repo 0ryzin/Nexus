@@ -5,6 +5,31 @@ Newest first.
 
 ## 0.8.0 (in development)
 
+### Deleting a profile hung NEXUS (found by a test, 18 Nov)
+- **Problem:** deleting a user never returned; NEXUS stopped responding to that request.
+- **Cause:** `ProfileStore.Delete` held the store's lock and called `SaveDir`, which calls `Get`,
+  which takes the same lock (Go mutexes are not re-entrant).
+- **Fix:** `saveDirFor(profile)` resolves the folder without locking; `Delete` uses it.
+- **Test:** `TestTemporaryUserRemoved` deletes a user.
+- **Recognise it:** a goroutine dump with `ProfileStore.Get` under `ProfileStore.Delete`.
+
+### Ocarina of Time save missing on the Steam Deck (18 Nov)
+- **Problem:** a save made on Windows was not on the Deck after signing in to the same account.
+- **Cause:** game saves were never synchronised; the account synced only profiles and settings
+  ("Game saves stay on each device for now").
+- **Fix:** `savesync.go` (see CHANGELOG 0.8.0). **Test:** `TestSaveSyncWindowsToDeck`.
+
+### No on-screen keyboard on the Steam Deck (18 Nov)
+- **Cause:** NEXUS's keyboard opened only after gamepad input; in Desktop Mode the Deck's controls
+  arrive as mouse and keyboard, so it never opened. Steam+X depends on Steam Input's own mode.
+- **Fix:** on a Deck (DMI Valve Jupiter/Galileo) or in Gaming Mode text fields open the Steam
+  keyboard, then NEXUS's own. Not tested on a Deck.
+
+### No interface sounds on the Steam Deck (18 Nov)
+- **Cause (probable, not confirmed on a Deck):** the AppImage lacked GStreamer's `interleave`
+  plugin, which WebKit's Web Audio needs, and WebKit's autoplay policy could block sound.
+- **Fix:** plugins added, autoplay allowed. **Test:** CI records the start-up sound (peak > 500).
+
 ### Linux packages that would only have worked on Ubuntu (found by CI, 18 Nov)
 - **Problem:** the first Linux packages linked Ubuntu's FFmpeg 6 (libavcodec.so.60 plus about 40
   codec libraries). In the AppImage, NEXUS (in `usr/lib/nexus`) had RUNPATH `$ORIGIN` and found

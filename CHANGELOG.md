@@ -20,6 +20,33 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
   decoration, F11 off. Linux updates are announced, with a link to the release page.
   See docs/LINUX.md. Not yet tested on a Steam Deck. Known issue: Switch 2 games' AV1 movies
   do not play on Linux yet (the Linux engine has no AV1 decoder).
+- **Game saves sync between devices (NEXUS Account):** two-way, per game and user, with content
+  hashes, versions and the sending device; unchanged saves are not re-sent; a newer save is never
+  overwritten; both sides changed = a conflict the user resolves; the replaced save is backed up
+  first; received saves are verified before use; works offline and catches up later; never blocks
+  start-up or a game. Status in *NEXUS Account › Game saves*. Tested against a simulated GitHub
+  (Windows ↔ Deck scenario); not yet tested between two real devices.
+- **First start offers** Sign in with a NEXUS account / Create one / Continue with a local profile,
+  so no throwaway profile is needed. A temporary local profile can be removed later ("Only on
+  this device" or "Remove from account too"); its saves are archived, never deleted, and sync no
+  longer brings it back.
+- **Typing on the Steam Deck:** text fields open the Steam keyboard (falls back to NEXUS's
+  controller keyboard) on a Deck or in Gaming Mode, also when the Deck's controls act as mouse
+  and keyboard. *Settings › General › Typing* chooses. Not tested on a Deck.
+- **Interface sounds on Linux:** the AppImage now carries the GStreamer plugins Web Audio needs and
+  allows autoplay; CI records the start-up sound from a PulseAudio sink. Not tested on a Deck.
+- **Steam:** menu entry, Steam artwork (NEXUS wordmark only) for a NEXUS shortcut the user added
+  themselves; NEXUS never adds or edits Steam shortcuts.
+- **Steam Deck preset for Switch 2 games** (applied once per game on first start when nothing is
+  set): 810p, FSR 1, low GPU accuracy, background shaders, 30 fps cap. The 12 GB memory layout is no
+  longer refused for Switch 2 games. Not measured on a Deck.
+- **Shader ZIP import:** recognises NEXUS/Lichii caches inside a ZIP and installs them; other
+  formats are listed as skipped with the reason (no conversion is invented). Background shader
+  compilation can use fewer threads ("Reduced", engine patch 0041).
+- **Navigation:** Home screen and Themes merged into *Personalisation*; shortcuts to Shaders,
+  Performance and Graphics removed from the dock (still in Settings). Clicking a profile opens it;
+  "Play as" switches. The red expanding selection ring is now a quiet white/black ring.
+- Fixed: deleting a profile could hang NEXUS.
 - **Frame generation shows the truth:** while a game runs, NEXUS shows whether frame generation
   is really running or why not (engine patch 0033). The built-in method is named for what it is,
   NEXUS's optical-flow interpolation on any Vulkan GPU, instead of "AMD FSR 3".
