@@ -127,7 +127,14 @@ jobs:
         run: |
           set -euo pipefail
           ls build/bin
-          ./build/bin/tests
+          if [[ "${{ matrix.arch }}" == arm64 ]]; then
+            # [jit_codegen_options] compares dynarmic's x86-64 code generation options; upstream runs it
+            # on x86-64 only, and on an ARM64 host its random blocks abort in dynarmic's ARM64 backend
+            # (an upstream limitation, recorded in docs/LINUX.md). Everything else runs.
+            ./build/bin/tests "~[jit_codegen_options]"
+          else
+            ./build/bin/tests
+          fi
           ./build/bin/config_tests
           ./build/bin/profile_import_tests
 
