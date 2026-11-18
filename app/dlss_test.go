@@ -38,6 +38,7 @@ func fakeStreamlineZip(t *testing.T) []byte {
 // anything is downloaded; only the missing files are fetched (with range requests), checked
 // (CRC-32, NVIDIA signature) and installed; a damaged download installs nothing.
 func TestDLSSDownloadVerified(t *testing.T) {
+	withWindowsUpscalers(t)
 	data := fakeStreamlineZip(t)
 	ranges := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

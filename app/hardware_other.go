@@ -10,8 +10,8 @@ import (
 	"strings"
 )
 
-// Non-Windows detection (development and tests): /proc for CPU and memory, /etc/os-release.
-// GPU and display details need Windows interfaces and are reported as not detected.
+// Non-Windows detection: /proc for CPU and memory, /etc/os-release; on Linux the graphics cards
+// and displays from sysfs (hardware_sysfs.go).
 func detectHardware() Hardware {
 	h := Hardware{}
 	h.CPU.Architecture = runtime.GOARCH
@@ -77,6 +77,15 @@ func detectHardware() Hardware {
 				h.OS.Name = strings.Trim(v, `"`)
 			}
 		}
+	}
+	if runtime.GOOS == "linux" {
+		h.GPUs = sysfsGPUs("/sys/class/drm", pciIDs())
+		h.Displays = sysfsDisplays("/sys/class/drm")
+		h.Vulkan = sysfsVulkan(h.GPUs)
+		if len(h.GPUs) == 0 {
+			h.Notes = append(h.Notes, "No graphics card was found in /sys/class/drm.")
+		}
+		return h
 	}
 	h.Notes = append(h.Notes, "Graphics card and display details are read through Windows (DXGI, Vulkan, display settings) and are not available on this system.")
 	return h

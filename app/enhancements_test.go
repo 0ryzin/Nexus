@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -38,6 +39,7 @@ func TestGPUFeatureDetection(t *testing.T) {
 }
 
 func TestEnhancementSettings(t *testing.T) {
+	withWindowsUpscalers(t)
 	app, _ := testNewApp(t, t.TempDir())
 	// a GTX card: DLSS not offered, frame generation (FSR 3) offered, Lossless needs its file
 	withHardware(t, Hardware{GPUs: []GPUInfo{{VendorID: vendorNVIDIA, Vendor: "NVIDIA", Model: "NVIDIA GeForce GTX 1660", Kind: "discrete", Primary: true, VulkanAPI: "1.3"}}, Vulkan: VulkanInfo{Available: true}})
@@ -86,5 +88,24 @@ func TestEnhancementSettings(t *testing.T) {
 		if out[k] != v {
 			t.Errorf("%s = %q, want %q", k, out[k], v)
 		}
+	}
+}
+
+// withWindowsUpscalers: the test covers DLSS / FSR 4, which NEXUS offers on Windows only.
+func withWindowsUpscalers(t *testing.T) {
+	old := windowsUpscalerLibs
+	windowsUpscalerLibs = true
+	t.Cleanup(func() { windowsUpscalerLibs = old })
+}
+
+func TestUpscalersWindowsOnly(t *testing.T) {
+	old := windowsUpscalerLibs
+	windowsUpscalerLibs = false
+	defer func() { windowsUpscalerLibs = old }()
+	app, _ := testNewApp(t, t.TempDir())
+	withHardware(t, Hardware{GPUs: []GPUInfo{{VendorID: vendorNVIDIA, Vendor: "NVIDIA", Model: "NVIDIA GeForce RTX 4070", Kind: "discrete", Primary: true, VulkanAPI: "1.3"}}, Vulkan: VulkanInfo{Available: true}})
+	en := app.Emu.Enhancements()
+	if en.DLSS.Supported || en.FSR4.Supported || !strings.Contains(en.DLSS.Why, "Windows only") {
+		t.Fatalf("%+v %+v", en.DLSS, en.FSR4)
 	}
 }

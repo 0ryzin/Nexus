@@ -142,7 +142,7 @@ jobs:
         working-directory: engine-src
         run: |
           set -euo pipefail
-          lib=$(ls build/bin/nexus_engine.so build/lib/nexus_engine.so 2>/dev/null | head -1)
+          lib=$(find build -name nexus_engine.so -type f | head -1); test -n "$lib"
           echo "library: $lib"; ldd "$lib"
           python3 tools/nexus/abi_smoke.py "$lib"
 
@@ -151,7 +151,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ../engine-out
-          lib=$(ls build/bin/nexus_engine.so build/lib/nexus_engine.so 2>/dev/null | head -1)
+          lib=$(find build -name nexus_engine.so -type f | head -1); test -n "$lib"
           cp "$lib" ../engine-out/
           # shared libraries the build produced that the engine links (bundled SDL3 etc.)
           for d in $(ldd "$lib" | awk '/=> \//{print $3}'); do

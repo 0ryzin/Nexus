@@ -19,6 +19,7 @@ package main
 
 import (
 	"path/filepath"
+	"runtime"
 	"regexp"
 	"strings"
 )
@@ -128,8 +129,15 @@ func (e *Emulator) Enhancements() Enhancements {
 	}
 
 	// DLSS in place of a game's DLSS
+	// DLSS (NVIDIA Streamline) and FSR 4 (AMD's FidelityFX runtime) are Windows libraries in NEXUS
+	windowsOnly := !windowsUpscalerLibs
+	if windowsOnly {
+		dlss, fsr4 = false, false
+	}
 	out.DLSS = FeatureState{Supported: dlss}
-	if !dlss {
+	if windowsOnly {
+		out.DLSS.Why = "DLSS in place of a game's DLSS uses NVIDIA Streamline, which NEXUS has on Windows only."
+	} else if !dlss {
 		out.DLSS.Why = "DLSS needs an NVIDIA GeForce RTX graphics card (" + gpuName + ")."
 	} else if missing := e.dlssMissing(); len(missing) > 0 {
 		out.DLSS.Why = "Needs NVIDIA's DLSS files (" + strings.Join(missing, ", ") + "). NEXUS can download them from NVIDIA in Frame generation & DLSS."
@@ -138,7 +146,9 @@ func (e *Emulator) Enhancements() Enhancements {
 	}
 
 	out.FSR4 = FeatureState{Supported: fsr4, Ready: fsr4}
-	if !fsr4 {
+	if windowsOnly {
+		out.FSR4.Why = "FSR 4 uses AMD's FidelityFX runtime, which NEXUS has on Windows only."
+	} else if !fsr4 {
 		out.FSR4.Why = "FSR 4 needs an AMD Radeon RX 9000 series graphics card (" + gpuName + ")."
 	}
 	return out
@@ -179,3 +189,7 @@ func (e *Emulator) applyHardwareCaps(caps map[string]Support) {
 		off([]string{"enhance.fsr4"}, en.FSR4.Why)
 	}
 }
+
+// windowsUpscalerLibs: this platform has NEXUS's DLSS and FSR 4 libraries (Windows; tests of
+// those features turn it on elsewhere).
+var windowsUpscalerLibs = runtime.GOOS == "windows"
