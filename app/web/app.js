@@ -4893,8 +4893,10 @@ async function updatesPanel(p) {
 async function updateDialog(info) {
   const notes = (info.notes || '').replace(/\r/g, '').slice(0, 6000);
   const v = await dialog({ title: `NEXUS ${info.latest} is available`, pre: `Installed: ${S.app.version}\nNew: ${info.latest}${info.size ? `\nDownload: ${fmtBytes(info.size)}` : ''}\n\n${notes}`,
-    buttons: [{ label: 'Later', value: 'later' }, { label: 'Update now', value: 'now', primary: true }], cancelValue: 'later' });
+    buttons: [{ label: 'Later', value: 'later' }, { label: info.manual ? 'Open the download page' : 'Update now', value: 'now', primary: true }], cancelValue: 'later' });
   if (v === 'later') { api('/api/update/later', { body: {} }).catch(() => { }); return; }
+  // Linux: the new AppImage / tar.gz comes from the release page (NEXUS does not replace itself)
+  if (info.manual) { api('/api/app/open-link', { body: { which: 'release' } }).catch(e => alertDlg('Could not open the page', e.message)); return; }
   try { await api('/api/update/download', { body: {} }); } catch (e) { alertDlg('Could not download', e.message); return; }
   const box = h('div', { class: 'dialog' }, h('div', { class: 'd-body' }, h('h2', {}, `Updating to NEXUS ${info.latest}`), h('p', { class: 'upd-status' }, 'Downloading…'), h('div', { class: 'lx-bar measured' }, h('i'))));
   const layer = openLayer(box, { onBack: () => { } });

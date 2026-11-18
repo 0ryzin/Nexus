@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=NEXUS
+Comment=Play your games with a console-style home screen
+Exec=nexus %U
+Icon=nexus
+Terminal=false
+Categories=Game;Emulator;
+StartupWMClass=nexus

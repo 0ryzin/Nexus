@@ -305,6 +305,11 @@ func (s *Server) routes() {
 		var b struct{ Which string }
 		_ = readBody(r, &b)
 		link := map[string]string{"github-device": "https://github.com/login/device", "github-apps": "https://github.com/settings/applications", "github-settings": "https://github.com/settings/profile"}[b.Which]
+		if b.Which == "release" { // the page of the newest release (Linux updates are downloaded there)
+			if p := a.Updater.Last().Page; strings.HasPrefix(p, "https://github.com/") {
+				link = p
+			}
+		}
 		if link == "" {
 			writeErr(w, 400, errors.New("unknown link"))
 			return

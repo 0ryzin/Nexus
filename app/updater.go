@@ -36,6 +36,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -53,11 +54,14 @@ type UpdateInfo struct {
 	Published  string `json:"published,omitempty"`
 	Page       string `json:"page,omitempty"`
 	NeedsToken bool   `json:"needsToken,omitempty"`
-	Error      string `json:"error,omitempty"`
-	Checked    int64  `json:"checked"`
-	assetURL   string
-	sumURL     string
-	assetName  string
+	// Manual: NEXUS cannot install this version itself (Linux: a new AppImage or tar.gz is
+	// downloaded from the release page); the interface opens the page instead
+	Manual    bool   `json:"manual,omitempty"`
+	Error     string `json:"error,omitempty"`
+	Checked   int64  `json:"checked"`
+	assetURL  string
+	sumURL    string
+	assetName string
 }
 
 type UpdateJob struct {
@@ -185,6 +189,11 @@ func (u *Updater) Check() UpdateInfo {
 	// only the notes after the marker (release_body.py)
 	if i := strings.Index(info.Notes, "<!-- nexus:notes -->"); i >= 0 {
 		info.Notes = strings.TrimSpace(info.Notes[i+len("<!-- nexus:notes -->"):])
+	}
+	if runtime.GOOS != "windows" { // Linux: announced, downloaded from the release page
+		info.Available = CompareVersions(ver, AppVersion) > 0 && !rel.Draft && !rel.Pre
+		info.Manual = true
+		return info
 	}
 	want := "NEXUS-" + ver + "-Windows-x64.zip"
 	for _, a := range rel.Assets {

@@ -1,0 +1,16 @@
+#!/bin/sh
+# NEXUS AppImage entry point (tools/release/make_linux.py).
+HERE="$(dirname "$(readlink -f "$0")")"
+# Steam (and some desktops) set a library path for their own runtime; NEXUS brings its own
+# libraries, and the graphics drivers come from the system.
+unset LD_LIBRARY_PATH
+TRIPLE=$(ls -d "$HERE"/usr/lib/*-linux-gnu 2>/dev/null | head -1)
+export GST_PLUGIN_SYSTEM_PATH="$HERE/usr/lib/gstreamer-1.0"
+export GST_PLUGIN_SCANNER="$HERE/usr/lib/gstreamer-1.0/gst-plugin-scanner"
+export GST_REGISTRY="${XDG_CACHE_HOME:-$HOME/.cache}/nexus-gstreamer-registry.bin"
+export GDK_PIXBUF_MODULE_FILE="${GDK_PIXBUF_MODULE_FILE:-$HERE/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache}"
+export GSETTINGS_SCHEMA_DIR="$HERE/usr/share/glib-2.0/schemas${GSETTINGS_SCHEMA_DIR:+:$GSETTINGS_SCHEMA_DIR}"
+export XDG_DATA_DIRS="$HERE/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+# WebKitGTK finds its helper processes relative to usr/ (make_linux.py, appimage_webkit)
+cd "$HERE/usr" || exit 1
+exec "$HERE/usr/lib/nexus/nexus" "$@"

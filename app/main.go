@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 )
@@ -78,6 +79,10 @@ func StartCore(o CoreOptions) (*Core, error) {
 	paths := NewPathsSplit(o.Root, o.Data, o.Portable)
 	if o.GamesDir != "" {
 		paths.Games = o.GamesDir
+	} else if os.Getenv("APPIMAGE") != "" && !o.Portable {
+		// an AppImage runs from a read-only image mounted in a new place each time: the Games
+		// folder lives with the user's data (~/.local/share/NEXUS/Games) instead
+		paths.Games = filepath.Join(o.Data, "Games")
 	}
 	app, err := NewAppWithPaths(paths)
 	if err != nil {

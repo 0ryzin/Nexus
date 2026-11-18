@@ -25,12 +25,12 @@ type fakeGitHub struct {
 	flaky401 int             // the next n gist requests answer 401 (GitHub having a moment)
 	revoked  map[string]bool // tokens GitHub no longer accepts
 	// account_persist_test.go: GitHub's eight-hour sign-ins (OAuth apps since August 2026)
-	expiring bool            // issue access tokens that expire, with refresh tokens
-	refresh  map[string]int  // live refresh token -> user id
-	issued   int             // tokens issued so far (device flow + renewals)
-	renewals int             // successful renewals
-	down     bool            // the network is down: every connection is dropped
-	scopes   []string        // scope asked for at each device-flow start
+	expiring bool           // issue access tokens that expire, with refresh tokens
+	refresh  map[string]int // live refresh token -> user id
+	issued   int            // tokens issued so far (device flow + renewals)
+	renewals int            // successful renewals
+	down     bool           // the network is down: every connection is dropped
+	scopes   []string       // scope asked for at each device-flow start
 }
 
 func (f *fakeGitHub) userOf(auth string) int {
