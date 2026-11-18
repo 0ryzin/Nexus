@@ -94,7 +94,7 @@ jobs:
             libopus-dev libasound2-dev ccache python3-zstandard \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxkbcommon-dev \
             libwayland-dev wayland-protocols libdecor-0-dev libdbus-1-dev libibus-1.0-dev \
-            mesa-vulkan-drivers patchelf \
+            mesa-vulkan-drivers patchelf meson \
             libxtst-dev libxfixes-dev libdrm-dev libgbm-dev libegl1-mesa-dev libgles2-mesa-dev libpipewire-0.3-dev
           mkdir -p ~/apt-archives && cp /var/cache/apt/archives/*.deb ~/apt-archives/ 2>/dev/null || true
       - name: Save downloaded packages
@@ -115,6 +115,21 @@ jobs:
             nexus-linux-${{ matrix.arch }}-${{ steps.lock.outputs.commit }}-
             nexus-linux-${{ matrix.arch }}-
 
+      # dav1d (AV1) for the engine's FFmpeg: Switch 2 titles' movies are AV1 (Ocarina of Time's
+      # title-screen background). Static and position-independent, linked into the engine
+      # (engine patch 0044, LICHII_FFMPEG_DAV1D_DIR); no system copy is needed at run time.
+      - name: Build dav1d
+        run: |
+          set -euo pipefail
+          v=1.5.1
+          curl -fsSL "https://code.videolan.org/videolan/dav1d/-/archive/$v/dav1d-$v.tar.gz" -o /tmp/dav1d.tgz
+          echo "dav1d $v: $(sha256sum /tmp/dav1d.tgz | cut -c1-16)"
+          mkdir -p /tmp/dav1d-src && tar -xzf /tmp/dav1d.tgz -C /tmp/dav1d-src --strip-components=1
+          meson setup /tmp/dav1d-build /tmp/dav1d-src --buildtype=release --default-library=static \
+            -Db_staticpic=true -Denable_tools=false -Denable_tests=false --prefix="$RUNNER_TEMP/dav1d" --libdir=lib
+          ninja -C /tmp/dav1d-build install >/dev/null
+          ls -la "$RUNNER_TEMP/dav1d/lib/libdav1d.a"
+
       # FFmpeg is built from source too, static and position-independent with only the decoders the
       # engine uses (H.264, VP8, VP9) and no VA-API/VDPAU: the system's libavcodec differs between
       # distributions (Ubuntu 24.04 has .so.60, Arch .so.61) and is not on every Steam Deck.
@@ -133,7 +148,7 @@ jobs:
             -DBUILD_TESTING=ON -DLICHII_TESTS=ON \
             -DENABLE_QT=OFF -DLICHII_CMD=OFF -DLICHII_ROOM=OFF -DLICHII_ROOM_STANDALONE=OFF \
             -DLICHII_USE_BUNDLED_SDL3=OFF \
-            -DLICHII_USE_BUNDLED_FFMPEG=OFF -DLICHII_USE_EXTERNAL_FFMPEG=ON \
+            -DLICHII_USE_BUNDLED_FFMPEG=OFF -DLICHII_USE_EXTERNAL_FFMPEG=ON -DLICHII_FFMPEG_DAV1D_DIR="$RUNNER_TEMP/dav1d" \
             -DVulkanHeaders_FORCE_BUNDLED=ON -DVulkanUtilityLibraries_FORCE_BUNDLED=ON \
             -DENABLE_UPDATE_CHECKER=OFF -DENABLE_WEB_SERVICE=OFF -DUSE_DISCORD_PRESENCE=OFF \
             -DENABLE_WERROR=OFF -DUSE_CCACHE=ON \

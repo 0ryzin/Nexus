@@ -5,6 +5,18 @@ Newest first.
 
 ## 0.8.0 (in development)
 
+### Ocarina of Time title screen without its background on the Steam Deck (18 Nov)
+- **Problem:** the title menu (Continue, New Game, Options) showed, but not the scene behind it
+  (adult Link on Epona, the moon).
+- **Cause:** that background is a video (Lichii #2204 describes it), and Switch 2 videos are AV1.
+  The Linux engine's FFmpeg (`LICHII_USE_EXTERNAL_FFMPEG`) was built with H.264, VP8 and VP9 only,
+  so `avcodec_find_decoder_by_name("libdav1d")` found nothing (a gap recorded in LINUX.md since
+  0.7). The Windows engine has dav1d.
+- **Fix:** engine patch 0044 + CI: a static dav1d 1.5.1, `--enable-libdav1d`. CI's engine test
+  `nx2_video_av1` (skipped before) decodes AV1. Not yet seen on a Deck.
+- **Game audio (same report):** not explained by this; cause unconfirmed without a Deck log
+  (Settings › Storage › Send this device's logs).
+
 ### Installing title.keys "not accepted" and prod.keys lost (Steam Deck report, 18 Nov)
 - **Cause:** *Install title.keys* called `InstallKeys(<installed prod.keys>, title)`. InstallKeys
   first moved the installed files to the archive, then copied prod.keys from its installed path,

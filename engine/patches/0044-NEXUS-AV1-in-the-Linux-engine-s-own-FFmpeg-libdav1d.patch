@@ -1,0 +1,76 @@
+From 8e7918b27f0853e78de0dc3dcee6bb67c253bbc5 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 18 Nov 2026 23:41:08 +0000
+Subject: [PATCH] NEXUS: AV1 in the Linux engine's own FFmpeg (libdav1d)
+
+LICHII_USE_EXTERNAL_FFMPEG built H.264, VP8 and VP9 only, so on Linux Switch 2 titles' AV1
+movies did not play: Ocarina of Time's title screen showed its menu without the background
+video on a Steam Deck. LICHII_FFMPEG_DAV1D_DIR names a static, position-independent dav1d
+install; FFmpeg is configured with --enable-libdav1d (pkg-config from that install) and
+libdav1d.a is linked after FFmpeg's libraries. The engine test nx2_video_av1 (skipped without
+libdav1d) now runs.
+---
+ externals/ffmpeg/CMakeLists.txt | 25 +++++++++++++++++++++++--
+ 1 file changed, 23 insertions(+), 2 deletions(-)
+
+diff --git a/externals/ffmpeg/CMakeLists.txt b/externals/ffmpeg/CMakeLists.txt
+index a14eaaa04..d037eb43d 100644
+--- a/externals/ffmpeg/CMakeLists.txt
++++ b/externals/ffmpeg/CMakeLists.txt
+@@ -258,6 +258,20 @@ else()
+ 
+     find_program(BASH_PROGRAM bash REQUIRED)
+ 
++    # NEXUS: AV1 (Switch 2 titles' movies, e.g. Ocarina of Time's title-screen background) needs
++    # libdav1d. LICHII_FFMPEG_DAV1D_DIR names a static, position-independent dav1d install
++    # (lib/libdav1d.a, lib/pkgconfig); without it this FFmpeg has H.264, VP8 and VP9 only.
++    set(FFmpeg_DAV1D_FLAGS "")
++    set(FFmpeg_ENV ${CMAKE_COMMAND} -E env)
++    if (LICHII_FFMPEG_DAV1D_DIR)
++        if (NOT EXISTS "${LICHII_FFMPEG_DAV1D_DIR}/lib/libdav1d.a")
++            message(FATAL_ERROR "LICHII_FFMPEG_DAV1D_DIR: no lib/libdav1d.a in ${LICHII_FFMPEG_DAV1D_DIR}")
++        endif()
++        set(FFmpeg_DAV1D_FLAGS --enable-libdav1d --enable-decoder=libdav1d --pkg-config-flags=--static)
++        set(FFmpeg_ENV ${CMAKE_COMMAND} -E env "PKG_CONFIG_PATH=${LICHII_FFMPEG_DAV1D_DIR}/lib/pkgconfig")
++        message(STATUS "FFmpeg: AV1 through libdav1d from ${LICHII_FFMPEG_DAV1D_DIR}")
++    endif()
++
+     # `configure` parameters builds only exactly what yuzu needs from FFmpeg
+     # `--disable-vdpau` is needed to avoid linking issues
+     # one string ("ccache cc"), not a list: as a list it became two configure arguments
+@@ -272,7 +286,7 @@ else()
+         OUTPUT
+             ${FFmpeg_MAKEFILE}
+         COMMAND
+-            ${BASH_PROGRAM} ${FFmpeg_PREFIX}/configure
++            ${FFmpeg_ENV} ${BASH_PROGRAM} ${FFmpeg_PREFIX}/configure
+                 --disable-avdevice
+                 --disable-avformat
+                 --disable-doc
+@@ -284,6 +298,7 @@ else()
+                 --enable-decoder=h264
+                 --enable-decoder=vp8
+                 --enable-decoder=vp9
++                ${FFmpeg_DAV1D_FLAGS}
+                 --enable-filter=yadif,scale
+                 --enable-pic
+                 --cc=${FFmpeg_CC}
+@@ -343,8 +358,14 @@ else()
+     link_libraries(${FFmpeg_LIBVA_LIBRARIES})
+     # static archives resolve left to right: libswscale (after libavutil in the component list)
+     # needs libavutil again after it
+-    set(FFmpeg_LIBRARIES ${FFmpeg_BUILD_LIBRARIES} ${FFmpeg_avutil_LIBRARY} ${FFmpeg_HWACCEL_LIBRARIES}
++    # (NEXUS: libdav1d.a after them: libavcodec.a refers to it)
++    set(FFmpeg_DAV1D_LIBRARY "")
++    if (LICHII_FFMPEG_DAV1D_DIR)
++        set(FFmpeg_DAV1D_LIBRARY "${LICHII_FFMPEG_DAV1D_DIR}/lib/libdav1d.a")
++    endif()
++    set(FFmpeg_LIBRARIES ${FFmpeg_BUILD_LIBRARIES} ${FFmpeg_avutil_LIBRARY} ${FFmpeg_DAV1D_LIBRARY} ${FFmpeg_HWACCEL_LIBRARIES}
+         CACHE PATH "Paths to FFmpeg libraries" FORCE)
++    unset(FFmpeg_DAV1D_LIBRARY)
+     unset(FFmpeg_BUILD_LIBRARIES)
+     unset(FFmpeg_HWACCEL_FLAGS)
+     unset(FFmpeg_HWACCEL_INCLUDE_DIRS)
+-- 
+2.43.0
+

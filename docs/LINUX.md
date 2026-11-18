@@ -25,15 +25,17 @@ Run `uname -m` to check: `x86_64` means AMD64 and `aarch64` means ARM64.
    - The Linux engine has its own copies of the libraries whose versions differ between
      distributions:
      - SDL 3.4.20 with libusb;
-     - FFmpeg, static, with only the H.264, VP8 and VP9 decoders and no VA-API or VDPAU.
+     - FFmpeg, static, with the H.264, VP8, VP9 and (since 0.8.0, through a static dav1d) AV1
+       decoders and no VA-API or VDPAU.
    - It links only libraries every desktop and SteamOS has: glibc, libstdc++, libudev and
      libdrm. Graphics and windowing libraries (X11, Wayland, Vulkan) are loaded at run time.
    - libusb-1.0, OpenSSL 3 and lz4 are copied next to the engine in both packages, with their
      licence texts in `Licences/linux-libraries`.
    - CI fails if the engine links FFmpeg, Boost, SDL or another version-specific library from
      the system.
-   - Known gap: no AV1 decoder, so Switch 2 games' AV1 movies do not play on Linux yet. The
-     Windows engine has one.
+   - AV1 (0.8.0, engine patch 0044): Switch 2 games' movies are AV1. Before 0.8.0 the Linux engine
+     had no AV1 decoder, so they did not play: Ocarina of Time's title screen showed its menu
+     without the background video on a Steam Deck. CI's engine test `nx2_video_av1` decodes AV1.
 2. **NEXUS.** `go build -tags webkitgtk`. The window is GTK 3 with WebKitGTK 4.1
    (`app_linux.go`). The engine is loaded with dlopen (`enginehost_linux.go`, the same loader as
    Android).

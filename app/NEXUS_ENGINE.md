@@ -1,6 +1,6 @@
 # The NEXUS engine: investigation, architecture, status and plan
 
-## NEXUS Engine 0.8.0 (in development): Lichii build 316, patches 0018-0043
+## NEXUS Engine 0.8.0 (in development): Lichii build 316, patches 0018-0044
 
 Base: Lichii `build-316` (`5a66c8959`), 41 NEXUS patches. Interface version stays 2; the additions
 below are optional exports that NEXUS looks up by name (older engine builds simply lack them).
@@ -29,6 +29,7 @@ below are optional exports that NEXUS looks up by name (older engine builds simp
 | 0041 | `shader_worker_limit` (Renderer): how many threads compile shaders while a game runs (0: the engine's choice). NEXUS: Background compilation › Reduced = 2 |
 | 0042 | Switch 2 detection falls back to the title id NEXUS identified (`titleId` in the request) when the file check (`FindSwitch2Program`) finds no Switch 2 program: 12 GiB layout and 31.25 MHz guest clock, with a warning in the log. Suspected cause of Ocarina of Time's black picture below 12 GB and ~10 fps at 12 GB (Steam Deck and PC); not confirmed with the game |
 | 0043 | NEXUS Home on a back button: `homePaddles` (l4/r4/l5/r5) in the request map to SDL's paddle buttons (Steam Deck back buttons, Elite/Edge paddles), handled like the Guide button; the first press is logged |
+| 0044 | AV1 in the Linux engine: `LICHII_FFMPEG_DAV1D_DIR` (a static dav1d built by CI) adds `--enable-libdav1d` to the engine's own FFmpeg. Without it Switch 2 movies (Ocarina of Time's title-screen background) did not play on Linux and the Steam Deck |
 
 `nexus_engine_prepare_shaders(json)`: `{"game", "dataDir", "configFile", "titleId": "<hex>",
 "contents": [...], "force": false}`; 0 started, -1 a game or preparation runs, -2 bad request. It
