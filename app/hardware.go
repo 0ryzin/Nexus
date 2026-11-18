@@ -237,3 +237,6 @@ func (a *App) DetectHardware(refresh bool) Hardware {
 var virtualDisplayDrivers = map[string]bool{"simpledrm": true, "efidrm": true, "ofdrm": true, "vesadrm": true,
 	"hyperv_drm": true, "vmwgfx": true, "qxl": true, "cirrus": true, "cirrus-qemu": true, "bochs-drm": true,
 	"vboxvideo": true, "virtio_gpu": true, "virtio-gpu": true, "vkms": true, "udl": true, "ast": true, "mgag200": true}
+
+// steamDeckGPUs: the Steam Deck's APUs (LCD "Van Gogh", OLED "Sephiroth").
+var steamDeckGPUs = map[uint32]string{0x163f: "AMD Custom GPU 0405 (Steam Deck)", 0x1435: "AMD Custom GPU 0932 (Steam Deck OLED)"}

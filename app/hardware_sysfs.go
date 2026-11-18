@@ -20,8 +20,6 @@ import (
 	"strings"
 )
 
-// steamDeckGPUs: the Steam Deck's APUs (LCD "Van Gogh", OLED "Sephiroth").
-var steamDeckGPUs = map[uint32]string{0x163f: "AMD Custom GPU 0405 (Steam Deck)", 0x1435: "AMD Custom GPU 0932 (Steam Deck OLED)"}
 
 func readHex(p string) uint32 {
 	b, err := os.ReadFile(p)
