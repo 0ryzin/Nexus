@@ -87,6 +87,8 @@ jobs:
             nexus-linux-${{ matrix.arch }}-${{ steps.lock.outputs.commit }}-
             nexus-linux-${{ matrix.arch }}-
 
+      # SDL3 is built from source (cpmfile.json: 3.4.20 with libusb, engine patch 0031): the prebuilt
+      # static SDL3 is not position-independent on ARM64, and has no libusb (Switch 2 over USB)
       - name: Configure the engine
         working-directory: engine-src
         run: |
@@ -97,7 +99,7 @@ jobs:
             -DNEXUS_ENGINE_VERSION=${{ steps.lock.outputs.version }} \
             -DBUILD_TESTING=ON -DLICHII_TESTS=ON \
             -DENABLE_QT=OFF -DLICHII_CMD=OFF -DLICHII_ROOM=OFF -DLICHII_ROOM_STANDALONE=OFF \
-            -DLICHII_USE_BUNDLED_SDL3=ON \
+            -DLICHII_USE_BUNDLED_SDL3=OFF \
             -DVulkanHeaders_FORCE_BUNDLED=ON -DVulkanUtilityLibraries_FORCE_BUNDLED=ON \
             -DENABLE_UPDATE_CHECKER=OFF -DENABLE_WEB_SERVICE=OFF -DUSE_DISCORD_PRESENCE=OFF \
             -DENABLE_WERROR=OFF -DUSE_CCACHE=ON \
