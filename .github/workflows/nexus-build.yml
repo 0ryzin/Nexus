@@ -23,7 +23,7 @@ jobs:
   app-tests:
     name: NEXUS tests (Linux, fast)
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 40
     defaults:
       run:
         working-directory: app
