@@ -599,6 +599,7 @@ func TestNoEmulatorProgramsRemain(t *testing.T) {
 		for _, line := range strings.Split(s, "\n") {
 			if strings.Contains(line, "exec.Command(") && !strings.Contains(line, "explorer.exe") &&
 				!strings.Contains(line, "xdg-open") && !strings.Contains(line, "exec.Command(p, args...)") && // p = msedge.exe fallback UI
+				!strings.Contains(line, "exec.Command(p, c[1:]...)") && // app_linux.go: zenity/kdialog error box
 				!strings.Contains(line, `"NEXUS.exe"`) && !strings.Contains(line, `"--apply-update"`) { // the updater starts NEXUS itself
 				t.Errorf("%s starts an external program: %s", f, strings.TrimSpace(line))
 			}

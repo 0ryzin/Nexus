@@ -1,0 +1,5 @@
+# NEXUS: let the logged-in user open Nintendo Switch 2 controllers over USB.
+# SDL drives these pads through libusb, which needs the USB device node (not only hidraw).
+# 057e = Nintendo; 2066 Joy-Con 2 (R), 2067 Joy-Con 2 (L), 2069 Switch 2 Pro Controller,
+# 2073 NSO GameCube controller. Install only if you want this (see README-Linux.txt).
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="057e", ATTR{idProduct}=="2066|2067|2069|2073", MODE="0660", TAG+="uaccess"

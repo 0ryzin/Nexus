@@ -37,6 +37,16 @@ Steam Deck and Steam (Gaming Mode)
   Controllers: Steam Input presents your controller to NEXUS as a standard gamepad. Keep Steam
   Input on for NEXUS (the default) so the Deck's own controls work.
 
+Nintendo Switch 2 Pro Controller (USB) - optional, experimental on Linux
+  Over a USB cable the NEXUS engine can use the Switch 2 Pro Controller directly. Linux only
+  lets programs open the controller's USB device after you allow it once. NEXUS never changes
+  your system by itself; to allow it, run in a terminal (asks for your password):
+    sudo cp 72-nexus-switch2.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger
+  then unplug and replug the controller. (In the AppImage the file is inside; the tar.gz has it
+  next to this README.) To undo: sudo rm /etc/udev/rules.d/72-nexus-switch2.rules
+  On the Steam Deck in Gaming Mode, Steam Input already handles controllers; you don't need this.
+  Switch 2 controllers over Bluetooth and Joy-Con 2 are not supported by NEXUS on Linux.
+
 Updates
   NEXUS tells you when a new version is out; download the new AppImage or tar.gz from the
   release page. Your data stays where it is.

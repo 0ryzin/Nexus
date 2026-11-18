@@ -39,6 +39,9 @@ func TestUpdateCheckDownloadVerify(t *testing.T) {
 	old := AppVersion
 	AppVersion = "0.2.0"
 	defer func() { AppVersion = old }()
+	manual := updatesManual
+	updatesManual = false
+	defer func() { updatesManual = manual }()
 	data := releaseZip(t, "0.3.0", nil)
 	sum := sha256.Sum256(data)
 	published := hex.EncodeToString(sum[:])

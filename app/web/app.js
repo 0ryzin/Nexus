@@ -2650,7 +2650,7 @@ function showPlaying(justLaunched = false) {
   $('#play-title').textContent = st.title || 'NEXUS';
   $('#play-sub').textContent = st.phase === 'playing' ? `Playing as ${S.profile?.name || ''} · NEXUS Engine` : 'Starting the NEXUS engine…';
   const hk = S.settings.emulator?.homeKey;
-  $('#play-tip').textContent = (hk && !st.homeKeyConflict ? `Press ${hk} or the controller\u2019s Home button` : 'Press the controller\u2019s Home button') + ' to go back to NEXUS Home; the game keeps running.' + (S.settings.emulator?.fullscreenKey ? ` ${S.settings.emulator.fullscreenKey}: full screen / window.` : '') + (S.settings.emulator?.screenshotKey ? ` ${S.settings.emulator.screenshotKey}: screenshot.` : '') + (st.homeKeyConflict ? ` (${hk} is one of this game\u2019s controls, so it goes to the game. You can choose another Home key in Settings \u203a Game sessions.)` : '') + (S.settings.emulator?.quitCombo ? ' Hold View + Menu (Back + Start) to close the game.' : '');
+  $('#play-tip').textContent = (hk && !st.homeKeyConflict ? `Press ${hk} or the controller\u2019s Home button` : 'Press the controller\u2019s Home button') + ' to go back to NEXUS Home; the game keeps running.' + (S.settings.emulator?.fullscreenKey ? ` ${S.settings.emulator.fullscreenKey}: full screen / window.` : '') + (S.settings.emulator?.screenshotKey ? ` ${S.settings.emulator.screenshotKey}: screenshot.` : '') + (st.homeKeyConflict ? ` (${hk} is one of this game\u2019s controls, so it goes to the game. You can choose another Home key in Settings \u203a Game sessions.)` : '') + (S.settings.emulator?.quitCombo ? ' Hold View + Menu (Back + Start) to close the game.' : '') + frameGenNote(st.frameGen);
   // no menu here: Home goes straight to the Home screen, where the game's tile resumes it and
   // the banner offers Close game; this view is only what stays behind a game in its own window
   $('#play-close').hidden = true; $('#play-perf').hidden = true; $('#play-volume').hidden = true;
@@ -3712,6 +3712,22 @@ async function optimiserPanel(holder, gameKey = '', after) {
 }
 
 // ---------- frame generation, DLSS and FSR 4: what this PC can use, and the files they need
+// frameGenNote: what frame generation is really doing in this session, from the engine (never
+// from the setting alone). Empty while it is off or the engine does not report it.
+function frameGenNote(fg) {
+  const why = {
+    pending: 'Frame generation: starting.',
+    running: 'Frame generation: running.',
+    nvidia: 'Frame generation: running (NVIDIA).',
+    'unsupported-renderer': 'Frame generation is not running: it needs the Vulkan renderer.',
+    'unsupported-build': 'Frame generation is not running: this engine build does not include it.',
+    'unsupported-gpu': 'Frame generation is not running: your graphics card or driver lacks a Vulkan feature it needs.',
+    'unsupported-surface': 'Frame generation is not running: the game window\u2019s display format is not supported.',
+    'missing-lossless-dll': 'Frame generation is not running: Lossless Scaling needs your own Lossless.dll (Emulation settings \u203a Frame generation & DLSS).',
+  };
+  return fg ? ' ' + (why[fg] || `Frame generation: ${fg}.`) : '';
+}
+
 async function enhancementsPanel(box) {
   let en;
   try { en = await api('/api/enhancements'); } catch (e) { box.append(h('p', { class: 'note warn' }, e.message)); return; }
@@ -3721,7 +3737,7 @@ async function enhancementsPanel(box) {
     const st = f => f.ready ? pill('ok', 'Ready') : f.supported ? pill('warn', 'Needs files') : pill('bad', 'Not supported');
     box.append(h('dl', { class: 'kv enh-kv' },
       h('dt', {}, 'Graphics card'), h('dd', {}, en.gpu || 'Not detected'),
-      h('dt', {}, 'FSR 3 frame generation'), h('dd', {}, st(en.frameGen)),
+      h('dt', {}, 'Built-in frame generation'), h('dd', {}, st(en.frameGen)),
       h('dt', {}, 'Lossless Scaling frame generation'), h('dd', {}, st(en.lossless)),
       h('dt', {}, 'NVIDIA DLSS'), h('dd', {}, st(en.dlss)),
       h('dt', {}, 'AMD FSR 4'), h('dd', {}, st(en.fsr4))));

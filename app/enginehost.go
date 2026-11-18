@@ -195,6 +195,16 @@ type EngineStatus struct {
 	// engine 0.8: the last shader preparation (nexus_engine_prepare_shaders)
 	Prepare       *PrepStatus `json:"prepare,omitempty"`
 	KeyboardMoves string      `json:"keyboardMoves,omitempty"` // "R H -> E": default keys freed for shortcuts
+	// engine patch 0033: what frame generation is really doing (nil from older engines)
+	FrameGen *FrameGenStatus `json:"frameGen,omitempty"`
+}
+
+// FrameGenStatus is the renderer's frame generation state: pending | running |
+// unsupported-renderer | unsupported-build | unsupported-gpu | unsupported-surface |
+// missing-lossless-dll | nvidia, and how many frames it has generated.
+type FrameGenStatus struct {
+	State     string `json:"state"`
+	Generated uint64 `json:"generated"`
 }
 
 // EngineBuildInfo is nexus_engine_info plus what NEXUS knows about the installed build.

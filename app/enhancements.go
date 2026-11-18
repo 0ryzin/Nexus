@@ -5,7 +5,7 @@ package main
 // The NEXUS engine (Lichii lineage) already contains these features; NEXUS exposes them as
 // settings and decides, from the detected graphics card, which ones this PC can use:
 //
-//   - Frame generation (Vulkan only): AMD FSR 3 frame generation, built into the engine and usable
+//   - Frame generation (Vulkan only): the engine's own optical-flow frame interpolation (vendor-neutral Vulkan compute, not AMD FidelityFX code), usable
 //     on any Vulkan GPU, or Lossless Scaling's frame generation, which needs the user's own copy of
 //     Lossless.dll (from the Lossless Scaling app) in <engine data>\lossless.
 //   - NVIDIA DLSS in place of a game's own DLSS (Switch 2 games that use DLSS): needs a GeForce RTX
@@ -105,7 +105,7 @@ func (e *Emulator) Enhancements() Enhancements {
 		gpuName = "no graphics card was detected"
 	}
 
-	// frame generation (FSR 3): any Vulkan-capable GPU
+	// built-in frame generation: any Vulkan-capable GPU
 	vulkan := h.Vulkan.Available
 	for _, g := range h.GPUs {
 		vulkan = vulkan || g.VulkanAPI != ""

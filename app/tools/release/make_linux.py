@@ -10,7 +10,7 @@ NEXUS folder:
       nexus                  NEXUS (Go, built with -tags webkitgtk)
       Engine/                nexus_engine.so, the libraries it needs (RUNPATH $ORIGIN), engine.json
       Games/ Resources/ Licences/ Source/
-      README.md  README-Linux.txt  NEXUS_ENGINE.md  RELEASE.json  nexus.desktop
+      README.md  README-Linux.txt  NEXUS_ENGINE.md  RELEASE.json  nexus.desktop  72-nexus-switch2.rules
 
 The AppImage is made with linuxdeploy (and its GTK plugin): GTK 3, WebKitGTK and their helpers
 are bundled; WebKitGTK's helper processes are found inside the image (see appimage_webkit());
@@ -108,6 +108,7 @@ def stage(a):
         shutil.copy2(os.path.join(REPO, doc), os.path.join(root, doc))
     shutil.copy2(os.path.join(HERE, "linux", "README-Linux.txt"), os.path.join(root, "README-Linux.txt"))
     shutil.copy2(os.path.join(HERE, "linux", "nexus.desktop"), os.path.join(root, "nexus.desktop"))
+    shutil.copy2(os.path.join(HERE, "linux", "72-nexus-switch2.rules"), os.path.join(root, "72-nexus-switch2.rules"))
     os.makedirs(os.path.join(root, "Source"), exist_ok=True)
     shutil.move(os.path.join(root, "SOURCE-README.txt"), os.path.join(root, "Source", "README.txt"))
     src_tar = os.path.join(root, "Source", "NEXUS-source.tar.gz")

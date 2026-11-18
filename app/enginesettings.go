@@ -98,9 +98,9 @@ var NexusSettings = []NSetting{
 		Help: "How much memory the emulated console has. 4 GB is the retail Switch and works for all games. 6 GB and 8 GB are layouts the console's own system software defines for development units; some mods (for example high-resolution packs) need them. 10 GB and 12 GB do not exist on any Switch: they can break games, and use that much more of your PC's memory. Switch 2 games always use 12 GB. Applied when a game starts; NEXUS refuses a layout your PC does not have the memory for."},
 	// Frame generation & upscaler replacement (enhancements.go decides what this PC can use)
 	{ID: "enhance.framegen", Section: "enhance", Label: "Frame generation", Kind: "bool",
-		Help: "Adds generated frames between the game's own frames for smoother motion. Vulkan only. Adds a little input latency; best when the game already runs at a steady frame rate."},
+		Help: "Adds generated frames between the game's own frames for smoother motion. Vulkan only. The built-in method is NEXUS's own optical-flow interpolation running on your graphics card (it is not AMD FSR 3, AFMF or DLSS Frame Generation, which need driver or game support NEXUS cannot use). Adds a little input latency and can show artefacts around fast motion and on-screen text; best when the game already runs at a steady frame rate. While a game runs, NEXUS shows whether frame generation is really running."},
 	{ID: "enhance.framegen_type", Section: "enhance", Label: "Frame generation method", Kind: "enum",
-		Choices: []EmuChoice{{"fsr3", "AMD FSR 3 (built in)"}, {"lsfg", "Lossless Scaling (your own copy)"}}},
+		Choices: []EmuChoice{{"fsr3", "Built in (optical-flow interpolation, any Vulkan GPU)"}, {"lsfg", "Lossless Scaling (your own copy)"}}},
 	{ID: "enhance.framegen_mult", Section: "enhance", Label: "Generated frames", Kind: "enum",
 		Choices: []EmuChoice{{"2", "2× (one generated frame)"}, {"3", "3×"}, {"4", "4×"}}},
 	{ID: "enhance.framegen_target", Section: "enhance", Label: "Target frame rate", Kind: "enum",

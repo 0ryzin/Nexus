@@ -1,0 +1,47 @@
+From a013f06e47eb412822b7e64b5315fc79698ec428 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 18 Nov 2026 12:25:28 +0000
+Subject: [PATCH 32/32] input: SDL3 build fix: skip the SDL3-static export when
+ SDL is not installed
+
+From Lichii d48582e89 (build-only part; the Bluetooth code is Windows-only and not taken).
+---
+ .../sdl3/0004-no-static-export-without-install.patch  | 11 +++++++++++
+ cpmfile.json                                          |  3 ++-
+ 2 files changed, 13 insertions(+), 1 deletion(-)
+ create mode 100644 .patch/sdl3/0004-no-static-export-without-install.patch
+
+diff --git a/.patch/sdl3/0004-no-static-export-without-install.patch b/.patch/sdl3/0004-no-static-export-without-install.patch
+new file mode 100644
+index 000000000..16d0116fe
+--- /dev/null
++++ b/.patch/sdl3/0004-no-static-export-without-install.patch
+@@ -0,0 +1,11 @@
++--- a/CMakeLists.txt
+++++ b/CMakeLists.txt
++@@ -4170,7 +4170,7 @@
++   export(TARGETS SDL3-shared NAMESPACE "SDL3::" FILE "SDL3sharedTargets.cmake")
++ endif()
++ 
++-if(SDL_STATIC)
+++if(SDL_STATIC AND SDL_INSTALL)
++   export(TARGETS SDL3-static NAMESPACE "SDL3::" FILE "SDL3staticTargets.cmake")
++ endif()
++ 
+diff --git a/cpmfile.json b/cpmfile.json
+index 59d7f0068..ecc02e517 100644
+--- a/cpmfile.json
++++ b/cpmfile.json
+@@ -265,7 +265,8 @@
+         "patches": [
+             "0001-use-parent-libusb.patch",
+             "0002-switch2-sensor-counter-wrap.patch",
+-            "0003-switch2-sensor-enabled.patch"
++            "0003-switch2-sensor-enabled.patch",
++            "0004-no-static-export-without-install.patch"
+         ],
+         "repo": "libsdl-org/SDL",
+         "version": "release-3.4.20"
+-- 
+2.43.0
+

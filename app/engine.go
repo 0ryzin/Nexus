@@ -53,6 +53,9 @@ type RunState struct {
 	Amiibo string `json:"amiibo,omitempty"`
 	// KeyboardMoves: game buttons moved off NEXUS shortcut keys in the default keyboard layout
 	KeyboardMoves string `json:"keyboardMoves,omitempty"`
+	// FrameGen: the engine's real frame generation state while frame generation is on
+	// (running, or why it is not); empty when it is off or the engine does not report it
+	FrameGen string `json:"frameGen,omitempty"`
 }
 
 const engineID = "nexus"
@@ -523,7 +526,7 @@ func (e *Emulator) startEngine(host EngineHost, req EngineRequest, st RunState) 
 	}
 	e.app.Profiles.RecordLaunch(st.ProfileID, st.GameKey, st.Title)
 	e.setState(st)
-	go e.monitor(host, st)
+	go e.monitor(host, st, sessionFrameGenOn(req.ConfigFile))
 	return nil
 }
 
@@ -533,7 +536,7 @@ var checkpointEvery = 30 * time.Second
 
 // monitor follows the engine's state. Play time counts only while the engine is running the game
 // and presenting frames.
-func (e *Emulator) monitor(host EngineHost, st RunState) {
+func (e *Emulator) monitor(host EngineHost, st RunState, frameGenOn bool) {
 	s := e.app.Settings.Get()
 	start := time.Now()
 	var playStart, lastCheckpoint time.Time
@@ -591,6 +594,11 @@ func (e *Emulator) monitor(host EngineHost, st RunState) {
 		}
 		if es.HomeKeyConflict != st.HomeKeyConflict {
 			st.HomeKeyConflict = es.HomeKeyConflict
+			e.setState(st)
+		}
+		if fg := frameGenShown(es.FrameGen, frameGenOn); fg != st.FrameGen {
+			e.app.Log.Printf("engine: frame generation %s", fg)
+			st.FrameGen = fg
 			e.setState(st)
 		}
 		switch es.State {
@@ -1017,4 +1025,23 @@ func toggleUIFullscreen(ui UIHost) {
 		return
 	}
 	ui.SetFullscreen(!ui.IsFullscreen())
+}
+
+// sessionFrameGenOn: the session's config turns frame generation on.
+func sessionFrameGenOn(cfg string) bool {
+	ini, _ := LoadIni(cfg)
+	if ini == nil {
+		return false
+	}
+	v, _ := ini.GetSetting("Renderer", "frame_gen")
+	return v == "true" || v == "1"
+}
+
+// frameGenShown is what NEXUS shows about frame generation: nothing while it is off or the
+// engine does not report it, otherwise the engine's own state (never the setting alone).
+func frameGenShown(fg *FrameGenStatus, on bool) string {
+	if !on || fg == nil {
+		return ""
+	}
+	return fg.State
 }

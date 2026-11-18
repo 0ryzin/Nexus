@@ -1,0 +1,68 @@
+From 8e70ea04ee97229b567ba85677d24a6813460469 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 18 Nov 2026 12:25:59 +0000
+Subject: [PATCH] nexus_engine: report frame generation state and generated
+ frames in the status
+
+NEXUS showed only the frame generation setting. The status now carries what
+the renderer is actually doing (running, or why it is not), so NEXUS can show
+the truth and never advertise frame generation that is not happening.
+---
+ src/nexus_engine/nexus_engine.cpp | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/src/nexus_engine/nexus_engine.cpp b/src/nexus_engine/nexus_engine.cpp
+index 832b27d5a..0e94bffb8 100644
+--- a/src/nexus_engine/nexus_engine.cpp
++++ b/src/nexus_engine/nexus_engine.cpp
+@@ -151,6 +151,8 @@ struct Engine {
+     std::atomic<bool> force_stop{false};
+     std::atomic<int> volume{100};
+     std::atomic<std::uint64_t> frames{0};
++    std::atomic<int> fg_state{-1};              // VideoCore::FrameGenState, -1 = no renderer yet
++    std::atomic<std::uint64_t> fg_generated{0}; // frames the frame generator added
+     std::atomic<std::uint64_t> program_id{0};
+     std::atomic<int> system_gen{0}; // 1 = Switch 1 program, 2 = Switch 2 program (NPDM ACID layout)
+     // real loading progress (disk shader cache): stage 0 none, 1 preparing, 2 building shaders
+@@ -862,6 +864,8 @@ bool KeyUsedByGameControls(SDL_Scancode key) {
+ void RunSession(Request req) {
+     Engine& e = E();
+     e.frames = 0;
++    e.fg_state = -1;
++    e.fg_generated = 0;
+     e.program_id = 0;
+     e.system_gen = 0;
+     e.suspend_request = -1;
+@@ -1224,6 +1228,11 @@ void RunSession(Request req) {
+                 }
+             }
+             e.frames = Core::g_nx2_present_count.load() - presents_at_start;
++            if (system.IsPoweredOn()) {
++                const auto fg = system.Renderer().GetFrameGenStatus();
++                e.fg_state = static_cast<int>(fg.state);
++                e.fg_generated = fg.generated_frames;
++            }
+             if (const int v = e.volume.load(); v != applied_volume) {
+                 Settings::values.volume.SetValue(static_cast<u8>(std::clamp(v, 0, 200)));
+                 applied_volume = v;
+@@ -1599,6 +1608,17 @@ NEXUS_API int32_t nexus_engine_status(char* buf, int32_t buf_len) {
+     json j = json::object();
+     j["state"] = StateName(e.state.load());
+     j["frames"] = e.frames.load();
++    if (const int fg = e.fg_state.load(); fg >= 0) {
++        // What frame generation is really doing, so NEXUS shows it instead of the setting alone
++        static constexpr const char* names[] = {"pending", "running", "unsupported-renderer",
++                                                "unsupported-build", "unsupported-gpu",
++                                                "unsupported-surface", "missing-lossless-dll",
++                                                "nvidia"};
++        json f;
++        f["state"] = fg < static_cast<int>(std::size(names)) ? names[fg] : "unknown";
++        f["generated"] = e.fg_generated.load();
++        j["frameGen"] = std::move(f);
++    }
+     j["volume"] = e.volume.load();
+     if (const auto id = e.program_id.load(); id != 0) {
+         char hex[17];
+-- 
+2.43.0
+

@@ -190,7 +190,7 @@ func (u *Updater) Check() UpdateInfo {
 	if i := strings.Index(info.Notes, "<!-- nexus:notes -->"); i >= 0 {
 		info.Notes = strings.TrimSpace(info.Notes[i+len("<!-- nexus:notes -->"):])
 	}
-	if runtime.GOOS != "windows" { // Linux: announced, downloaded from the release page
+	if updatesManual { // Linux: announced, downloaded from the release page
 		info.Available = CompareVersions(ver, AppVersion) > 0 && !rel.Draft && !rel.Pre
 		info.Manual = true
 		return info
@@ -660,3 +660,7 @@ func (a *App) preferBundledEngine() {
 		}
 	}
 }
+
+// updatesManual: NEXUS announces new versions but does not install them (everything except
+// Windows; tests of the Windows install path turn it off).
+var updatesManual = runtime.GOOS != "windows"

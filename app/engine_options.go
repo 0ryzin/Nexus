@@ -88,7 +88,7 @@ var EmuOptions = []EmuOption{
 	// frame generation and upscaler replacement (settings.h: frame_gen*, nvidia_dlss*, amd_fsr4)
 	{ID: "Renderer/frame_gen", Label: "Frame generation", Group: "Graphics", Kind: "bool", PerGame: true},
 	{ID: "Renderer/frame_gen_type", Label: "Frame generation method", Group: "Graphics", Kind: "enum", PerGame: true,
-		Choices: []EmuChoice{{"1", "AMD FSR 3"}, {"0", "Lossless Scaling"}}},
+		Choices: []EmuChoice{{"1", "Built in (optical-flow interpolation)"}, {"0", "Lossless Scaling"}}},
 	{ID: "Renderer/frame_gen_multiplier", Label: "Generated frames", Group: "Graphics", Kind: "int", Min: 2, Max: 4, Step: 1, Suffix: "×", PerGame: true},
 	{ID: "Renderer/frame_gen_target_rate", Label: "Frame generation target", Group: "Graphics", Kind: "int", Min: 0, Max: 240, Step: 1, Suffix: " fps", PerGame: true},
 	{ID: "Renderer/nvidia_dlss", Label: "NVIDIA DLSS in place of the game's DLSS", Group: "Graphics", Kind: "bool", PerGame: true},

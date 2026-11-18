@@ -1,0 +1,362 @@
+From ee99226def12e0214e3001d399827989f26834a6 Mon Sep 17 00:00:00 2001
+From: zortos293 <65777760+zortos293@users.noreply.github.com>
+Date: Tue, 17 Nov 2026 00:41:53 +0000
+Subject: [PATCH 31/32] input: build SDL3 with libusb on Windows for Switch 2
+ controllers
+
+Ports Eglantine PR #573 (cakezara): on MSVC the bundled SDL3 package has no
+libusb, so SDL's Switch 2 driver is compiled out. Build SDL 3.4.20 from source
+against the libusb external instead, with the two Switch 2 sensor fixes from
+SDL release-3.4.x (b0bb2d01f, 5576a4ee3). Name the pad "Nintendo Switch 2 Pro
+Controller", keep the GameCube adapter away from SDL's libusb path on Windows,
+and add a udev rule for USB access on Linux.
+
+Co-authored-by: capy-ai[bot] <230910855+capy-ai[bot]@users.noreply.github.com>
+---
+ .patch/sdl3/0001-use-parent-libusb.patch      |  61 +++++++++
+ .../0002-switch2-sensor-counter-wrap.patch    | 118 ++++++++++++++++++
+ .patch/sdl3/0003-switch2-sensor-enabled.patch |  26 ++++
+ cpmfile.json                                  |   9 +-
+ dist/72-eden-input.rules                      |   3 +
+ externals/CMakeLists.txt                      |  25 ++--
+ src/input_common/drivers/sdl_driver.cpp       |   7 ++
+ 7 files changed, 240 insertions(+), 9 deletions(-)
+ create mode 100644 .patch/sdl3/0001-use-parent-libusb.patch
+ create mode 100644 .patch/sdl3/0002-switch2-sensor-counter-wrap.patch
+ create mode 100644 .patch/sdl3/0003-switch2-sensor-enabled.patch
+
+diff --git a/.patch/sdl3/0001-use-parent-libusb.patch b/.patch/sdl3/0001-use-parent-libusb.patch
+new file mode 100644
+index 000000000..4bf07fca3
+--- /dev/null
++++ b/.patch/sdl3/0001-use-parent-libusb.patch
+@@ -0,0 +1,61 @@
++--- a/cmake/sdlchecks.cmake
+++++ b/cmake/sdlchecks.cmake
++@@ -1281,30 +1281,35 @@
++     set(HAVE_HIDAPI ON)
++     if(SDL_HIDAPI_LIBUSB)
++       set(HAVE_LIBUSB FALSE)
++-      find_package(LibUSB)
++-      if(LibUSB_FOUND)
++-        cmake_push_check_state()
++-        list(APPEND CMAKE_REQUIRED_LIBRARIES LibUSB::LibUSB)
++-        check_c_source_compiles_static("
++-          #include <stddef.h>
++-          #include <libusb.h>
++-          int main(int argc, char **argv) {
++-            libusb_interrupt_event_handler(NULL);
++-            return 0;
++-          }" HAVE_LIBUSB_H)
++-        cmake_pop_check_state()
++-        if(HAVE_LIBUSB_H)
++-          set(HAVE_LIBUSB TRUE)
++-          if(SDL_HIDAPI_LIBUSB_SHARED)
++-            target_get_dynamic_library(dynamic_libusb LibUSB::LibUSB)
++-            if(dynamic_libusb)
++-              set(HAVE_HIDAPI_LIBUSB_SHARED ON)
++-              set(SDL_LIBUSB_DYNAMIC "\"${dynamic_libusb}\"")
++-              sdl_link_dependency(hidapi INCLUDES $<TARGET_PROPERTY:LibUSB::LibUSB,INTERFACE_INCLUDE_DIRECTORIES>)
+++      if(TARGET libusb::usb)
+++        set(HAVE_LIBUSB TRUE)
+++        sdl_link_dependency(hidapi LIBS libusb::usb)
+++      else()
+++        find_package(LibUSB)
+++        if(LibUSB_FOUND)
+++          cmake_push_check_state()
+++          list(APPEND CMAKE_REQUIRED_LIBRARIES LibUSB::LibUSB)
+++          check_c_source_compiles_static("
+++            #include <stddef.h>
+++            #include <libusb.h>
+++            int main(int argc, char **argv) {
+++              libusb_interrupt_event_handler(NULL);
+++              return 0;
+++            }" HAVE_LIBUSB_H)
+++          cmake_pop_check_state()
+++          if(HAVE_LIBUSB_H)
+++            set(HAVE_LIBUSB TRUE)
+++            if(SDL_HIDAPI_LIBUSB_SHARED)
+++              target_get_dynamic_library(dynamic_libusb LibUSB::LibUSB)
+++              if(dynamic_libusb)
+++                set(HAVE_HIDAPI_LIBUSB_SHARED ON)
+++                set(SDL_LIBUSB_DYNAMIC "\"${dynamic_libusb}\"")
+++                sdl_link_dependency(hidapi INCLUDES $<TARGET_PROPERTY:LibUSB::LibUSB,INTERFACE_INCLUDE_DIRECTORIES>)
+++              endif()
++             endif()
++-          endif()
++-          if(NOT HAVE_HIDAPI_LIBUSB_SHARED)
++-            sdl_link_dependency(hidapi LIBS LibUSB::LibUSB PKG_CONFIG_SPECS "${LibUSB_PKG_CONFIG_SPEC}" CMAKE_MODULE LibUSB)
+++            if(NOT HAVE_HIDAPI_LIBUSB_SHARED)
+++              sdl_link_dependency(hidapi LIBS LibUSB::LibUSB PKG_CONFIG_SPECS "${LibUSB_PKG_CONFIG_SPEC}" CMAKE_MODULE LibUSB)
+++            endif()
++           endif()
++         endif()
++       endif()
+diff --git a/.patch/sdl3/0002-switch2-sensor-counter-wrap.patch b/.patch/sdl3/0002-switch2-sensor-counter-wrap.patch
+new file mode 100644
+index 000000000..52aa07b80
+--- /dev/null
++++ b/.patch/sdl3/0002-switch2-sensor-counter-wrap.patch
+@@ -0,0 +1,118 @@
++From b0bb2d01f95863943c582743edca74b7b4e05333 Mon Sep 17 00:00:00 2001
++From: Sam Lantinga <slouken@libsdl.org>
++Date: Sun, 15 Nov 2026 15:27:55 -0800
++Subject: [PATCH] Handle 32-bit sensor counter wrapping in the HIDAPI Switch 2
++ driver
++
++Fixes https://github.com/libsdl-org/SDL/issues/16420
++
++(cherry picked from commit cb3bf93207959f515b56efd1e16b8f1996387bae)
++---
++ src/joystick/hidapi/SDL_hidapi_switch2.c | 42 +++++++++++++++---------
++ 1 file changed, 26 insertions(+), 16 deletions(-)
++
++diff --git a/src/joystick/hidapi/SDL_hidapi_switch2.c b/src/joystick/hidapi/SDL_hidapi_switch2.c
++index 773405c51..7135b3825 100644
++--- a/src/joystick/hidapi/SDL_hidapi_switch2.c
+++++ b/src/joystick/hidapi/SDL_hidapi_switch2.c
++@@ -122,7 +122,9 @@ typedef struct
++     bool sensors_enabled;
++     bool sensors_ready;
++     int sample_count;
++-    Uint64 first_sensor_timestamp;
+++    Uint32 first_sensor_timestamp;
+++    Uint32 last_sensor_timestamp;
+++    Uint64 sensor_ticks;
++     Uint64 sensor_ts_coeff;
++     float gyro_coeff;
++ 
++@@ -1145,7 +1147,15 @@ static void HIDAPI_DriverSwitch2_HandleStatePacket(SDL_HIDAPI_Device *device, SD
++         break;
++     }
++ 
++-    Uint64 sensor_timestamp = (Uint32) (data[0x2b] | (data[0x2c] << 8U) | (data[0x2d] << 16U) | (data[0x2e] << 24U));
+++    Uint32 sensor_timestamp = (Uint32) (data[0x2b] | (data[0x2c] << 8U) | (data[0x2d] << 16U) | (data[0x2e] << 24U));
+++    if (sensor_timestamp) {
+++        if (ctx->last_sensor_timestamp) {
+++            ctx->sensor_ticks += (Uint32)(sensor_timestamp - ctx->last_sensor_timestamp);
+++        } else {
+++            ctx->sensor_ticks = sensor_timestamp;
+++        }
+++        ctx->last_sensor_timestamp = sensor_timestamp;
+++    }
++     if (sensor_timestamp && !ctx->sensors_ready) {
++         ctx->sample_count++;
++         if (ctx->sample_count >= 5 && !ctx->first_sensor_timestamp) {
++@@ -1154,7 +1164,7 @@ static void HIDAPI_DriverSwitch2_HandleStatePacket(SDL_HIDAPI_Device *device, SD
++         } else if (ctx->sample_count == 100) {
++             // Calculate timestamp coefficient
++             // Timestamp are normally microseconds but sometimes it's something else for no apparent reason
++-            Uint64 coeff = 1000 * (sensor_timestamp - ctx->first_sensor_timestamp) / (ctx->sample_count * 4);
+++            Uint64 coeff = 1000 * (Uint64)(sensor_timestamp - ctx->first_sensor_timestamp) / (ctx->sample_count * 4);
++             if ((coeff + 100000) / 200000 == 5) {
++                 // Within 10% of 1000
++                 ctx->sensor_ts_coeff = 10000;
++@@ -1182,7 +1192,7 @@ static void HIDAPI_DriverSwitch2_HandleStatePacket(SDL_HIDAPI_Device *device, SD
++         }
++     }
++     if (ctx->sensors_enabled && sensor_timestamp && ctx->sensors_ready) {
++-        sensor_timestamp = sensor_timestamp * ctx->sensor_ts_coeff / 10;
+++        Uint64 sensor_timestamp_ns = ctx->sensor_ticks * ctx->sensor_ts_coeff / 10;
++         float accel_data[3];
++         float gyro_data[3];
++         const float g = 9.80665f;
++@@ -1199,8 +1209,8 @@ static void HIDAPI_DriverSwitch2_HandleStatePacket(SDL_HIDAPI_Device *device, SD
++         switch (ctx->device->product_id) {
++         case USB_PRODUCT_NINTENDO_SWITCH2_JOYCON_LEFT:
++             if (ctx->device->parent) {
++-                SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_GYRO_L, sensor_timestamp, gyro_data, 3);
++-                SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_ACCEL_L, sensor_timestamp, accel_data, 3);
+++                SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_GYRO_L, sensor_timestamp_ns, gyro_data, 3);
+++                SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_ACCEL_L, sensor_timestamp_ns, accel_data, 3);
++             } else {
++                 float tmp = -accel_data[0];
++                 accel_data[0] = accel_data[2];
++@@ -1210,16 +1220,16 @@ static void HIDAPI_DriverSwitch2_HandleStatePacket(SDL_HIDAPI_Device *device, SD
++                 gyro_data[0] = gyro_data[2];
++                 gyro_data[2] = tmp;
++ 
++-                SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_GYRO, sensor_timestamp, gyro_data, 3);
++-                SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_ACCEL, sensor_timestamp, accel_data, 3);
+++                SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_GYRO, sensor_timestamp_ns, gyro_data, 3);
+++                SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_ACCEL, sensor_timestamp_ns, accel_data, 3);
++             }
++             break;
++         case USB_PRODUCT_NINTENDO_SWITCH2_JOYCON_RIGHT:
++             if (ctx->device->parent) {
++-                SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_GYRO, sensor_timestamp, gyro_data, 3);
++-                SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_ACCEL, sensor_timestamp, accel_data, 3);
++-                SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_GYRO_R, sensor_timestamp, gyro_data, 3);
++-                SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_ACCEL_R, sensor_timestamp, accel_data, 3);
+++                SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_GYRO, sensor_timestamp_ns, gyro_data, 3);
+++                SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_ACCEL, sensor_timestamp_ns, accel_data, 3);
+++                SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_GYRO_R, sensor_timestamp_ns, gyro_data, 3);
+++                SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_ACCEL_R, sensor_timestamp_ns, accel_data, 3);
++             } else {
++                 float tmp = accel_data[0];
++                 accel_data[0] = -accel_data[2];
++@@ -1229,13 +1239,13 @@ static void HIDAPI_DriverSwitch2_HandleStatePacket(SDL_HIDAPI_Device *device, SD
++                 gyro_data[0] = -gyro_data[2];
++                 gyro_data[2] = tmp;
++ 
++-                SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_GYRO, sensor_timestamp, gyro_data, 3);
++-                SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_ACCEL, sensor_timestamp, accel_data, 3);
+++                SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_GYRO, sensor_timestamp_ns, gyro_data, 3);
+++                SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_ACCEL, sensor_timestamp_ns, accel_data, 3);
++             }
++             break;
++         default:
++-            SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_GYRO, sensor_timestamp, gyro_data, 3);
++-            SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_ACCEL, sensor_timestamp, accel_data, 3);
+++            SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_GYRO, sensor_timestamp_ns, gyro_data, 3);
+++            SDL_SendJoystickSensor(timestamp, joystick, SDL_SENSOR_ACCEL, sensor_timestamp_ns, accel_data, 3);
++             break;
++         }
++     }
++-- 
++2.56.0
++
+diff --git a/.patch/sdl3/0003-switch2-sensor-enabled.patch b/.patch/sdl3/0003-switch2-sensor-enabled.patch
+new file mode 100644
+index 000000000..5c7b79874
+--- /dev/null
++++ b/.patch/sdl3/0003-switch2-sensor-enabled.patch
+@@ -0,0 +1,26 @@
++From 5576a4ee3f44c3629a1f5214edfd7a3955994f34 Mon Sep 17 00:00:00 2001
++From: Sam Lantinga <slouken@libsdl.org>
++Date: Sun, 15 Nov 2026 15:31:14 -0800
++Subject: [PATCH] Fixed the sensor enabled value in the HIDAPI Switch 2 driver
++
++(cherry picked from commit a239a79c78764486359c6314fcf76f8caec02e45)
++---
++ src/joystick/hidapi/SDL_hidapi_switch2.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/src/joystick/hidapi/SDL_hidapi_switch2.c b/src/joystick/hidapi/SDL_hidapi_switch2.c
++index 7135b3825..987f82cc0 100644
++--- a/src/joystick/hidapi/SDL_hidapi_switch2.c
+++++ b/src/joystick/hidapi/SDL_hidapi_switch2.c
++@@ -679,7 +679,7 @@ static bool HIDAPI_DriverSwitch2_SetJoystickSensorsEnabled(SDL_HIDAPI_Device *de
++         }
++         RecvBulkData(ctx, reply, sizeof(reply));
++     }
++-    ctx->sensors_enabled = true;
+++    ctx->sensors_enabled = enabled;
++     return true;
++ }
++ 
++-- 
++2.56.0
++
+diff --git a/cpmfile.json b/cpmfile.json
+index 8a9f46179..59d7f0068 100644
+--- a/cpmfile.json
++++ b/cpmfile.json
+@@ -259,11 +259,16 @@
+         "version": "v6.8.0"
+     },
+     "sdl3": {
+-        "hash": "df5a323af7ac366661a3c0e887969c72584d232f3cc211419d59b0487b620b6b2859d4549c9e8df002ee489290062e466fcfddf7edc0872a37b1f2845e81c0f3",
++        "hash": "8b2c4596f51a2e49e0b54629f440b17952562ec0d403e7852b0148487c89a0f2a28cfe0e700a6bb3278b0191d3eff30b5e0cddc2498783180c16806d4b943173",
+         "min_version": "3.2.10",
+         "package": "SDL3",
++        "patches": [
++            "0001-use-parent-libusb.patch",
++            "0002-switch2-sensor-counter-wrap.patch",
++            "0003-switch2-sensor-enabled.patch"
++        ],
+         "repo": "libsdl-org/SDL",
+-        "version": "release-3.4.8"
++        "version": "release-3.4.20"
+     },
+     "sdl3-ci": {
+         "ci": true,
+diff --git a/dist/72-eden-input.rules b/dist/72-eden-input.rules
+index b84ed200a..13e55a9df 100644
+--- a/dist/72-eden-input.rules
++++ b/dist/72-eden-input.rules
+@@ -6,3 +6,6 @@
+ # Consult your distro if this is not the case
+ 
+ KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ENV{ID_INPUT_JOYSTICK}=="1", MODE="0660", TAG+="uaccess"
++
++# Switch 2 controllers over USB: SDL drives them through libusb, which needs the USB device node
++SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="057e", ATTR{idProduct}=="2066|2067|2069|2073", MODE="0660", TAG+="uaccess"
+diff --git a/externals/CMakeLists.txt b/externals/CMakeLists.txt
+index 4288af15e..9f2dfc900 100644
+--- a/externals/CMakeLists.txt
++++ b/externals/CMakeLists.txt
+@@ -152,7 +152,23 @@ if(ENABLE_CUBEB)
+     endif()
+ endif()
+ 
+-if (NOT LICHII_USE_BUNDLED_SDL3)
++# libusb, before SDL3 so a source-built SDL3 can use it
++if (ENABLE_LIBUSB)
++    add_subdirectory(libusb)
++endif()
++
++# The prebuilt Windows SDL3 has no libusb, which SDL's Switch 2 controller driver needs
++if (MSVC AND ENABLE_LIBUSB AND LICHII_USE_BUNDLED_SDL3)
++    message(STATUS "Building SDL3 with libusb for Switch 2 controllers")
++    AddJsonPackage(NAME sdl3 FORCE_BUNDLED_PACKAGE ON OPTIONS
++        "SDL_SHARED OFF"
++        "SDL_STATIC ON"
++        "SDL_INSTALL OFF"
++        "SDL_TEST_LIBRARY OFF"
++        "SDL_HIDAPI ON"
++        "SDL_HIDAPI_LIBUSB ON"
++        "SDL_HIDAPI_LIBUSB_SHARED OFF")
++elseif (NOT LICHII_USE_BUNDLED_SDL3)
+     if (NOT WIN32)
+         # Yuzu itself needs: Atomic Audio Events Joystick Haptic Sensor Threads Timers
+         # Since 2.0.18 Atomic+Threads required for HIDAPI/libusb (see https://github.com/libsdl-org/SDL/issues/5095)
+@@ -173,7 +189,7 @@ if (NOT LICHII_USE_BUNDLED_SDL3)
+         set(SDL_FILE ON)
+     endif()
+ 
+-    AddJsonPackage(sdl3)
++    AddJsonPackage(NAME sdl3 OPTIONS "SDL_INSTALL OFF")
+ else()
+     message(STATUS "Using bundled SDL3")
+     AddJsonPackage(sdl3-ci)
+@@ -268,11 +284,6 @@ endif()
+ # Glad
+ add_subdirectory(glad)
+ 
+-# libusb
+-if (ENABLE_LIBUSB)
+-    add_subdirectory(libusb)
+-endif()
+-
+ # VMA
+ AddJsonPackage(vulkan-memory-allocator)
+ 
+diff --git a/src/input_common/drivers/sdl_driver.cpp b/src/input_common/drivers/sdl_driver.cpp
+index 2ead612f2..9dda5a7dd 100644
+--- a/src/input_common/drivers/sdl_driver.cpp
++++ b/src/input_common/drivers/sdl_driver.cpp
+@@ -655,6 +655,10 @@ public:
+             default:
+                 break;
+             }
++            if (SDL_GetGamepadVendor(sdl_controller.get()) == 0x057E &&
++                SDL_GetGamepadProduct(sdl_controller.get()) == 0x2069) {
++                return "Nintendo Switch 2 Pro Controller";
++            }
+             const auto name = SDL_GetGamepadName(sdl_controller.get());
+             if (name) {
+                 return name;
+@@ -1060,6 +1064,9 @@ SDLDriver::SDLDriver(std::string input_engine_) : InputEngine(std::move(input_en
+         SDL_SetHintWithPriority(SDL_HINT_JOYSTICK_RAWINPUT_CORRELATE_XINPUT, "0", SDL_HINT_OVERRIDE);
+         SDL_SetHintWithPriority(SDL_HINT_JOYSTICK_WGI, "0", SDL_HINT_OVERRIDE);
+     }
++    // SDL is built with libusb on Windows for Switch 2 controllers. Leave the GameCube adapter to
++    // the GC adapter driver, which claims it through libusb itself.
++    SDL_SetHint(SDL_HINT_HIDAPI_LIBUSB_GAMECUBE, "0");
+ #endif
+ 
+     // SDL3 defaults Steam Controller Bluetooth HIDAPI support to off, which can disable gyro.
+-- 
+2.43.0
+
