@@ -29,6 +29,10 @@ run() { # $1 = name, rest = env
   grep -E "startup: " "$data/Logs/nexus.log"
 }
 ok=0
+# the engine library loads here, with only what this system has (no missing libraries)
+APPIMAGE_EXTRACT_AND_RUN=1 "$ai" --engine-check "$out/$label-engine.json" >/dev/null 2>&1 || true
+cat "$out/$label-engine.json" 2>/dev/null; echo
+grep -q '"ready": *true' "$out/$label-engine.json" 2>/dev/null || { echo "::error::$label: the engine library does not load"; ok=1; }
 run desktop || ok=1
 # Steam's Gaming Mode sets SteamGamepadUI=1 for the games it starts: NEXUS must go full screen
 run gamingmode SteamGamepadUI=1 SteamDeck=1 || ok=1

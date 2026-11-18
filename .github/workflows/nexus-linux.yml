@@ -68,7 +68,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             autoconf cmake g++ gcc git glslang-tools libglu1-mesa-dev \
             libpulse-dev libtool libudev-dev mesa-common-dev nasm ninja-build \
-            libavfilter-dev libavcodec-dev libswscale-dev pkg-config zlib1g-dev libva-dev libvdpau-dev \
+            pkg-config zlib1g-dev \
             spirv-tools spirv-headers libusb-1.0-0-dev \
             libboost-dev libboost-fiber-dev libboost-context-dev \
             libopus-dev libasound2-dev ccache python3-zstandard \
@@ -88,6 +88,9 @@ jobs:
             nexus-linux-${{ matrix.arch }}-${{ steps.lock.outputs.commit }}-
             nexus-linux-${{ matrix.arch }}-
 
+      # FFmpeg is built from source too, static and position-independent with only the decoders the
+      # engine uses (H.264, VP8, VP9) and no VA-API/VDPAU: the system's libavcodec differs between
+      # distributions (Ubuntu 24.04 has .so.60, Arch .so.61) and is not on every Steam Deck.
       # SDL3 is built from source (cpmfile.json: 3.4.20 with libusb, engine patch 0031): the prebuilt
       # static SDL3 is not position-independent on ARM64, and has no libusb (Switch 2 over USB)
       - name: Configure the engine
@@ -101,6 +104,7 @@ jobs:
             -DBUILD_TESTING=ON -DLICHII_TESTS=ON \
             -DENABLE_QT=OFF -DLICHII_CMD=OFF -DLICHII_ROOM=OFF -DLICHII_ROOM_STANDALONE=OFF \
             -DLICHII_USE_BUNDLED_SDL3=OFF \
+            -DLICHII_USE_BUNDLED_FFMPEG=OFF -DLICHII_USE_EXTERNAL_FFMPEG=ON \
             -DVulkanHeaders_FORCE_BUNDLED=ON -DVulkanUtilityLibraries_FORCE_BUNDLED=ON \
             -DENABLE_UPDATE_CHECKER=OFF -DENABLE_WEB_SERVICE=OFF -DUSE_DISCORD_PRESENCE=OFF \
             -DENABLE_WERROR=OFF -DUSE_CCACHE=ON \
@@ -157,6 +161,13 @@ jobs:
           for d in $(ldd "$lib" | awk '/=> \//{print $3}'); do
             case "$d" in "$PWD"/*) cp -L "$d" ../engine-out/ ;; esac
           done
+          # system libraries the engine needs: only ones every Linux desktop and SteamOS has. Libraries
+          # whose version differs between distributions (FFmpeg, Boost, OpenSSL, SDL ...) must be
+          # built in, or the tar.gz and AppImage would not load on other systems
+          echo "NEEDED:"; readelf -d "$lib" | awk '/NEEDED/{print "  "$5}'
+          if readelf -d "$lib" | awk '/NEEDED/{print $5}' | grep -E 'libav|libsw|libva|libvdpau|libboost|libopus|libfmt|libzstd|liblz4|libssl|libcrypto|libSDL|libusb|libenet|libcurl'; then
+            echo "::error::the engine links a distribution-specific library (above)"; exit 1
+          fi
           git log -1 --format=%H > ../engine-out/COMMIT
           ls -la ../engine-out
 
