@@ -162,6 +162,7 @@ function homeDetails(g, folder) {
   if (folder) {
     box.append(h('div', { class: 'hd-text' }, h('b', {}, folder.name), h('span', {}, `Folder with ${folder.games.filter(gameByKey).length} game(s)`)));
     const open = h('button', { class: 'hd-play', 'data-nav': true }, 'Open'); open.addEventListener('click', () => openHomeFolder(folder.id));
+    open._folder = folder;
     box.append(h('div', { class: 'hd-actions' }, open));
     return;
   }
@@ -177,6 +178,7 @@ function homeDetails(g, folder) {
   // Up from the panel goes back to the game it shows
   play._navMove = more._navMove = dir => { if (dir !== 'up') return false; const t = $$('#tiles .tile').find(t => t._game?.key === g.key); if (t) { Nav.setFocus(t); return true; } return false; };
   more.addEventListener('click', () => gameMenu(g.key));
+  play._menuGame = more._menuGame = g.key; // X / Options there opens the game's menu too
   box.append(h('div', { class: 'hd-actions' }, play, more));
 }
 

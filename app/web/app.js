@@ -201,7 +201,7 @@ const Nav = {
     const hintsBefore = !!resetTarget(this.cur);
     this.cur = el;
     el.classList.add('focus');
-    if (hintsBefore || resetTarget(el)) renderHints();
+    if (hintsBefore || resetTarget(el) || S.screen === 'home') renderHints();
     if (isTextField(el) && S.lastInput !== 'mouse') el.focus({ preventScroll: true });
     else if (document.activeElement && document.activeElement !== el && document.activeElement.matches('input') && !OSK.target) document.activeElement.blur();
     if (scroll) el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: S.anim === 'off' ? 'auto' : 'smooth' });
@@ -403,7 +403,8 @@ const Pad = {
       if (OSK.target && OSK.pad(state, prev)) { this.prev[key] = state; continue; } // the on-screen keyboard's own buttons
       if (edge('search')) {
         const box = S.screen === 'library' ? $('#lib-search') : S.screen === 'settings' && !Nav.top()?.dialog ? $('#set-search') : null;
-        if (box) { Nav.setFocus(box); box.focus(); OSK.open(box); } else if (S.screen === 'home') showLibrary(true);
+        const menu = homeContextMenu(Nav.cur); // X on a Home tile: its menu, as a right-click
+        if (box) { Nav.setFocus(box); box.focus(); OSK.open(box); } else if (menu) { Sound.play('select'); menu(); } else if (S.screen === 'home') showLibrary(true);
       }
       if (edge('prevTab')) Nav.tab(-1);
       if (edge('nextTab')) Nav.tab(1);
@@ -654,11 +655,15 @@ const Wall = {
     const b = document.body, box = $('#wallpaper .wp-img');
     const anim = this.wp.use === 'animated' && this.wp.animated;
     const still = anim ? this.wp.poster : this.wp.file;
-    b.classList.toggle('has-wp', !!(anim || this.wp.file));
-    box.style.backgroundImage = still ? `url("${this.url(still)}")` : '';
+    // no picture of the user's own: the OOT Launch background, when that animation is chosen
+    const oot = !anim && !this.wp.file && typeof ootHomeWallpaper === 'function' ? ootHomeWallpaper() : '';
+    b.classList.toggle('has-wp', !!(anim || this.wp.file || oot));
+    b.classList.toggle('oot-wp', !!oot);
+    box.style.backgroundImage = still ? `url("${this.url(still)}")` : oot ? `url("${oot}")` : '';
     const fit = { cover: ['cover', 'no-repeat'], contain: ['contain', 'no-repeat'], stretch: ['100% 100%', 'no-repeat'], center: ['auto', 'no-repeat'], tile: ['auto', 'repeat'] }[this.wp.fit || 'cover'];
     box.style.backgroundSize = fit[0]; box.style.backgroundRepeat = fit[1];
-    if (anim || this.wp.file) {
+    if (oot) { box.style.filter = ''; box.style.inset = '0'; box.style.backgroundSize = 'cover'; }
+    else if (anim || this.wp.file) {
       box.style.filter = `blur(${this.wp.blur || 0}px) brightness(${this.wp.brightness ?? .55})`;
       box.style.inset = this.wp.blur ? `-${Math.ceil(this.wp.blur * 2 + 10)}px` : '0';
     } else { box.style.filter = ''; box.style.inset = '0'; }
@@ -736,7 +741,9 @@ const Boot = {
     logo.replaceChildren(el.el, el.er, el.wn, el.ws, el.shine);
     return el;
   },
-  async preview() {
+  async preview(kind) {
+    this.previewKind = kind || S.settings.startup?.animation || 'nexus';
+    if (this.previewKind === 'oot' && !Sound.buf.oot_launch) await Sound.load(['oot_launch']);
     if (!$('#boot')) document.body.prepend(h('section', { id: 'boot', 'aria-label': 'NEXUS startup' }, h('div', { id: 'boot-logo', 'aria-hidden': 'true' })));
     Object.assign(this, { done: false, skipping: false, resolve: null, anims: [] });
     document.body.classList.add('booting');
@@ -761,6 +768,11 @@ const Boot = {
     const T = short ? .7 : 1;
     const reduced = S.anim === 'off';
     const E = (n, kf, o) => { const a = n.animate(kf, { fill: 'both', ...o }); this.anims.push(a); return a; };
+    // the special-edition animation (web/bootoot.js); its sound is one track timed to it
+    if ((force && this.previewKind ? this.previewKind : st.animation) === 'oot' && this.goOOT) {
+      await new Promise(r => { this.resolve = r; this.goOOT(boot, reduced, E); });
+      return;
+    }
     [el.el, el.er, el.wn, el.ws].forEach(e => e.style.opacity = 0);
     await new Promise(r => { this.resolve = r; this.go(boot, color, T, reduced, E, { ...el, short, logo }); });
   },
@@ -912,6 +924,7 @@ function renderHints() {
   // controller prompts show the active controller's own buttons (web/pads.js)
   const k = (padIdx, kb) => pad ? PadInfo.glyph(padIdx) : h('span', { class: 'key kb' }, kb);
   if (resetTarget(Nav.cur)) items.push([k(map.options, 'X'), 'Reset to default', () => Nav.options()]);
+  else if (homeContextMenu(Nav.cur)) items.push([pad ? PadInfo.glyph(map.search) : h('span', { class: 'key kb' }, 'X'), 'Game menu', () => homeContextMenu(Nav.cur)?.()]);
   else if (l?.onOptions) items.push([k(map.options, 'X'), 'Options', () => Nav.options()]);
   if (S.screen === 'home' && !l?.dialog) items.push([k(map.menu, 'Esc'), 'Power', () => openPower()]);
   if (l?.onBack && (l.dialog || S.screen !== 'home')) items.push([k(map.back, 'Esc'), 'Back', () => Nav.back()]);
@@ -1669,10 +1682,19 @@ function updateSelLabel(g) {
   l.querySelector('.sel-meta').textContent = bits.join(' · ');
 }
 
+// The menu a right-click opens on a Home tile, for the focused element (a game, a folder, or the
+// game shown in the Cards / Grid details panel); null when there is none.
+function homeContextMenu(cur) {
+  if (S.screen !== 'home' || Nav.top()?.dialog || !cur) return null;
+  if (cur._game) return () => gameMenu(cur._game.key);
+  if (cur._folder && typeof folderMenu === 'function') return () => folderMenu(cur._folder.id);
+  if (cur._menuGame) return () => gameMenu(cur._menuGame);
+  return null;
+}
 Screens.home = {
   onBack: () => openPower(),
   onTab: d => homeTab(d), // pages (web/home.js)
-  onOptions: cur => { if (cur?._game) gameMenu(cur._game.key); else if (cur?._profile) editProfile(cur._profile.id); },
+  onOptions: cur => { const m = homeContextMenu(cur); if (m) m(); else if (cur?._profile) editProfile(cur._profile.id); },
 };
 
 // ---------- closing the running game (Home banner, the game's Options menu, the Power menu)
@@ -3448,20 +3470,26 @@ const Panels = {
   startup(p) { this.general(p); },
 };
 function startupRows(p) {
-  {
-    const st = S.settings.startup || {};
-    p.append(h('p', { class: 'note' }, st.enabled ? `The power-on animation when NEXUS starts lasts ${st.style === 'short' ? 'about 3' : 'about 4'} seconds; Home is prepared meanwhile. Press any key or button to skip it.` : 'No power-on animation: Home appears as soon as NEXUS has loaded.'));
-    p.append(changedMark(rowToggle('Play startup animation', st.enabled, v => saveSettings({ startup: { enabled: v } }).then(rebuildPanel), 'Off: Home appears as soon as NEXUS has loaded.'), 'startup.enabled'));
-    if (st.enabled) {
-      p.append(changedMark(rowChoice('Length', [{ v: 'standard', l: 'Standard' }, { v: 'short', l: 'Short' }], st.style, v => saveSettings({ startup: { style: v } }).then(rebuildPanel)), 'startup.style'));
-      p.append(changedMark(rowToggle('Startup sound', st.sound, v => saveSettings({ startup: { sound: v } }).then(rebuildPanel)), 'startup.sound'));
+  const st = S.settings.startup || {};
+  const oot = st.animation === 'oot';
+  const secs = oot ? 'about 6.5' : st.style === 'short' ? 'about 3' : 'about 4';
+  p.append(h('p', { class: 'note' }, st.enabled ? `The power-on animation when NEXUS starts lasts ${secs} seconds; Home is prepared meanwhile. Press any key or button to skip it.` : 'No power-on animation: Home appears as soon as NEXUS has loaded.'));
+  p.append(changedMark(rowToggle('Play startup animation', st.enabled, v => saveSettings({ startup: { enabled: v } }).then(rebuildPanel), 'Off: Home appears as soon as NEXUS has loaded.'), 'startup.enabled'));
+  if (st.enabled) {
+    p.append(changedMark(rowChoice('Startup animation', [{ v: 'nexus', l: 'NEXUS (standard)' }, { v: 'oot', l: 'OOT Launch' }], st.animation || 'nexus', v => saveSettings({ startup: { animation: v } }).then(() => { applyTheme(); rebuildPanel(); }),
+      'OOT Launch: a special-edition launch in gold — a pixel emblem, a green and gold crest over a mosaic, a flash of white and gold, then Home.'), 'startup.animation'));
+    if (oot) p.append(changedMark(rowToggle('OOT Launch background on Home', st.ootHome !== false, v => saveSettings({ startup: { ootHome: v } }).then(() => { applyTheme(); rebuildPanel(); }),
+      'The dark gold pattern the animation ends on stays behind the Home screen. A wallpaper you chose in Appearance is used instead.'), 'startup.ootHome'));
+    if (!oot) p.append(changedMark(rowChoice('Length', [{ v: 'standard', l: 'Standard' }, { v: 'short', l: 'Short' }], st.style, v => saveSettings({ startup: { style: v } }).then(rebuildPanel)), 'startup.style'));
+    p.append(changedMark(rowToggle('Startup sound', st.sound, v => saveSettings({ startup: { sound: v } }).then(rebuildPanel)), 'startup.sound'));
+    if (!oot) {
       p.append(changedMark(rowSwatches('Background colour', BOOT_COLORS, st.color, c => saveSettings({ startup: { color: c } }).then(rebuildPanel)), 'startup.color'));
       const prev = h('div', { class: 'boot-preview', style: { background: st.color } });
       prev.append(h('div', { class: 'bp-logo', style: { background: luminance(st.color) > .55 ? '#141414' : '#fff' } })); p.append(prev);
     }
-    p.append(rowButton('Preview startup animation', { onClick: () => setTimeout(() => Boot.preview(), 300) }));
-    p.append(changedMark(rowToggle('Choose the user when NEXUS starts', S.settings.askProfileOnStart, v => saveSettings({ askProfileOnStart: v }).then(rebuildPanel), 'On: “Who’s playing?” at every start. Off: NEXUS opens with the last user.'), 'askProfileOnStart'));
   }
+  p.append(rowButton('Preview startup animation', { sub: st.enabled ? '' : 'Shows the chosen animation once.', onClick: () => setTimeout(() => Boot.preview(st.animation || 'nexus'), 300) }));
+  p.append(changedMark(rowToggle('Choose the user when NEXUS starts', S.settings.askProfileOnStart, v => saveSettings({ askProfileOnStart: v }).then(rebuildPanel), 'On: “Who’s playing?” at every start. Off: NEXUS opens with the last user.'), 'askProfileOnStart'));
 }
 Object.assign(Panels, {
   library(p) {
@@ -4934,7 +4962,8 @@ function markStartup(name, detail) {
   }
   const gamesLoad = bootGames && S.profile && bootGames.profile === S.profile.id ? Promise.resolve(markStartup('library available', S.games.length + ' games')) : S.profile ? loadGames().then(() => markStartup('library available', (S.games || []).length + ' games')).catch(() => { }) : Promise.resolve();
   const crashLoad = api('/api/crash/last').catch(() => null);
-  const soundLoad = Sound.load(['boot_power', 'boot_whoosh', 'boot_snap', 'boot_draw', 'boot_sparkle', 'boot_chime', 'boot_outro', 'home_pop', 'move', 'select', 'back', 'launch', 'error', 'connect']);
+  const soundLoad = Sound.load(['boot_power', 'boot_whoosh', 'boot_snap', 'boot_draw', 'boot_sparkle', 'boot_chime', 'boot_outro', 'home_pop', 'move', 'select', 'back', 'launch', 'error', 'connect',
+    ...(S.settings.startup?.enabled && S.settings.startup?.animation === 'oot' ? ['oot_launch'] : [])]);
   // the startup animation's sounds are timed to it, so it waits for them (up to 0.6 s); without
   // the animation (or its sound) nothing needs to wait: sounds finish loading in the background
   const bootSt = S.settings.startup || {};

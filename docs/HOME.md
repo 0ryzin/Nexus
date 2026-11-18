@@ -106,3 +106,29 @@ Not taken:
 - console functions (sleep, airplane mode, Wi-Fi, reboot, eShop, Mii Maker, Discord, Spotify,
   lock screen): they do not belong in a Windows emulator front end;
 - SteamGridDB downloads.
+
+## Game menu with a controller (18 Nov)
+
+On Home, the menu a right-click opens on a game (Play, Game Settings, Manage Mods, Organise,
+Save Data, Game Information, shaders, More…) opens with the controller's **X** (the Search button,
+`homeContextMenu` in `web/app.js`) on the focused game, and also from the Play button of the
+Cards / Grid details panel. Options (Y) and the keyboard's X still open it; right-click is
+unchanged. The hint bar shows "X Game menu". X elsewhere on Home still opens the Library search.
+Tested with a scripted controller (`tools/uitest/oot_menu.py`), not with a physical pad.
+
+## OOT Launch startup animation (18 Nov)
+
+`web/bootoot.js`, chosen in Settings › General › Startup animation (`startup.animation`: `nexus`
+default | `oot`; anything else falls back to `nexus`). Modelled on the timing of the reference
+video of a special-edition console's launch (about 6.7 s): 0.2 s red power-on; 0.7–1.9 s a pixel
+emblem changing colour four times with four notes; 2.5 s it becomes a white shield; 2.8 s the
+shield fills green and gold (40TH / ANNIVERSARY) over a mosaic of triangles; 3.6 s a light sweep;
+4.45 s white; 5.3 s gold; 5.65 s a dark gold triangle pattern; 6.25 s Home. Any key or button
+skips it. With *OOT Launch background on Home* (`startup.ootHome`, on by default) the dark gold
+pattern stays behind Home unless the user chose a wallpaper (drawn once, about 20 ms).
+
+Everything is drawn with CSS, SVG and canvas; the sound (`web/assets/sounds/oot_launch.wav`) is
+synthesised by `tools/brand/make_oot_sound.py` and follows the same marks. The reference video's
+audio and artwork are not used, and Nintendo's characters, logos and wording are not reproduced
+(the user asked for Link and "The Legend of Zelda" in the crest; that was declined). The sound is
+loaded only when this animation is chosen.

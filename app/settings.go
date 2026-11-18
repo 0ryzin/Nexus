@@ -33,8 +33,14 @@ type GlobalSettings struct {
 	Startup struct {
 		Enabled bool   `json:"enabled"`
 		Color   string `json:"color"`
-		Style   string `json:"style"` // standard | short
-		Sound   bool   `json:"sound"`
+		Style   string `json:"style"` // standard | short (the NEXUS animation)
+		// Animation: which startup animation plays: "nexus" (the standard one) or "oot"
+		// ("OOT Launch", web/bootoot.js)
+		Animation string `json:"animation"`
+		// OOTHome: with "oot", its gold pattern is Home's background (unless the user chose a
+		// wallpaper)
+		OOTHome bool `json:"ootHome"`
+		Sound   bool `json:"sound"`
 	} `json:"startup"`
 
 	Sound struct {
@@ -120,6 +126,8 @@ func DefaultSettings() GlobalSettings {
 	s.Startup.Enabled = true
 	s.Startup.Color = "#e60012"
 	s.Startup.Style = "standard"
+	s.Startup.Animation = "nexus"
+	s.Startup.OOTHome = true
 	s.Startup.Sound = true
 	s.Sound.Enabled = true
 	s.Sound.Volume = 0.7
@@ -247,6 +255,9 @@ func (st *SettingsStore) Patch(raw json.RawMessage) (GlobalSettings, error) {
 	if err := mergeJSON(&next, raw); err != nil {
 		st.mu.Unlock()
 		return st.Get(), err
+	}
+	if next.Startup.Animation != "oot" { // only the two animations NEXUS has
+		next.Startup.Animation = "nexus"
 	}
 	st.s = next
 	err := st.saveLocked()

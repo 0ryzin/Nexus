@@ -14,6 +14,14 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
 
 ## 0.8.0 — in development (not released)
 
+- **Game menu with a controller on Home:** X (the Search button) on a game opens the same menu
+  as a right-click (Options/Y and keyboard X still work); also from the Cards/Grid details panel.
+  X elsewhere on Home still opens the Library search.
+- **OOT Launch**, a second startup animation (*Settings › General › Startup animation*): red
+  power-on, a pixel emblem changing colour, a white shield becoming a green-and-gold "40TH
+  ANNIVERSARY" crest over a triangle mosaic, white and gold flashes, then Home, which keeps the
+  gold pattern as its background. Drawn by NEXUS with its own synthesised sound; no Nintendo
+  artwork, characters, logos or audio. The standard animation stays the default.
 - **Restore defaults:** every setting has a small restore button once it differs from its
   default (controller: Options on the setting); *Reset all settings* and *Restore all keybinds*
   ask first and say what is kept. Users, saves, games, keys, firmware, the GitHub connection,
