@@ -895,6 +895,8 @@ type syncLibrary struct {
 	ArtPreference string      `json:"artPreference,omitempty"`
 	ArtFit        string      `json:"artFit,omitempty"`
 	Controls      *GameLayout `json:"controls,omitempty"`
+	// Art: the game's custom pictures stored in the account (artsync.go)
+	Art map[string]artRef `json:"art,omitempty"`
 }
 
 type syncPrefs struct {
@@ -991,7 +993,10 @@ func (ac *Account) localItems(cats map[string]bool, pmap map[string]string) map[
 			gp := a.Library.GP.Get(key)
 			if cats["library"] {
 				l := syncLibrary{Title: gp.Title, Hidden: gp.Hidden, ArtPreference: gp.ArtPreference, ArtFit: gp.ArtFit, Controls: gp.Controls}
-				if l.Title != "" || l.Hidden || l.ArtPreference != "" || l.ArtFit != "" || l.Controls != nil {
+				if ac.isGitHub() {
+					l.Art = a.artRefsFor(e.Name())
+				}
+				if l.Title != "" || l.Hidden || l.ArtPreference != "" || l.ArtFit != "" || l.Controls != nil || len(l.Art) > 0 {
 					out["library/"+e.Name()] = canon(l)
 				}
 			}
@@ -1179,6 +1184,9 @@ func (ac *Account) applyItem(key string, data []byte, deleted bool, from string)
 		_, err := a.Library.GP.Update("t-"+strings.ToLower(name), func(p *GameProfile) {
 			p.Title, p.Hidden, p.ArtPreference, p.ArtFit, p.Controls = x.Title, x.Hidden, x.ArtPreference, x.ArtFit, x.Controls
 		})
+		if err == nil && ac.isGitHub() {
+			a.applyArtRefs(saveRemote{ac: ac}, name, x.Art)
+		}
 		return err
 	case "prefs":
 		var p syncPrefs
@@ -1564,6 +1572,12 @@ func (ac *Account) backend() syncBackend {
 
 func (ac *Account) syncOnce(cursor int64, sum *SyncSummary) error {
 	be := ac.backend()
+	// custom game pictures go to the account first, so the library items can name them
+	if cats, _, _ := ac.snapshot(); cats["library"] && ac.isGitHub() {
+		if err := ac.app.uploadCustomArt(saveRemote{ac: ac}); err != nil && !errors.Is(err, errOffline) {
+			ac.app.Log.Printf("account: artwork: %v", err)
+		}
+	}
 	// 1. what changed on the service
 	remote, rev, err := be.changes(cursor)
 	if err != nil {
