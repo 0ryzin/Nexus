@@ -23,6 +23,10 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
 - **Frame generation shows the truth:** while a game runs, NEXUS shows whether frame generation
   is really running or why not (engine patch 0033). The built-in method is named for what it is,
   NEXUS's optical-flow interpolation on any Vulkan GPU, instead of "AMD FSR 3".
+- **NVIDIA Smooth Motion on Linux** as a frame generation method, offered only where the NVIDIA
+  driver (575+), an RTX 40/50 card and the driver's layer are found; NEXUS asks the driver for it
+  and shows it as requested (the driver does not report back). Not tested on an RTX card.
+- Linux: graphics cards and displays are detected (sysfs); DLSS and FSR 4 are Windows-only.
 - **Switch 2 Pro Controller over USB (experimental):** SDL 3.4.20 with libusb from Lichii
   build-341 (engine patches 0031/0032). On Linux it needs a udev rule the user installs (shipped,
   never installed by NEXUS). Not tested with the controller.

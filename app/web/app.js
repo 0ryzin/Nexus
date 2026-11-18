@@ -3719,6 +3719,7 @@ function frameGenNote(fg) {
     pending: 'Frame generation: starting.',
     running: 'Frame generation: running.',
     nvidia: 'Frame generation: running (NVIDIA).',
+    'smooth-motion': 'Frame generation: NVIDIA Smooth Motion was requested from the graphics driver (NEXUS cannot see whether the driver applies it).',
     'unsupported-renderer': 'Frame generation is not running: it needs the Vulkan renderer.',
     'unsupported-build': 'Frame generation is not running: this engine build does not include it.',
     'unsupported-gpu': 'Frame generation is not running: your graphics card or driver lacks a Vulkan feature it needs.',
@@ -3740,7 +3741,8 @@ async function enhancementsPanel(box) {
       h('dt', {}, 'Built-in frame generation'), h('dd', {}, st(en.frameGen)),
       h('dt', {}, 'Lossless Scaling frame generation'), h('dd', {}, st(en.lossless)),
       h('dt', {}, 'NVIDIA DLSS'), h('dd', {}, st(en.dlss)),
-      h('dt', {}, 'AMD FSR 4'), h('dd', {}, st(en.fsr4))));
+      h('dt', {}, 'AMD FSR 4'), h('dd', {}, st(en.fsr4)),
+      h('dt', {}, 'NVIDIA Smooth Motion (Linux driver)'), h('dd', { title: en.smoothMotion?.why || '' }, st(en.smoothMotion || {}))));
     if (en.frameGen.supported) { const lb = h('div'); box.append(lb); losslessPanel(lb, async () => { en = await api('/api/enhancements'); draw(); }); }
     if (en.dlss.supported) { const db = h('div'); box.append(db); dlssPanel(db); }
   };

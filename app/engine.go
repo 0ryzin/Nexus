@@ -67,10 +67,12 @@ type Emulator struct {
 	crash *crashTracker
 	prep  shaderPrep // shader preparation (shaderprep.go)
 
-	state   RunState
-	host    EngineHost
-	hostErr error
-	hostDir string
+	state RunState
+	// smoothMotion: the current session asked the NVIDIA driver for Smooth Motion
+	smoothMotion bool
+	host         EngineHost
+	hostErr      error
+	hostDir      string
 
 	// restoreFullscreen: the NEXUS window's full-screen state before an embedded game started
 	restoreFullscreen *bool
@@ -269,6 +271,28 @@ func (e *Emulator) writeSessionConfig(g *Game, pr *Profile) (string, error) {
 			ini.Set("Controls", "player_0_profile_name", input)
 		}
 	}
+	// NVIDIA Smooth Motion (smoothmotion.go) replaces the built-in frame generation for the session
+	fg, fgType := s.Engine["enhance.framegen"], s.Engine["enhance.framegen_type"]
+	if g != nil {
+		gp := gameNexusSettings(e.app.Library.GP.Get(g.Key))
+		if v, ok := gp["enhance.framegen"]; ok {
+			fg = v
+		}
+		if v, ok := gp["enhance.framegen_type"]; ok {
+			fgType = v
+		}
+	}
+	smooth := fg == "true" && fgType == "nvsm"
+	if smooth {
+		if ok, _ := smoothMotionSupport(e.app.DetectHardware(false)); !ok {
+			smooth = false
+		}
+		ini.SetSetting("Renderer", "frame_gen", "false")
+	}
+	e.mu.Lock()
+	e.smoothMotion = smooth
+	e.mu.Unlock()
+	applySmoothMotion(smooth)
 	// shader preparation (shaderprep.go): with it on, the engine builds the compute programs found
 	// in the game's files before the game starts (precache_shaders: 0 Off, 2 Always)
 	ini.SetSetting("Renderer", "precache_shaders", map[bool]string{true: "2", false: "0"}[s.Emulator.PrepareShaders])
@@ -596,7 +620,14 @@ func (e *Emulator) monitor(host EngineHost, st RunState, frameGenOn bool) {
 			st.HomeKeyConflict = es.HomeKeyConflict
 			e.setState(st)
 		}
-		if fg := frameGenShown(es.FrameGen, frameGenOn); fg != st.FrameGen {
+		e.mu.Lock()
+		smooth := e.smoothMotion
+		e.mu.Unlock()
+		fg := frameGenShown(es.FrameGen, frameGenOn)
+		if smooth {
+			fg = "smooth-motion"
+		}
+		if fg != st.FrameGen {
 			e.app.Log.Printf("engine: frame generation %s", fg)
 			st.FrameGen = fg
 			e.setState(st)

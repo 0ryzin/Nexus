@@ -19,8 +19,8 @@ package main
 
 import (
 	"path/filepath"
-	"runtime"
 	"regexp"
+	"runtime"
 	"strings"
 )
 
@@ -37,13 +37,15 @@ type FeatureState struct {
 }
 
 type Enhancements struct {
-	GPU         string       `json:"gpu"`
-	FrameGen    FeatureState `json:"frameGen"`
-	Lossless    FeatureState `json:"lossless"`
-	DLSS        FeatureState `json:"dlss"`
-	FSR4        FeatureState `json:"fsr4"`
-	LosslessDir string       `json:"losslessDir"`
-	DLSSDir     string       `json:"dlssDir"`
+	GPU      string       `json:"gpu"`
+	FrameGen FeatureState `json:"frameGen"`
+	Lossless FeatureState `json:"lossless"`
+	DLSS     FeatureState `json:"dlss"`
+	FSR4     FeatureState `json:"fsr4"`
+	// SmoothMotion: NVIDIA's driver frame generation on Linux (smoothmotion.go)
+	SmoothMotion FeatureState `json:"smoothMotion"`
+	LosslessDir  string       `json:"losslessDir"`
+	DLSSDir      string       `json:"dlssDir"`
 }
 
 var rtxModel = regexp.MustCompile(`(?i)\bRTX\b`)
@@ -151,6 +153,8 @@ func (e *Emulator) Enhancements() Enhancements {
 	} else if !fsr4 {
 		out.FSR4.Why = "FSR 4 needs an AMD Radeon RX 9000 series graphics card (" + gpuName + ")."
 	}
+	sm, why := smoothMotionSupport(h)
+	out.SmoothMotion = FeatureState{Supported: sm, Ready: sm, Why: why}
 	return out
 }
 
@@ -176,10 +180,20 @@ func (e *Emulator) applyHardwareCaps(caps map[string]Support) {
 	}
 	if !en.FrameGen.Supported {
 		off([]string{"enhance.framegen", "enhance.framegen_type", "enhance.framegen_mult", "enhance.framegen_target"}, en.FrameGen.Why)
-	} else if !en.Lossless.Ready {
+	} else {
+		// the methods this PC can use, always listed explicitly
 		c := caps["enhance.framegen_type"]
 		c.Choices = []string{"fsr3"}
-		c.Note = "Lossless Scaling needs your own Lossless.dll (see above)."
+		var notes []string
+		if en.Lossless.Ready {
+			c.Choices = append(c.Choices, "lsfg")
+		} else {
+			notes = append(notes, "Lossless Scaling needs your own Lossless.dll (see above).")
+		}
+		if en.SmoothMotion.Supported {
+			c.Choices = append(c.Choices, "nvsm")
+		}
+		c.Note = strings.Join(notes, " ")
 		caps["enhance.framegen_type"] = c
 	}
 	if !en.DLSS.Supported {

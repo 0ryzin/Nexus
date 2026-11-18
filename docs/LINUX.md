@@ -117,14 +117,31 @@ devices behind the user's back.
 
 ## Frame generation on Linux
 
-The built-in method is the engine's own optical-flow interpolation: vendor-neutral Vulkan
+**Built in (any Vulkan GPU).** The engine's own optical-flow interpolation: vendor-neutral Vulkan
 compute shaders, not AMD FidelityFX code. It is built for Linux the same as Windows and needs
 only Vulkan. While a game runs, NEXUS shows the engine's real state: running, or why it is not
 (engine patch 0033).
 
-Not available:
-- AMD Fluid Motion Frames is a feature of AMD's Windows driver; Linux drivers have no
-  equivalent.
-- DLSS Frame Generation needs Windows and an RTX 40/50.
-- FSR 3 frame generation needs the game's own motion vectors.
-- Lossless Scaling (lsfg) needs the user's own `Lossless.dll`, as on Windows.
+**NVIDIA Smooth Motion (`smoothmotion.go`).** The NVIDIA Linux driver's own frame generation
+for Vulkan programs.
+- Requirements: driver 575 or newer, a GeForce RTX 40 or 50 card, and the driver's implicit
+  layer `VK_LAYER_NV_present`.
+- NEXUS offers it as a frame generation method only when it finds all three. For such a session
+  it sets `NVPRESENT_ENABLE_SMOOTH_MOTION=1` in its own process before the engine starts, and
+  turns the built-in method off; NVIDIA says the two must not be combined.
+- The layer does not report to the program, so NEXUS shows "requested", never "running".
+- Not tested on an RTX card here.
+
+**Lossless Scaling (lsfg).** Needs the user's own `Lossless.dll`, as on Windows.
+
+Not used by NEXUS:
+- AMD Fluid Motion Frames is a feature of AMD's Windows driver; Mesa (RADV) has nothing like it.
+- [afmf-linux](https://github.com/serialexperimentslainnnn/afmf-linux) (MIT, community) is an
+  implicit Vulkan layer that does something similar on RDNA 3 and 4 cards. A user who installs it
+  can use it with NEXUS like with any Vulkan program. NEXUS does not install it, and the Steam
+  Deck's GPU (RDNA 2) is not its target.
+- DLSS Frame Generation and FSR 3 frame generation need the game's motion vectors, which an
+  emulator does not have.
+
+On the Steam Deck the choices are the built-in method or Lossless Scaling with the user's own
+`Lossless.dll`.

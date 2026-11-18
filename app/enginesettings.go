@@ -100,7 +100,7 @@ var NexusSettings = []NSetting{
 	{ID: "enhance.framegen", Section: "enhance", Label: "Frame generation", Kind: "bool",
 		Help: "Adds generated frames between the game's own frames for smoother motion. Vulkan only. The built-in method is NEXUS's own optical-flow interpolation running on your graphics card (it is not AMD FSR 3, AFMF or DLSS Frame Generation, which need driver or game support NEXUS cannot use). Adds a little input latency and can show artefacts around fast motion and on-screen text; best when the game already runs at a steady frame rate. While a game runs, NEXUS shows whether frame generation is really running."},
 	{ID: "enhance.framegen_type", Section: "enhance", Label: "Frame generation method", Kind: "enum",
-		Choices: []EmuChoice{{"fsr3", "Built in (optical-flow interpolation, any Vulkan GPU)"}, {"lsfg", "Lossless Scaling (your own copy)"}}},
+		Choices: []EmuChoice{{"fsr3", "Built in (optical-flow interpolation, any Vulkan GPU)"}, {"lsfg", "Lossless Scaling (your own copy)"}, {"nvsm", "NVIDIA Smooth Motion (driver, Linux, RTX 40/50)"}}},
 	{ID: "enhance.framegen_mult", Section: "enhance", Label: "Generated frames", Kind: "enum",
 		Choices: []EmuChoice{{"2", "2× (one generated frame)"}, {"3", "3×"}, {"4", "4×"}}},
 	{ID: "enhance.framegen_target", Section: "enhance", Label: "Target frame rate", Kind: "enum",
@@ -219,7 +219,7 @@ var engineBinds = map[string]engineBind{
 	"adv.speed_limit":         {"Core/speed_limit", nil},
 	"graphics.fps_limit":      {"Renderer/nx2_frame_rate_limit", nil},
 	"enhance.framegen":        {"Renderer/frame_gen", nil},
-	"enhance.framegen_type":   {"Renderer/frame_gen_type", map[string]string{"lsfg": "0", "fsr3": "1"}},
+	"enhance.framegen_type":   {"Renderer/frame_gen_type", map[string]string{"lsfg": "0", "fsr3": "1", "nvsm": "1"}}, // nvsm: the session turns the engine's own off (smoothmotion.go)
 	"enhance.framegen_mult":   {"Renderer/frame_gen_multiplier", map[string]string{"2": "2", "3": "3", "4": "4"}},
 	"enhance.framegen_target": {"Renderer/frame_gen_target_rate", map[string]string{"0": "0", "60": "60", "90": "90", "120": "120", "144": "144", "165": "165", "240": "240"}},
 	"enhance.dlss":            {"Renderer/nvidia_dlss", nil},
@@ -277,6 +277,9 @@ func engineReverse(vals map[string]string) map[string]string {
 			continue
 		}
 		for nv, lv := range b.vals {
+			if nv == "nvsm" {
+				continue // shares the engine's value with fsr3; never read back as Smooth Motion
+			}
 			if lv == v {
 				out[id] = nv
 			}
