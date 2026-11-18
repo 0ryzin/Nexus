@@ -35,8 +35,9 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
   and keyboard. *Settings › General › Typing* chooses. Not tested on a Deck.
 - **Interface sounds on Linux:** the AppImage now carries the GStreamer plugins Web Audio needs and
   allows autoplay; CI records the start-up sound from a PulseAudio sink. Not tested on a Deck.
-- **Steam:** menu entry, Steam artwork (NEXUS wordmark only) for a NEXUS shortcut the user added
-  themselves; NEXUS never adds or edits Steam shortcuts.
+- **Steam:** NEXUS offers once to add itself to the app menu, which is what Steam's "Add a
+  Non-Steam Game" lists (a downloaded AppImage is not there); then once to add its artwork
+  (NEXUS wordmark only) to its Steam shortcut. NEXUS never adds or edits Steam shortcuts.
 - **Steam Deck preset for Switch 2 games** (applied once per game on first start when nothing is
   set): 810p, FSR 1, low GPU accuracy, background shaders, 30 fps cap. The 12 GB memory layout is no
   longer refused for Switch 2 games. Not measured on a Deck.
@@ -46,6 +47,8 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
 - **Navigation:** Home screen and Themes merged into *Personalisation*; shortcuts to Shaders,
   Performance and Graphics removed from the dock (still in Settings). Clicking a profile opens it;
   "Play as" switches. The red expanding selection ring is now a quiet white/black ring.
+- Test downloads: each file on its own; the CI bundles that unpacked to `out/` with both Linux
+  files are renamed `zz-release-bundle-…-not-a-download`.
 - Fixed: deleting a profile could hang NEXUS; Enter in the delete dialog cancelled instead of
   deleting; the name had to match in capitals ("Mins" now deletes "MiNS").
 - **Ocarina of Time black screen below 12 GB (suspected cause, engine patch 0042):** when the

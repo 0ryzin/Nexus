@@ -34,6 +34,19 @@ type SteamStatus struct {
 	SteamFound   bool            `json:"steamFound"` // Steam's user data was found
 	Shortcuts    []steamShort    `json:"shortcuts"`  // NEXUS shortcuts in Steam
 	ArtInstalled map[string]bool `json:"artInstalled,omitempty"`
+	// Offered: what NEXUS already offered once at start ("menu", "art"), so it never asks twice
+	Offered map[string]bool `json:"offered"`
+	IconPath string         `json:"iconPath"` // the icon file to pick in Steam › Properties
+}
+
+func (a *App) steamOfferPath() string { return filepath.Join(a.Paths.System, "steam-offers.json") }
+
+// SteamOffered records that NEXUS offered (and the user answered) one of the Steam steps.
+func (a *App) SteamOffered(what string) {
+	m := map[string]bool{}
+	_ = readJSON(a.steamOfferPath(), &m)
+	m[what] = true
+	_ = writeJSONAtomic(a.steamOfferPath(), m)
 }
 
 type steamShort struct {
@@ -127,7 +140,13 @@ func steamUserdata() []string {
 
 // SteamStatus reports the menu entry and NEXUS's shortcuts in Steam.
 func (a *App) SteamStatus() SteamStatus {
-	st := SteamStatus{Supported: runtime.GOOS == "linux", Launcher: a.steamLauncher(), Shortcuts: []steamShort{}}
+	st := SteamStatus{Supported: runtime.GOOS == "linux", Launcher: a.steamLauncher(), Shortcuts: []steamShort{}, Offered: map[string]bool{}}
+	_ = readJSON(a.steamOfferPath(), &st.Offered)
+	if ic := filepath.Join(xdgDataHome(), "icons", "hicolor", "512x512", "apps", "nexus.png"); fileExists(ic) {
+		st.IconPath = ic
+	} else {
+		st.IconPath = filepath.Join(a.Paths.Root, "Resources", "Icons", "app-icon-512.png")
+	}
 	if !st.Supported {
 		return st
 	}

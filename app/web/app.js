@@ -1621,6 +1621,8 @@ function gameTile(g, extraClass = '') {
 }
 
 function renderHome() {
+  // first Home of this start: the one-time Steam offers (Linux; steamOffer)
+  if (!steamOfferDone) { steamOfferDone = true; setTimeout(steamOffer, 1500); }
   renderTopbar();
   homeLayoutChrome(); // layout, page strip (web/home.js)
   const layout = homePrefs().layout;
@@ -3616,6 +3618,27 @@ const Panels = {
   },
   startup(p) { this.general(p); },
 };
+// Linux, once: Steam's "Add a Non-Steam Game" lists the app menu, where a downloaded AppImage or
+// tar.gz is not, and a NEXUS added to Steam another way has no artwork. NEXUS offers each step
+// once (asking first; nothing is changed without "Add"); Settings › General › Steam keeps both.
+let steamOfferDone = false;
+async function steamOffer() {
+  if (S.platform?.platform !== 'linux' || S.screen !== 'home' || Nav.layers.some(l => l.dialog)) return;
+  let st; try { st = await api('/api/steam'); } catch { return; }
+  if (!st.supported) return;
+  if (!st.menuEntry && !st.offered?.menu && !S.platform?.gamingMode) {
+    const add = await confirmDlg('Add NEXUS to your app menu?', `Steam \u203a Games \u203a Add a Non-Steam Game lists the programs in your app menu, and a downloaded NEXUS is not in it yet. NEXUS can add itself there with its name and icon (a menu entry and an icon in your own folders; nothing else changes). Then Steam lists NEXUS with its icon.\n\nYou can do this later in Settings \u203a General \u203a Steam.`, 'Add to app menu');
+    api('/api/steam/offered', { body: { what: 'menu' } }).catch(() => { });
+    if (add) { try { st = await api('/api/steam/menu-entry', { body: {} }); toast('NEXUS is in your app menu. In Steam: Games \u203a Add a Non-Steam Game \u203a NEXUS.', I.check, 6000); } catch (e) { alertDlg('App menu entry', e.message); } }
+    return;
+  }
+  const missing = (st.shortcuts || []).some(x => !x.artDone);
+  if (missing && !st.offered?.art) {
+    const add = await confirmDlg('Add NEXUS artwork to Steam?', 'NEXUS is in your Steam library without its artwork. NEXUS can copy its library images (tile, wide tile, header, logo) into Steam\u2019s custom artwork folder for that entry; your other games and images you set yourself are not changed. Restart Steam to see them.', 'Add artwork');
+    api('/api/steam/offered', { body: { what: 'art' } }).catch(() => { });
+    if (add) { try { const r = await api('/api/steam/artwork', { body: {} }); toast(r.installed ? 'Artwork added. Restart Steam to see it.' : 'Your own artwork is already set', I.check, 5000); } catch (e) { alertDlg('Steam artwork', e.message); } }
+  }
+}
 // Steam (Linux): app menu entry and library artwork, each only on request (steam.go)
 function steamRows(p) {
   const box = h('div');
@@ -3631,13 +3654,13 @@ function steamRows(p) {
     box.append(rowButton(art ? 'Steam artwork: in place' : 'Add NEXUS artwork to Steam', {
       icon: I.image || I.plus,
       sub: sc.length ? `NEXUS is in Steam ${sc.length === 1 ? 'once' : sc.length + ' times'}. Steam does not let a program set its own artwork; NEXUS copies its library images into Steam\u2019s custom artwork folder for that entry (your own images there are kept). Restart Steam (or the Steam Deck) to see them.`
-        : 'Add NEXUS to Steam first (Desktop Mode: right-click the AppImage \u203a Add to Steam, or Steam \u203a Games \u203a Add a Non-Steam Game), then come back here.',
+        : 'Add NEXUS to Steam first (Steam \u203a Games \u203a Add a Non-Steam Game \u203a NEXUS, after adding it to the app menu above), then come back here.',
       onClick: async () => {
         if (!await confirmDlg('Add NEXUS artwork to Steam?', 'NEXUS copies five images (library tile, wide tile, header, logo, icon) into Steam\u2019s custom artwork folder for its own entry. Steam\u2019s other files and your other games are not changed, and images you set yourself are kept.', 'Add artwork')) return;
         try { const r = await api('/api/steam/artwork', { body: {} }); draw(r.status); toast(r.installed ? 'Artwork added. Restart Steam to see it.' : 'Your own artwork is already set', I.check, 5000); } catch (e) { alertDlg('Steam artwork', e.message); }
       } }));
   };
-  api('/api/steam').then(draw).catch(() => { });
+  api('/api/steam').then(st => { draw(st); if (st.iconPath) box.after(h('p', { class: 'note' }, `The shortcut\u2019s own small icon is Steam\u2019s to set: added from the app menu it uses NEXUS\u2019s icon; added another way (right-click \u203a Add to Steam), set it in Steam \u203a NEXUS \u203a Properties \u203a the icon square, choosing ${st.iconPath}.`)); }).catch(() => { });
 }
 function startupRows(p) {
   const st = S.settings.startup || {};

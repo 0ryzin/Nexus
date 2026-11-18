@@ -2414,6 +2414,16 @@ func (s *Server) routes() {
 		}
 		writeJSON(w, a.SteamStatus())
 	})
+	m.HandleFunc("POST /api/steam/offered", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ What string }
+		_ = readBody(r, &b)
+		if b.What != "menu" && b.What != "art" {
+			writeErr(w, 400, errors.New("unknown offer"))
+			return
+		}
+		a.SteamOffered(b.What)
+		writeJSON(w, a.SteamStatus())
+	})
 	m.HandleFunc("POST /api/steam/artwork", func(w http.ResponseWriter, r *http.Request) {
 		n, err := a.InstallSteamArtwork()
 		if err != nil {

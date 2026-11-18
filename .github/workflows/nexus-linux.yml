@@ -387,11 +387,13 @@ jobs:
           path: ${{ steps.files.outputs.tar }}
           archive: false
           retention-days: 14
-      # everything with the test logs and screenshots (the release workflow takes the files from here)
+      # everything with the test logs and screenshots, for the release workflow and diagnosis. Its
+      # name says it is not a download: testers take the AppImage or tar.gz above, each on its own
+      # (this bundle unpacks to out/ with both, which looked like one nested download)
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: NEXUS-linux-${{ matrix.arch }}
+          name: zz-release-bundle-linux-${{ matrix.arch }}-not-a-download
           path: |
             out/*
             smoke-*/*.png

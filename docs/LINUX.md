@@ -123,6 +123,23 @@ Not yet confirmed on a Steam Deck.
 
 ## Steam (0.8.0, Settings › General › Steam)
 
+**Why a downloaded AppImage is not in "Add a Non-Steam Game":** Steam's list shows the programs in
+the desktop's app menu (`.desktop` files in `~/.local/share/applications` and the system's
+folders). A downloaded AppImage or an unpacked tar.gz has no entry there until something creates
+one; its executable permission does not matter for that list. Right-click › *Add to Steam*
+(KDE/Dolphin) adds the file itself, so Steam gets no icon. Steam does not discover AppImages.
+
+**What NEXUS does:** on the first Home after start in Desktop Mode, NEXUS offers once to add
+itself to the app menu (asks; nothing changes without *Add to app menu*). The entry starts the
+AppImage itself (`$APPIMAGE`) or the tar.gz's `nexus`, in its own folder, with NEXUS's name and
+icon (`~/.local/share/icons/hicolor/512x512/apps/nexus.png`). Then Steam › Games › *Add a
+Non-Steam Game* lists NEXUS with its icon. Once NEXUS finds its own shortcut in Steam without
+artwork, it offers once to add the artwork. Both stay in *Settings › General › Steam*. Tested by
+CI and in a development environment (the entry and icon are created, the offer appears once);
+not tested with Steam on a Deck. Moving or replacing the AppImage makes the entry stale:
+*Update the app menu entry* in Settings fixes it.
+
+
 - *Add NEXUS to the app menu*: a desktop file and icon in the user's own folders. Steam's *Add a
   Non-Steam Game* then lists NEXUS by name with its icon.
 - *Add NEXUS artwork to Steam*: Steam has no way for a program to set a non-Steam game's artwork.

@@ -53,6 +53,10 @@ def start():
         except Exception:
             break
     shutil.copy(BIN, D + "/NEXUS")
+    # the one-time Steam offers (Linux) would open a dialog over every test
+    os.makedirs(D + "/System", exist_ok=True)
+    with open(D + "/System/steam-offers.json", "w") as f:
+        f.write('{"menu": true, "art": true}')
     env = dict(os.environ, NEXUS_PORT=PORT, NEXUS_DEV_NOAUTH="1", NEXUS_FAKE_ENGINE="1", NEXUS_FAKE_PLAY="600s",
                NEXUS_HARDWARE=os.environ.get("NEXUS_HARDWARE", "/tmp/hw-rtx.json"))
     t0 = time.perf_counter()

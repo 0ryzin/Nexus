@@ -52,9 +52,13 @@ jobs:
         run: |
           set -euo pipefail
           v=${{ steps.v.outputs.version }}
-          gh run download "${{ inputs.windows_run }}" -R "$GITHUB_REPOSITORY" -n "NEXUS-$v-Windows-x64" -D dl/win
-          gh run download "${{ inputs.linux_run }}" -R "$GITHUB_REPOSITORY" -n NEXUS-linux-amd64 -D dl/amd64
-          gh run download "${{ inputs.linux_run }}" -R "$GITHUB_REPOSITORY" -n NEXUS-linux-arm64 -D dl/arm64
+          # bundle names since 0.8.0 development; runs from before keep the old names
+          gh run download "${{ inputs.windows_run }}" -R "$GITHUB_REPOSITORY" -n zz-release-bundle-windows-x64-not-a-download -D dl/win \
+            || gh run download "${{ inputs.windows_run }}" -R "$GITHUB_REPOSITORY" -n "NEXUS-$v-Windows-x64" -D dl/win
+          for a in amd64 arm64; do
+            gh run download "${{ inputs.linux_run }}" -R "$GITHUB_REPOSITORY" -n "zz-release-bundle-linux-$a-not-a-download" -D "dl/$a" \
+              || gh run download "${{ inputs.linux_run }}" -R "$GITHUB_REPOSITORY" -n "NEXUS-linux-$a" -D "dl/$a"
+          done
           mkdir -p out/linux
           cp "dl/win/NEXUS-$v-Windows-x64.zip" "dl/win/NEXUS-$v-Windows-x64.zip.sha256" out/
           for a in amd64 arm64; do

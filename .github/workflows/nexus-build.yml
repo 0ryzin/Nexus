@@ -350,12 +350,13 @@ jobs:
           Get-Content $res
           if ($p.ExitCode -ne 0) { throw "NEXUS.exe --engine-check failed (exit $($p.ExitCode))" }
 
-      # a copy for testers; not a check, so a GitHub storage hiccup must not block the release
+      # the ZIP with its checksum, for the release workflow (testers take the direct ZIP below; this
+      # bundle unpacks to out/ with the ZIP inside). Not a check: a storage hiccup must not block.
       - uses: actions/upload-artifact@v4
         continue-on-error: true
         timeout-minutes: 10
         with:
-          name: NEXUS-${{ env.NEXUS_VERSION }}-Windows-x64
+          name: zz-release-bundle-windows-x64-not-a-download
           path: out/*
           retention-days: 30
       # for testers: the ZIP on its own, as a direct file (not inside another ZIP)
