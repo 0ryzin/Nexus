@@ -3889,6 +3889,13 @@ Object.assign(Panels, {
       'Nothing is ever deleted or overwritten: if two folders would get the same name, the second gets " (2)". Profile IDs and title IDs are never changed.') }));
     p.append(h('h3', {}, 'Maintenance'));
     p.append(rowButton('Open logs folder', { onClick: () => api('/api/app/open-folder', { body: { which: 'logs' } }) }));
+    p.append(rowButton('Send this device’s logs to my other devices', { sub: 'For a problem on this device (a black picture, no sound): your other NEXUS devices on the same account receive the logs at their next sync, in their logs folder under “From other devices”. Lines about your account or keys are left out; no game, save or key files are sent.', onClick: async () => {
+      const note = await dialog({ title: 'Send logs to my other devices', text: 'Optional: what went wrong (for example “Ocarina of Time: title screen without its background, no sound”).', input: { placeholder: 'What happened', value: '' }, buttons: [{ label: 'Cancel', value: null }, { label: 'Send', value: true, primary: true }] });
+      if (note === null || note === undefined) return;
+      toast('Sending the logs…', I.info, 4000);
+      try { const r = await api('/api/diagnostics/send', { body: { note: String(note || '') } }); alertDlg('Logs sent', `Sent ${Math.max(1, Math.round(r.size / 1024))} KB from ${r.device}. Your other NEXUS devices receive them at their next sync (at start-up, or within 15 minutes): their logs folder › From other devices.`); }
+      catch (e) { alertDlg('Logs not sent', e.message); }
+    } }));
     p.append(rowButton('Open NEXUS folder', { onClick: () => api('/api/app/open-folder', { body: { which: 'root' } }) }));
     p.append(rowButton('Reset all settings…', { danger: true, sub: 'Every setting back to its default. Users, saves, games, keys, firmware and your GitHub connection are kept.', onClick: () => resetAllSettings() }));
   },

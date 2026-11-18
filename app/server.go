@@ -2514,6 +2514,24 @@ func (s *Server) routes() {
 		}
 		writeJSON(w, a.SteamStatus())
 	})
+	m.HandleFunc("POST /api/diagnostics/send", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Note string }
+		_ = readBody(r, &b)
+		e, err := a.SendDiagnostics(b.Note)
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, e)
+	})
+	m.HandleFunc("POST /api/diagnostics/fetch", func(w http.ResponseWriter, r *http.Request) {
+		got, err := a.FetchDiagnostics()
+		if err != nil {
+			writeErr(w, 502, err)
+			return
+		}
+		writeJSON(w, map[string]any{"received": got})
+	})
 	m.HandleFunc("POST /api/steam/offered", func(w http.ResponseWriter, r *http.Request) {
 		var b struct{ What string }
 		_ = readBody(r, &b)

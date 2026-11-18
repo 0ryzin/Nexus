@@ -1438,6 +1438,12 @@ func (ac *Account) Sync() (SyncSummary, error) {
 			ac.app.Log.Printf("account: game saves: %v", serr)
 		}
 	}
+	// logs another device of this account sent (diaglogs.go)
+	if err == nil {
+		if _, derr := ac.app.FetchDiagnostics(); derr != nil && !errors.Is(derr, errOffline) {
+			ac.app.Log.Printf("account: diagnostics: %v", derr)
+		}
+	}
 	return sum, err
 }
 
