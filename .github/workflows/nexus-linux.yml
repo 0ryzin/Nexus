@@ -363,7 +363,7 @@ jobs:
               "pacman -Sy --noconfirm --needed xorg-server-xvfb xorg-xauth imagemagick mesa >/dev/null && APPIMAGE_EXTRACT_AND_RUN=1 bash app/tools/release/linux/smoke.sh /w/$ai /w/smoke-arch arch"
           fi
           docker run --rm -v "$PWD:/w" -w /w ubuntu:24.04 bash -c \
-            "apt-get update >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb xauth imagemagick libgl1 libegl1 libgbm1 libdrm2 libasound2t64 libgtk-3-0t64 >/dev/null && ! ls /usr/lib/*/libwebkit2gtk-4.1.so* 2>/dev/null && APPIMAGE_EXTRACT_AND_RUN=1 bash app/tools/release/linux/smoke.sh /w/$ai /w/smoke-ubuntu ubuntu"
+            "apt-get update >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb xauth imagemagick libgl1 libegl1 libgles2 libgbm1 libdrm2 libasound2t64 libgtk-3-0t64 >/dev/null && ! ls /usr/lib/*/libwebkit2gtk-4.1.so* 2>/dev/null && APPIMAGE_EXTRACT_AND_RUN=1 bash app/tools/release/linux/smoke.sh /w/$ai /w/smoke-ubuntu ubuntu"
 
       - uses: actions/upload-artifact@v4
         if: always()
