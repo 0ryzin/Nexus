@@ -65,8 +65,8 @@ func sysfsGPUs(root string, ids func(ven, dev uint32) string) []GPUInfo {
 		if l, err := os.Readlink(filepath.Join(dev, "driver")); err == nil {
 			drv = filepath.Base(l)
 		}
-		if drv == "simpledrm" || drv == "vboxvideo" || drv == "virtio-pci" || drv == "bochs-drm" {
-			continue // firmware framebuffers and virtual adapters run no games
+		if virtualDisplayDrivers[drv] {
+			continue // firmware framebuffers and virtual machines' display adapters run no games
 		}
 		g := GPUInfo{VendorID: ven, DeviceID: did, Driver: drv}
 		g.Vendor = map[uint32]string{vendorNVIDIA: "NVIDIA", vendorAMD: "AMD", 0x8086: "Intel"}[ven]

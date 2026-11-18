@@ -192,10 +192,18 @@ func TestHardwareDetectionHonest(t *testing.T) {
 	if h.Source != "detected" || h.CPU.Threads <= 0 || h.Memory.TotalMB <= 0 || len(h.Storage) == 0 {
 		t.Fatalf("basic detection failed: %+v", h)
 	}
-	// nothing invented for what this system cannot report
-	// (a Windows CI machine has a display but no usable GPU; Linux reports neither)
-	if len(h.GPUs) != 0 || (runtime.GOOS != "windows" && len(h.Displays) != 0) || len(h.Notes) == 0 {
-		t.Fatalf("GPU/display must be reported as not detected here, not guessed: %+v", h)
+	// nothing invented for what this system cannot report (a CI machine has no usable GPU; on
+	// Linux a GPU is listed only from sysfs, with its PCI ids and driver)
+	for _, g := range h.GPUs {
+		if runtime.GOOS == "windows" || g.VendorID == 0 || g.Driver == "" || virtualDisplayDrivers[g.Driver] {
+			t.Fatalf("GPU must be reported as not detected here, not guessed: %+v", h)
+		}
+	}
+	if len(h.GPUs) > 0 {
+		return // a real graphics card on this machine
+	}
+	if len(h.Notes) == 0 {
+		t.Fatalf("an undetected GPU must be explained: %+v", h)
 	}
 	c := classifyDevice(h)
 	if c.GPUTier != 1 || len(c.Reasons) == 0 {

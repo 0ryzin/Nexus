@@ -231,3 +231,9 @@ func (a *App) DetectHardware(refresh bool) Hardware {
 	hwCache = &h
 	return h
 }
+
+// virtualDisplayDrivers: Linux display drivers of firmware framebuffers and virtual machines
+// (and server management chips); they run no games, so they are not listed as graphics cards.
+var virtualDisplayDrivers = map[string]bool{"simpledrm": true, "efidrm": true, "ofdrm": true, "vesadrm": true,
+	"hyperv_drm": true, "vmwgfx": true, "qxl": true, "cirrus": true, "cirrus-qemu": true, "bochs-drm": true,
+	"vboxvideo": true, "virtio_gpu": true, "virtio-gpu": true, "vkms": true, "udl": true, "ast": true, "mgag200": true}
