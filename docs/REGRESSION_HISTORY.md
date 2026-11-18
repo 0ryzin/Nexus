@@ -5,6 +5,32 @@ Newest first.
 
 ## 0.8.0 (in development)
 
+### Linux packages that would only have worked on Ubuntu (found by CI, 18 Nov)
+- **Problem:** the first Linux packages linked Ubuntu's FFmpeg 6 (libavcodec.so.60 plus about 40
+  codec libraries). In the AppImage, NEXUS (in `usr/lib/nexus`) had RUNPATH `$ORIGIN` and found
+  the bundled WebKitGTK only on systems that had their own. On Arch-based systems such as SteamOS,
+  the engine or the interface would not have loaded.
+- **Cause:** the engine used system FFmpeg; linuxdeploy's GTK plugin sets `$ORIGIN` on every ELF
+  file under `usr/lib`, including the ones in subfolders.
+- **Fix:**
+  - FFmpeg is built into the engine (engine patch 0040; `-Wl,-Bsymbolic`).
+  - libusb, OpenSSL 3 and lz4 are copied next to the engine.
+  - `appimage_rpaths` in `make_linux.py` gives programs and plugins below `usr/lib` a path back to it.
+  - The WebKit helper-path rewrite has the right length.
+- **Test:**
+  - nexus-linux fails if the engine links a version-specific system library.
+  - Every smoke test (host, plain Ubuntu, Arch) checks that the engine loads and the interface starts.
+- **Recognise it:** "error while loading shared libraries" or "the engine library does not load"
+  in the smoke test.
+
+### Linux reported no graphics card (18 Nov)
+- **Problem:** on Linux NEXUS never detected a GPU or display. Frame generation was never offered
+  there, and the optimiser assumed an entry-level GPU.
+- **Fix:** `hardware_sysfs.go` reads graphics cards and displays from sysfs. It recognises the
+  Steam Deck's APUs and portrait panel, and skips firmware framebuffers and virtual machines'
+  adapters.
+- **Test:** `TestSysfsSteamDeck`, `TestSysfsDesktop`, `TestHardwareDetectionHonest`.
+
 ### NEXUS volume output one step off Lichii's at 100 %
 - **Problem (found 17 Nov, CI on build 316):** Lichii's `nx2_sysmix` test (Orbitals 5.1 audio
   downmixed to stereo) failed in the NEXUS Engine: centre sample 9765, expected 9764.
