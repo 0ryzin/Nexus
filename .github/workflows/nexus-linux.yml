@@ -74,7 +74,8 @@ jobs:
             libopus-dev libasound2-dev ccache python3-zstandard \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxkbcommon-dev \
             libwayland-dev wayland-protocols libdecor-0-dev libdbus-1-dev libibus-1.0-dev \
-            mesa-vulkan-drivers patchelf
+            mesa-vulkan-drivers patchelf \
+            libxtst-dev libxfixes-dev libdrm-dev libgbm-dev libegl1-mesa-dev libgles2-mesa-dev libpipewire-0.3-dev
 
       - name: Restore dependencies and compiler objects
         uses: actions/cache/restore@v4
