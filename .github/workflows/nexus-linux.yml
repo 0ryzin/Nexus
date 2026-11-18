@@ -69,6 +69,19 @@ jobs:
           git -c user.name="NEXUS CI" -c user.email="nexus-ci@users.noreply.github.com" am ../engine/patches/*.patch
 
       # the packages upstream's Linux builds use, without Qt (the engine library has no Qt)
+      # Ubuntu's AMD64 mirror for the runners is slow at times (10-15 min per install): the .deb
+      # files are cached, so apt only unpacks them
+      - name: Restore downloaded packages
+        id: apt-0
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/apt-archives
+          key: apt-install-build-dependencies-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/workflows/nexus-linux.yml') }}
+          restore-keys: apt-install-build-dependencies-${{ runner.os }}-${{ runner.arch }}-
+      - name: Use the cached packages
+        run: |
+          mkdir -p ~/apt-archives
+          sudo cp ~/apt-archives/*.deb /var/cache/apt/archives/ 2>/dev/null || true
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -83,6 +96,13 @@ jobs:
             libwayland-dev wayland-protocols libdecor-0-dev libdbus-1-dev libibus-1.0-dev \
             mesa-vulkan-drivers patchelf \
             libxtst-dev libxfixes-dev libdrm-dev libgbm-dev libegl1-mesa-dev libgles2-mesa-dev libpipewire-0.3-dev
+          mkdir -p ~/apt-archives && cp /var/cache/apt/archives/*.deb ~/apt-archives/ 2>/dev/null || true
+      - name: Save downloaded packages
+        if: steps.apt-0.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/apt-archives
+          key: apt-install-build-dependencies-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/workflows/nexus-linux.yml') }}
 
       - name: Restore dependencies and compiler objects
         uses: actions/cache/restore@v4
@@ -244,6 +264,19 @@ jobs:
           echo "engine sources: built $got, here $want"
           [[ "$got" == "$want" ]] || { echo "::error::the engine was built from other engine sources"; exit 1; }
 
+      # Ubuntu's AMD64 mirror for the runners is slow at times (10-15 min per install): the .deb
+      # files are cached, so apt only unpacks them
+      - name: Restore downloaded packages
+        id: apt-1
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/apt-archives
+          key: apt-install-build-and-packaging-dependencies-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/workflows/nexus-linux.yml') }}
+          restore-keys: apt-install-build-and-packaging-dependencies-${{ runner.os }}-${{ runner.arch }}-
+      - name: Use the cached packages
+        run: |
+          mkdir -p ~/apt-archives
+          sudo cp ~/apt-archives/*.deb /var/cache/apt/archives/ 2>/dev/null || true
       - name: Install build and packaging dependencies
         run: |
           sudo apt-get update
@@ -257,6 +290,13 @@ jobs:
           curl -fsSLo appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${{ matrix.ai }}.AppImage
           chmod +x linuxdeploy linuxdeploy-plugin-gtk.sh appimagetool
           echo "$RUNNER_TEMP/tools" >> "$GITHUB_PATH"
+          mkdir -p ~/apt-archives && cp /var/cache/apt/archives/*.deb ~/apt-archives/ 2>/dev/null || true
+      - name: Save downloaded packages
+        if: steps.apt-1.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/apt-archives
+          key: apt-install-build-and-packaging-dependencies-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/workflows/nexus-linux.yml') }}
 
       - uses: actions/setup-go@v5
         with:
