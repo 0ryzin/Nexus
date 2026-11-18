@@ -91,10 +91,15 @@ body:not(.booting) #boot{display:none}
   background:var(--c,#555);overflow:hidden;position:relative;border:none;padding:0;box-shadow:0 2px 6px rgba(0,0,0,.25)}
 .avatar img{width:100%;height:100%;object-fit:cover}
 .avatar svg{width:62%;height:62%;fill:#fff}
-.avatar.active{outline:3px solid var(--pc,var(--text));outline-offset:2px}
-.tb-left .avatar{transition:transform calc(.25s*var(--t)) var(--spring)}
-.tb-left .avatar.focus{transform:scale(1.06);outline:3px solid var(--accent);outline-offset:3px}
-.tb-left .avatar.active{--sz:calc(var(--u)*3.3)}
+/* the current user: a thin ring in the text colour (white on dark themes, black on light ones),
+   never the user's colour (it clashed with pictures of the same colour) and never larger */
+.avatar.active{box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--text),0 2px 6px rgba(0,0,0,.25)}
+.tb-left .avatar{transition:transform calc(.18s*var(--t)) var(--ease),filter calc(.18s*var(--t)) var(--ease)}
+/* focus (controller / keyboard): a lift and a soft ring, distinct from the current user's ring */
+.tb-left .avatar.focus{transform:translateY(-2px);outline:2px solid color-mix(in srgb,var(--text) 55%,transparent);outline-offset:4px}
+.tb-left .avatar.active.focus{outline-color:color-mix(in srgb,var(--text) 35%,transparent)}
+/* the mouse: only a little brighter (hovering never looks like a selection) */
+.input-mouse .tb-left .avatar.focus{transform:none;outline:none;filter:brightness(1.12)}
 
 /* ---------- banner ---------- */
 .banner{margin:calc(var(--u)*1) auto 0;max-width:min(90vw,1100px);background:color-mix(in srgb,var(--surface) 92%,transparent);
@@ -286,7 +291,7 @@ body:not(.booting) #boot{display:none}
 /* selection states (one pattern for every picker): selected = persistent accent ring and badge;
    focus (keyboard / controller) = a ring around the whole card; hover (mouse, which also moves the
    focus) = a subtle background only. Hovering never makes a card look selected. */
-.who-item.current .avatar{box-shadow:0 0 0 4px var(--bg),0 0 0 8px var(--accent)}
+.who-item.current .avatar{box-shadow:0 0 0 3px var(--bg),0 0 0 6px var(--text)}
 .who-item.current span{color:var(--accent-text)}
 .who-item.focus{background:var(--hover);border-color:var(--text)}
 .who-item.focus .avatar{transform:scale(1.05)}

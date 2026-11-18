@@ -63,6 +63,7 @@ async def main():
         st = await row_state(pg, "Interface sounds")
         check(st["reset"] and st["changed"] and settings()["sound"]["enabled"] is False, f"a changed setting shows its restore button {st}")
         await pg.mouse.move(5, 5)
+        await pg.evaluate(ROW.format(name='"Interface sounds"') + ".scrollIntoView({block: 'center'})"); await pg.wait_for_timeout(300)
         box = await pg.evaluate("(() => { const b = " + ROW.format(name='"Interface sounds"') + ".querySelector('.rst').getBoundingClientRect(); return [b.x + b.width/2, b.y + b.height/2]; })()")
         await pg.mouse.click(*box); await pg.wait_for_timeout(900)
         st = await row_state(pg, "Interface sounds")

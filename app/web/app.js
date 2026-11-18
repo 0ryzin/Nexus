@@ -1206,7 +1206,9 @@ async function profilePage(id) {
     icon.addEventListener('click', () => pickCharacter(id, () => build()));
     const close = h('button', { class: 'chip', 'data-nav': true }, 'Close');
     close.addEventListener('click', () => layer.close());
-    head.append(h('div', { class: 'pp-actions', 'data-row': 'strict' }, edit, icon, close));
+    const playAs = id !== S.profile?.id ? h('button', { class: 'chip', 'data-nav': true }, `Play as ${pr.name}`) : null;
+    playAs?.addEventListener('click', async () => { layer.close(); await switchProfile(id); });
+    head.append(h('div', { class: 'pp-actions', 'data-row': 'strict' }, edit, icon, ...(playAs ? [playAs] : []), close));
     root.append(head);
     root.append(h('div', { class: 'stat-cards big' },
       statCard('Total play time', fmtDur(st.totalSeconds)),
@@ -1541,7 +1543,8 @@ function renderTopbar() {
     const b = h('button', { class: a.className, style: { '--c': a.style.getPropertyValue('--c'), '--i': i }, 'data-nav': true, title: p.name }, ...a.childNodes);
     if (p.theme?.accent) b.style.setProperty('--pc', p.theme.accent);
     b._profile = p;
-    b.addEventListener('click', () => p.id === S.profile?.id ? profilePage(p.id) : switchProfile(p.id));
+    // opens that user's page; it never switches the player (Play as… on the page does, on purpose)
+    b.addEventListener('click', () => profilePage(p.id));
     left.append(b);
   });
   const sys = S.system || {};
@@ -1665,11 +1668,9 @@ function homeDockItems() {
     { id: 'account', label: 'NEXUS Account', icon: I.cloud, color: '#0a84ff', run: () => showSettings('account') },
     { id: 'media', label: 'Media', icon: I.media, color: '#ffd60a', run: () => Media.show() },
     { id: 'controllers', label: 'Controllers', icon: I.pad, color: '#30d158', run: () => Controllers.show() },
-    { id: 'home', label: 'Home screen', icon: I.palette, color: '#bf5af2', run: () => showSettings('home') },
-    { id: 'themes', label: 'Themes', icon: I.palette, color: '#ff6ac1', run: () => showSettings('appearance') },
-    { id: 'shaders', label: 'Shaders', icon: I.chip, color: '#5e5ce6', run: () => showSettings('shaders') },
-    { id: 'perf', label: 'Performance', icon: I.chip, color: '#ff9f0a', run: () => showSettings('perf') },
-    { id: 'emulation', label: 'Graphics & Emulation', icon: I.chip, color: '#64d2ff', run: () => showSettings('emusettings') },
+    // Home screen and Themes are one place now; Shaders, Performance and Graphics & Emulation
+    // live in System Settings (and each game's settings), not on Home
+    { id: 'personalisation', label: 'Personalisation', icon: I.palette, color: '#bf5af2', run: () => showSettings('personalisation') },
     { id: 'settings', label: 'System Settings', icon: I.gear, color: 'var(--muted)', run: () => showSettings() },
     { id: 'power', label: 'Power', icon: I.power, color: 'var(--muted)', run: () => openPower() },
   ];
@@ -2753,7 +2754,7 @@ $('#play-close').addEventListener('click', async () => {
 // categories that were merged to their new place.
 const CATS = [
   ['-', 'General'], ['general', 'General'], ['users', 'Users'],
-  ['-', 'Personalisation'], ['appearance', 'Appearance'], ['home', 'Home screen'],
+  ['-', 'Personalisation'], ['personalisation', 'Personalisation'],
   ['-', 'Games'], ['library', 'Game library'], ['emulator', 'Playing games'], ['savedata', 'Save data'], ['amiibo', 'Amiibo'], ['recording', 'Screen recording'],
   ['-', 'Controllers'], ['controllers', 'Controllers'],
   ['-', 'Graphics & performance'], ['emusettings', 'Graphics & emulation'], ['shaders', 'Shader management'], ['perf', 'Performance monitor'],
@@ -2761,7 +2762,7 @@ const CATS = [
   ['-', 'Advanced'], ['engine', 'NEXUS Engine'], ['sysfiles', 'System files'], ['system', 'Storage & data'],
   ['-', 'About'], ['updates', 'Updates'], ['about', 'About NEXUS'],
 ];
-const CAT_ALIAS = { startup: 'general' };
+const CAT_ALIAS = { startup: 'general', appearance: 'personalisation', home: 'personalisation' };
 const NAVCATS = () => catList().filter(c => c[0] !== '-' && c[0] !== 'controllers');
 // NEXUS Sync appears only when the experimental Device Linking feature is switched on
 const catList = () => {
@@ -2908,7 +2909,7 @@ async function themePatch(patch) {
   if (!S.profile) return;
   await patchProfile(S.profile.id, { theme: patch });
   // keep the Appearance panel in step when the theme was changed from somewhere else
-  if (('mode' in patch || 'accent' in patch) && S.screen === 'settings' && curCat === 'appearance' && !document.activeElement?.closest?.('.swatches')) rebuildPanel();
+  if (('mode' in patch || 'accent' in patch) && S.screen === 'settings' && (curCat === 'appearance' || curCat === 'personalisation') && !document.activeElement?.closest?.('.swatches')) rebuildPanel();
 }
 
 const ACCENTS = ['#ff2a3a', '#00c8ff', '#ff3b5c', '#ff9f0a', '#ffd60a', '#30d158', '#64d2ff', '#5e5ce6', '#bf5af2', '#ff6ec7', '#ffffff'];
@@ -3532,6 +3533,12 @@ const Panels = {
   perf(p) { return renderPerfSettings(p); },
   sync(p) { return renderSync(p); },
   home(p) { homeSettingsPanel(p); },
+  // Appearance (themes, accent colour, wallpaper) and the Home screen, in one place
+  personalisation(p) {
+    Panels.appearance(p); // (panels are called unbound)
+    p.append(h('h2', { class: 'set-section-title' }, 'Home screen'));
+    Panels.home(p);
+  },
   appearance(p) {
     const th = S.profile?.theme || {};
     p.append(h('h2', {}, 'Appearance'), h('p', { class: 'note' }, `These settings belong to ${S.profile?.name || 'the current user'}.`));
