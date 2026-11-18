@@ -30,6 +30,15 @@ type GlobalSettings struct {
 	// KeysVersion: 2 = F12 records and Alt+F12 takes screenshots (NEXUS 0.4.0); 3 = Home is Shift+H (0.6.0)
 	KeysVersion int `json:"keysVersion"`
 
+	// Input: typing without a physical keyboard (web/osk.js)
+	Input struct {
+		// Keyboard: when the on-screen keyboard opens. "auto": whenever a text field is chosen on a
+		// Steam Deck or in Steam's Gaming Mode, and with a controller elsewhere; "always": whenever
+		// a text field is chosen without a physical keyboard; "controller": only with a controller;
+		// "steam": ask Steam for its keyboard (Linux, Steam running), NEXUS's own as the fallback
+		Keyboard string `json:"keyboard"`
+	} `json:"input"`
+
 	Startup struct {
 		Enabled bool   `json:"enabled"`
 		Color   string `json:"color"`
@@ -127,6 +136,7 @@ func DefaultSettings() GlobalSettings {
 	s.Startup.Color = "#e60012"
 	s.Startup.Style = "standard"
 	s.Startup.Animation = "nexus"
+	s.Input.Keyboard = "auto"
 	s.Startup.OOTHome = true
 	s.Startup.Sound = true
 	s.Sound.Enabled = true
@@ -190,6 +200,9 @@ func LoadSettings(p *Paths) (*SettingsStore, error) {
 	}
 	if st.s.Startup.Color == "" {
 		st.s.Startup.Color = "#e60012"
+	}
+	if st.s.Input.Keyboard == "" { // settings from before 0.8.0
+		st.s.Input.Keyboard = "auto"
 	}
 	if st.s.Engine == nil {
 		st.s.Engine = map[string]string{}
@@ -258,6 +271,11 @@ func (st *SettingsStore) Patch(raw json.RawMessage) (GlobalSettings, error) {
 	}
 	if next.Startup.Animation != "oot" { // only the two animations NEXUS has
 		next.Startup.Animation = "nexus"
+	}
+	switch next.Input.Keyboard {
+	case "auto", "always", "controller", "steam":
+	default:
+		next.Input.Keyboard = "auto"
 	}
 	st.s = next
 	err := st.saveLocked()

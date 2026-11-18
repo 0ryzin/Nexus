@@ -43,10 +43,10 @@ import (
 // empty until the service is deployed; then users only choose "Create account" or "Sign in".
 var defaultAccountServer = ""
 
-var SyncCategories = []string{"profile", "playtime", "library", "prefs", "emulation", "amiibo"}
+var SyncCategories = []string{"profile", "playtime", "library", "prefs", "emulation", "amiibo", "saves"}
 
 func defaultSyncCategories() map[string]bool {
-	return map[string]bool{"profile": true, "playtime": true, "library": true, "prefs": true, "emulation": false, "amiibo": true}
+	return map[string]bool{"profile": true, "playtime": true, "library": true, "prefs": true, "emulation": false, "amiibo": true, "saves": true}
 }
 
 type syncBase struct {
@@ -176,6 +176,11 @@ func NewAccount(a *App) *Account {
 	_ = readJSON(filepath.Join(ac.dir, "account.json"), &ac.st)
 	if ac.st.Categories == nil {
 		ac.st.Categories = defaultSyncCategories()
+	}
+	for k, v := range defaultSyncCategories() { // categories added since this device signed in
+		if _, ok := ac.st.Categories[k]; !ok {
+			ac.st.Categories[k] = v
+		}
 	}
 	if ac.st.Base == nil {
 		ac.st.Base = map[string]syncBase{}
@@ -1414,6 +1419,12 @@ func (ac *Account) Sync() (SyncSummary, error) {
 	if sum.Downloaded > 0 {
 		ac.app.Events.Emit("library.changed", nil)
 		ac.app.Events.Emit("profiles.changed", nil)
+	}
+	// game saves (savesync.go), after the users they belong to have arrived
+	if err == nil && ac.app.SaveSync != nil {
+		if _, serr := ac.app.SaveSync.Run(); serr != nil && !errors.Is(serr, errOffline) {
+			ac.app.Log.Printf("account: game saves: %v", serr)
+		}
 	}
 	return sum, err
 }

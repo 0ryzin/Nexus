@@ -140,11 +140,23 @@ const Sound = {
       this.gain = this.ctx.createGain(); this.gain.connect(this.ctx.destination);
     } catch { this.ctx = null; }
   },
+  failed: [],
   async load(names) {
-    if (!this.ctx) return;
+    if (!this.ctx) { this.report(names.length, 0, 'no audio context'); return; }
+    let ok = 0; const errs = [];
     await Promise.all(names.map(async n => {
-      try { const r = await fetch(`/res/sounds/${n}.wav`); this.buf[n] = await this.ctx.decodeAudioData(await r.arrayBuffer()); } catch { }
+      try {
+        const r = await fetch(`/res/sounds/${n}.wav`);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        this.buf[n] = await this.ctx.decodeAudioData(await r.arrayBuffer()); ok++;
+      } catch (e) { errs.push(`${n}: ${e?.message || e}`); }
     }));
+    this.report(names.length, ok, errs.slice(0, 3).join('; '));
+  },
+  // the result goes to NEXUS's log, so a silent interface can be diagnosed (and CI checks it)
+  report(total, ok, why) {
+    const st = this.ctx ? this.ctx.state + ', ' + this.ctx.sampleRate + ' Hz' : 'none';
+    api('/api/app/log', { body: { level: ok === total ? 'info' : 'error', message: `ui: sounds loaded ${ok}/${total} (audio ${st})${why ? ' - ' + why : ''}` } }).catch(() => { });
   },
   live: new Set(),
   play(n, vol = 1, { at = 0, pan = 0, rate = 1, force = false } = {}) {
@@ -241,9 +253,10 @@ const Nav = {
     const el = this.cur; if (!el || !this.top()?.root.contains(el)) return;
     if (isTextField(el)) {
       el.focus();
-      // a text field chosen with a controller opens the on-screen keyboard (web/osk.js); with a
-      // physical keyboard or the mouse it never appears
-      if (S.lastInput === 'gamepad') OSK.open(el);
+      // a text field chosen with a controller opens the on-screen keyboard (web/osk.js); on a
+      // Steam Deck (no physical keyboard: its controls may arrive as keys) it opens however the
+      // field was chosen
+      if (S.lastInput === 'gamepad' || oskAutoDevice()) openKeyboardFor(el);
       return;
     }
     Sound.play('select');
@@ -312,6 +325,32 @@ document.addEventListener('mouseover', e => {
   if (el && Nav.top()?.root.contains(el) && el !== Nav.cur) Nav.setFocus(el, { silent: true, scroll: false });
 });
 document.addEventListener('click', e => { if (document.body.classList.contains('booting')) Boot.skip(); });
+// a text field tapped or clicked on a Steam Deck (touch screen, trackpad) opens the keyboard
+document.addEventListener('click', e => {
+  const t = e.target;
+  if (isTextField(t) && oskAutoDevice() && !OSK.target && Nav.top()?.root.contains(t)) openKeyboardFor(t);
+});
+
+// ------------------------------------------------------------------ typing without a keyboard
+// Settings › General › On-screen keyboard (settings.go Input.Keyboard)
+function oskMode() { return S.settings.input?.keyboard || 'auto'; }
+// the keyboard opens whenever a text field is chosen, not only with a controller
+function oskAutoDevice() {
+  const m = oskMode();
+  return m === 'always' || m === 'steam' || (m === 'auto' && !!(S.platform?.steamDeck || S.platform?.gamingMode));
+}
+// openKeyboardFor(field): Steam's keyboard when chosen and Steam runs (Linux); otherwise, or if
+// Steam does not answer, NEXUS's own keyboard (web/osk.js), which always types into the field
+async function openKeyboardFor(el) {
+  if (!el || !isTextField(el)) return;
+  el.focus({ preventScroll: true });
+  if (oskMode() === 'steam' && S.platform?.steam) {
+    try { await api('/api/app/steam-keyboard', { body: {} }); return; } catch (e) {
+      api('/api/app/log', { body: { level: 'warn', message: 'ui: Steam keyboard unavailable, NEXUS keyboard instead: ' + (e?.message || e) } }).catch(() => { });
+    }
+  }
+  OSK.open(el);
+}
 document.addEventListener('dragstart', e => e.preventDefault());
 
 // left/right adjust for sliders and option pickers
@@ -1003,6 +1042,26 @@ function setupWizard({ first }) {
     const n = h('button', { class: 'btn primary' + (nextOk ? '' : ' disabled'), 'data-nav': true }, nextLabel); n.addEventListener('click', next); row.append(n);
     return row;
   };
+  // "Sign in with my NEXUS account": GitHub sign-in, then the account's users arrive; with users
+  // there is nothing to create (Who's playing? shows them), without any the local setup follows
+  const firstSignIn = async () => {
+    const ok = await AccountUI.githubSignIn();
+    if (!ok) return;
+    const wait = h('div', { class: 'dialog' }, h('div', { class: 'd-body' }, h('h2', {}, 'Getting your NEXUS account'), h('p', { class: 'note' }, 'Your users and their game saves are being copied to this device…')));
+    const wl = openLayer(wait, { onBack: () => { } });
+    try { await api('/api/account/sync', { body: {} }); } catch (e) { toast(e.message, I.warn, 5000); }
+    await loadState();
+    wl.close();
+    if (S.profiles.length) { layer.close(); showWho(); toast(`${S.profiles.length === 1 ? 'Your user is' : 'Your users are'} here. Choose who is playing.`, I.check, 5000); return; }
+    toast('This NEXUS account has no users yet: create yours now.', I.info, 5000);
+    d.mode = 'local'; draw();
+  };
+  const firstCreateAccount = async () => {
+    const r = await dialog({ title: 'Create a NEXUS account', text: 'NEXUS accounts use GitHub, so there is no separate password to remember and no NEXUS server holding your data: your sync data stays in a private Gist in your own GitHub account.\n\n1. Create a free GitHub account (github.com/signup) in a browser on this device, your phone or a computer.\n2. Come back and choose Sign in: NEXUS shows a code to enter at github.com/login/device.',
+      buttons: [{ label: 'Back', value: 'back' }, { label: 'Open github.com/signup', value: 'open' }, { label: 'I have an account: sign in', value: 'signin', primary: true }], cancelValue: 'back' });
+    if (r === 'open') { api('/api/app/open-link', { body: { which: 'github-signup' } }).catch(e => toast(e.message, I.warn)); return firstCreateAccount(); }
+    if (r === 'signin') return firstSignIn();
+  };
   const draw = () => {
     root.replaceChildren();
     root.style.setProperty('--accent', d.accent);
@@ -1011,16 +1070,21 @@ function setupWizard({ first }) {
     const card = h('section', { class: 'setup-card' });
     root.append(head, card);
     let initial = null;
-    if (step === 0 && first && S.features?.deviceLink && !d.mode) {
-      // Create an account / Link an existing account (experimental Device Linking)
+    if (step === 0 && first && !d.mode) {
+      // first launch: sign in to an existing NEXUS account (its users arrive, no extra local user
+      // is needed), create one, or use NEXUS with a local user only
       const opt = (title, text, fn) => { const b = h('button', { class: 'setup-option', 'data-nav': true }, h('b', {}, title), h('span', {}, text)); b.addEventListener('click', fn); return b; };
-      card.append(h('h2', {}, 'Welcome'), h('div', { class: 'setup-options', 'data-row': 'strict' },
-        opt('Create an account', 'Create a new NEXUS account and set up your personal profile on this device.', () => { d.mode = 'create'; draw(); }),
-        opt('Link an existing account', 'Already have a NEXUS account? Link it to this device to access your profile and synchronise compatible game saves, settings and other user information across your devices.', async () => {
-          const pid = await linkEnterCode();
-          if (pid) { layer.close(); await selectProfile(pid); }
-        })),
-        h('p', { class: 'setup-sub' }, 'Account linking only works with NEXUS accounts. Connect NEXUS across your supported devices to synchronise your profiles, game saves, playtime and settings.'));
+      const opts = [
+        opt('Sign in with my NEXUS account', 'You already use NEXUS on another PC or a Steam Deck: sign in, and your users, their pictures, play time and game saves come to this device. No new user is created.', () => firstSignIn()),
+        opt('Create a NEXUS account', 'New to NEXUS accounts: a NEXUS account is your free GitHub account. Create one, then sign in here.', () => firstCreateAccount()),
+        opt('Continue with a local user', 'Use NEXUS on this device only. You can sign in to a NEXUS account later in Settings; your local user and saves are kept.', () => { d.mode = 'local'; draw(); }),
+      ];
+      if (S.features?.deviceLink) opts.push(opt('Link with a code (experimental)', 'Link this device to another NEXUS on your network with a code.', async () => {
+        const pid = await linkEnterCode();
+        if (pid) { layer.close(); await selectProfile(pid); }
+      }));
+      card.append(h('h2', {}, 'Welcome'), h('div', { class: 'setup-options', 'data-row': 'strict' }, ...opts),
+        h('p', { class: 'setup-sub' }, 'Your NEXUS account keeps your users, play time, settings and game saves the same on every PC and Steam Deck you sign in on. Games, keys and firmware never leave this device.'));
       initial = $('.setup-option', card);
     } else if (step === 0) {
       const inp = h('input', { type: 'text', class: 'setup-input', maxlength: 20, placeholder: 'Your name', value: d.name, 'data-nav': true, spellcheck: 'false', autocomplete: 'off' });
@@ -3107,6 +3171,7 @@ const AccountUI = {
     ['playtime', 'Play time', 'Each device\u2019s play time per game, added up on every device, including corrections you make.'],
     ['library', 'Game library', 'Names you gave games, hidden games, artwork choices and each game’s controller layout.'],
     ['prefs', 'NEXUS preferences', 'Sounds, the start-up animation, shortcut keys and what Home does.'],
+    ['saves', 'Game saves', 'Each user\u2019s game saves, in a private Gist of their own in your GitHub account. A save changed on two devices is never overwritten: you choose. A save that is replaced is backed up first (Save Data \u203a Backups).'],
     ['amiibo', 'Amiibo library', 'Names, details and owners of your amiibo, and NEXUS virtual amiibo. Imported amiibo dumps stay on the device you imported them on.'],
     ['emulation', 'Graphics & emulation settings', 'Global and per-game emulation settings. Off by default: a Steam Deck and a gaming PC usually need different settings. The graphics card choice never synchronises.'],
   ],
@@ -3183,8 +3248,34 @@ const AccountUI = {
     await dialog({ title: first ? 'Your account is ready' : 'Your new recovery code', text: 'Write this recovery code down and keep it somewhere safe. It is the only way to set a new password if you forget yours, and NEXUS shows it only now.', pre: code, buttons: [{ label: 'I have saved it', value: true, primary: true }] });
   },
   // Sign in with GitHub: NEXUS shows a code; the user enters it at github.com/login/device
+  // Game saves (savesync.go): status, conflicts with their two choices
+  savesRows(p) {
+    const box = h('div');
+    p.append(h('h3', {}, 'Game saves'), box);
+    const draw = ss => {
+      box.replaceChildren();
+      if (!ss.enabled) { box.append(h('p', { class: 'note' }, 'Game saves are not synchronised on this device (What synchronises \u203a Game saves).')); return; }
+      const state = { idle: 'Not synchronised yet', running: 'Synchronising\u2026', done: 'Up to date', failed: 'Failed', offline: 'Waiting for connection' }[ss.state] || ss.state;
+      const parts = [ss.last ? `Last ${this.ago(ss.last)}.` : '', ss.message || '', ss.pending ? `${ss.pending} save(s) changed here wait to be sent.` : '',
+        ss.waitingFor?.length ? `Waits until ${ss.waitingFor.join(', ')} closes the game.` : '', ss.tooLarge?.length ? `Too large to synchronise: ${ss.tooLarge.join(', ')}.` : ''];
+      box.append(infoRow('Game saves', ss.conflicts.length ? `${ss.conflicts.length} need your choice` : state, parts.filter(Boolean).join(' ')));
+      for (const c of ss.conflicts) {
+        const here = c.localModified ? new Date(c.localModified * 1000).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '?';
+        const there = c.remote.modified ? new Date(c.remote.modified * 1000).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '?';
+        box.append(rowButton(`${c.title} \u2014 ${c.userName}`, { icon: I.warn, sub: `Changed on this device (saved ${here}) and on ${c.remote.deviceName} (saved ${there}). Neither was overwritten.`, onClick: async () => {
+          const v = await dialog({ title: `${c.title}: which save?`, text: `This device: last saved ${here}.\n${c.remote.deviceName}: last saved ${there}.\n\nThe save you do not keep is backed up first (Save Data \u203a Backups) on this device; GitHub also keeps every earlier version.`,
+            buttons: [{ label: 'Decide later', value: '' }, { label: `Use ${c.remote.deviceName}\u2019s`, value: 'remote' }, { label: 'Keep this device\u2019s', value: 'local', primary: true }], cancelValue: '' });
+          if (!v) return;
+          try { draw(await api('/api/saves/sync/resolve', { body: { key: c.key, keep: v } })); toast('Save synchronised', I.check); } catch (e) { alertDlg('Game saves', e.message); }
+        } }));
+      }
+    };
+    api('/api/saves/sync').then(draw).catch(() => { });
+  },
+  // returns true once this device is signed in
   async githubSignIn() {
-    let v;
+    if (!this.st) await this.load();
+    let v, ok = false;
     try { v = await api('/api/account/github/start', { body: { deviceName: this.st.deviceName } }); } catch (e) { return alertDlg('Sign in with GitHub', e.message); }
     let open = true;
     const status = h('p', { class: 'note' }, 'Waiting for you to approve NEXUS on GitHub…');
@@ -3204,12 +3295,13 @@ const AccountUI = {
       await sleep(2500);
       if (!open) break;
       const r = await api('/api/account/github/status', { body: {} }).catch(e => ({ status: 'pending', error: e.message }));
-      if (r.status === 'approved') { close(); toast(`Signed in as ${r.account?.email || 'your GitHub account'}`, I.check, 4000); break; }
+      if (r.status === 'approved') { ok = true; close(); toast(`Signed in as ${r.account?.email || 'your GitHub account'}`, I.check, 4000); break; }
       if (r.status === 'denied') { close(); alertDlg('Not signed in', r.error || 'NEXUS was not approved on GitHub.'); break; }
       if (r.status === 'expired' || r.status === 'none') { close(); if (r.status === 'expired') alertDlg('The code expired', 'Choose Sign in with GitHub again for a new code.'); break; }
       if (r.error) status.textContent = r.error;
     }
     await this.load(); if (S.screen === 'settings' && curCat === 'account') rebuildPanel();
+    return ok;
   },
   unavailable() {
     return alertDlg('NEXUS accounts are not available yet', 'Creating an account and signing in need the NEXUS account service on the internet, and it has not been put online for this version of NEXUS. Nothing is wrong with your PC or your data, and everything else in NEXUS works without an account.\n\nIf you run your own NEXUS account service, enter its address under Advanced \u203a Account service address.');
@@ -3379,6 +3471,7 @@ const AccountUI = {
       p.append(rowButton('Keep this device’s data here', { sub: 'Only changes you make from now on are sent.', onClick: () => this.run(() => api('/api/account/hold', { body: { send: false } }), 'Kept on this device') }));
     }
     p.append(rowToggle('Synchronise this device', st.syncOn, v => this.run(() => api('/api/account/sync/settings', { body: { on: v } })), 'Off: this device keeps its changes to itself and receives nothing until you switch it on again.'));
+    if (st.provider === 'github') this.savesRows(p);
     if (st.conflicts?.length) {
       p.append(h('h3', {}, `Needs your choice (${st.conflicts.length})`));
       for (const c of st.conflicts) p.append(rowButton(c.title, { sub: `Changed here and on ${c.remoteFrom}. Nothing was overwritten.`, icon: I.warn, onClick: () => this.conflict(c) }));
@@ -3394,7 +3487,8 @@ const AccountUI = {
     else p.append(rowButton('Link another device\u2026', { icon: I.plus, sub: 'Another PC, or NEXUS for Linux on a Steam Deck. Shows a one-time code to enter there. Or simply sign in there with your e-mail and password.', onClick: () => this.linkOther() }));
     p.append(h('h3', {}, 'What synchronises'));
     for (const [id, label, sub] of this.CATS) p.append(rowToggle(label, !!st.categories?.[id], v => this.run(() => api('/api/account/sync/settings', { body: { categories: { [id]: v } } })), sub));
-    p.append(h('p', { class: 'note' }, 'Never synchronised: games, updates and DLC, keys and firmware, imported amiibo dumps, shader caches, screenshots and recordings. Game saves stay on each device for now: synchronising saves safely needs version history on the service, which is not built yet.'));
+    p.append(h('p', { class: 'note' }, st.provider === 'github' ? 'Never synchronised: games, updates and DLC, keys and firmware, imported amiibo dumps, shader caches, screenshots and recordings.'
+      : 'Never synchronised: games, updates and DLC, keys and firmware, imported amiibo dumps, shader caches, screenshots and recordings. Game saves synchronise with a GitHub NEXUS account only.'));
     if (st.history?.length) {
       p.append(h('h3', {}, 'Recent activity'));
       for (const e of [...st.history].reverse().slice(0, 8)) p.append(infoRow(e.message, new Date(e.at * 1000).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })));
@@ -3458,6 +3552,12 @@ const Panels = {
     startupRows(p);
     p.append(h('h3', {}, 'Display'));
     p.append(changedMark(rowToggle('Full screen', S.system?.fullscreen ?? S.settings.display?.fullscreen, async v => { const r = await api('/api/app/fullscreen', { body: { on: v } }); if (S.system) S.system.fullscreen = r.fullscreen; }, 'NEXUS fills the screen when it starts. F11 also switches.'), 'display.fullscreen'));
+    p.append(h('h3', {}, 'Typing'));
+    const kbChoices = [{ v: 'auto', l: 'Automatic' }, { v: 'always', l: 'Always' }, { v: 'controller', l: 'With a controller only' }];
+    if (S.platform?.platform === 'linux') kbChoices.push({ v: 'steam', l: 'Steam keyboard' });
+    p.append(changedMark(rowChoice('On-screen keyboard', kbChoices, oskMode(), v => saveSettings({ input: { keyboard: v } }).then(rebuildPanel),
+      oskMode() === 'steam' ? 'NEXUS asks Steam for its keyboard when you choose a text field (Steam must be running). If Steam does not answer, NEXUS\u2019s own keyboard opens.'
+        : 'Automatic: on a Steam Deck and in Steam\u2019s Gaming Mode the keyboard opens whenever you choose a text field (touch, trackpad or controller); elsewhere only with a controller. A physical keyboard always types directly.'), 'input.keyboard'));
     p.append(h('h3', {}, 'Sounds'));
     p.append(changedMark(rowToggle('Interface sounds', S.settings.sound?.enabled, v => saveSettings({ sound: { enabled: v } }).then(rebuildPanel)), 'sound.enabled'));
     p.append(changedMark(rowRange('Sound volume', { min: 0, max: 100, step: 10, value: Math.round((S.settings.sound?.volume ?? .7) * 100), fmt: v => v + '%', onChange: (v, commit) => { S.settings.sound.volume = v / 100; if (commit) { saveSettings({ sound: { volume: v / 100 } }); Sound.play('select'); } } }), 'sound.volume'));
@@ -4344,6 +4444,7 @@ function connectEvents() {
       case 'account.changed': AccountUI.update(m.data); break;
       case 'emulator.autopaused': toast(`${m.data.title} was paused after ${m.data.minutes >= 60 ? '1 hour' : m.data.minutes + ' minutes'} in the background`, I.info, 5000); if (S.screen === 'home') renderBanner(); break;
       case 'profiles.changed': await loadState(); if (S.screen === 'home') refreshTop(); break;
+      case 'saves.sync': if (S.screen === 'settings' && curCat === 'account' && m.data?.state !== 'running') rebuildPanel(); break;
       case 'platform.device': S.platform = await api('/api/platform').catch(() => S.platform); if (S.screen === 'settings' && curCat === 'system') rebuildPanel(); break;
       case 'platform.thermal': if (S.platform) S.platform.device = { ...(S.platform.device || {}), thermalStatus: m.data.status };
         if (m.data.hot) toast(`Your device is very warm (${m.data.name}). Games slow down until it cools; take a break or remove a case.`, I.warn, 6000); break;

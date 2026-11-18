@@ -1,16 +1,29 @@
 #!/bin/sh
 # NEXUS AppImage entry point (tools/release/make_linux.py).
 HERE="$(dirname "$(readlink -f "$0")")"
+export APPDIR="$HERE"
+# the desktop's own values, for programs NEXUS opens (the browser, file manager, Steam's
+# keyboard): they must not get the bundled libraries' settings below (platform_env.go)
+export NEXUS_HOST_XDG_DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+export NEXUS_APPIMAGE_ENV=1
 # Steam (and some desktops) set a library path for their own runtime; NEXUS brings its own
 # libraries, and the graphics drivers come from the system.
 unset LD_LIBRARY_PATH
-TRIPLE=$(ls -d "$HERE"/usr/lib/*-linux-gnu 2>/dev/null | head -1)
+# GStreamer plugins from the system would load into the bundled GStreamer: only the bundled ones
+unset GST_PLUGIN_PATH GST_PLUGIN_PATH_1_0 GST_PLUGIN_SYSTEM_PATH_1_0
+# GTK's own settings for the bundled GTK (linuxdeploy-plugin-gtk's hook: modules, pixbuf
+# loaders, input methods, GSettings schemas, X11 backend)
+for hook in "$HERE"/apprun-hooks/*.sh; do
+  [ -f "$hook" ] && . "$hook"
+done
 export GST_PLUGIN_SYSTEM_PATH="$HERE/usr/lib/gstreamer-1.0"
 export GST_PLUGIN_SCANNER="$HERE/usr/lib/gstreamer-1.0/gst-plugin-scanner"
-export GST_REGISTRY="${XDG_CACHE_HOME:-$HOME/.cache}/nexus-gstreamer-registry.bin"
+# a registry of the bundled plugins only, per NEXUS version (a cache; rebuilt when missing)
+export GST_REGISTRY="${XDG_CACHE_HOME:-$HOME/.cache}/nexus/gstreamer-registry-$(basename "$(readlink -f "${APPIMAGE:-$0}")" | tr -c 'A-Za-z0-9._-' '_').bin"
+mkdir -p "$(dirname "$GST_REGISTRY")" 2>/dev/null
 export GDK_PIXBUF_MODULE_FILE="${GDK_PIXBUF_MODULE_FILE:-$HERE/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache}"
 export GSETTINGS_SCHEMA_DIR="$HERE/usr/share/glib-2.0/schemas${GSETTINGS_SCHEMA_DIR:+:$GSETTINGS_SCHEMA_DIR}"
-export XDG_DATA_DIRS="$HERE/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+case ":$XDG_DATA_DIRS:" in *":$HERE/usr/share:"*) ;; *) export XDG_DATA_DIRS="$HERE/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" ;; esac
 # WebKitGTK finds its helper processes relative to usr/ (make_linux.py, appimage_webkit)
 cd "$HERE/usr" || exit 1
 exec "$HERE/usr/lib/nexus/nexus" "$@"

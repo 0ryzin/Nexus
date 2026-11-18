@@ -147,7 +147,8 @@ type App struct {
 	Compat           *CompatStore
 	Saves            *SaveOrganizer
 	Amiibo           *AmiiboStore
-	Account          *Account // NEXUS Account and synchronisation (account.go)
+	Account          *Account  // NEXUS Account and synchronisation (account.go)
+	SaveSync         *SaveSync // game saves through the account (savesync.go)
 	Media            *MediaLibrary
 	Recorder         *Recorder
 	Controllers      *ControllerStore
@@ -188,6 +189,7 @@ func NewAppWithPaths(p *Paths) (*App, error) {
 	a.Saves = NewSaveOrganizer(a)
 	a.Amiibo = NewAmiiboStore(a, filepath.Join(p.UserData, "Amiibo"))
 	a.Account = NewAccount(a)
+	a.SaveSync = NewSaveSync(a)
 	a.Media = NewMediaLibrary(a)
 	a.Recorder = NewRecorder(a)
 	a.Controllers = NewControllerStore(a)

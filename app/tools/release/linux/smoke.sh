@@ -9,6 +9,10 @@ mkdir -p "$out"
 run() { # $1 = name, rest = env
   local name="$1"; shift
   local data="$out/data-$name"; rm -rf "$data"; mkdir -p "$data"
+  rec=""
+  if [ -n "${NEXUS_SMOKE_AUDIO:-}" ] && [ "$name" = desktop ]; then
+    parecord --device=nexus_null.monitor --file-format=wav --channels=2 --rate=48000 "$out/$label-audio.wav" & rec=$!
+  fi
   env "$@" NEXUS_DATA="$data" APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run -a -s "-screen 0 1280x800x24" bash -c '
     "$0" >"$1/stdout.log" 2>&1 & pid=$!
     for i in $(seq 1 90); do
@@ -18,6 +22,7 @@ run() { # $1 = name, rest = env
     done
     sleep 2; import -window root "$1/screen.png" 2>/dev/null || true
     kill $pid 2>/dev/null; sleep 1; kill -9 $pid 2>/dev/null; true' "$ai" "$data"
+  [ -n "$rec" ] && { kill -INT $rec 2>/dev/null; wait $rec 2>/dev/null; }
   cp "$data/Logs/nexus.log" "$out/$label-$name.log" 2>/dev/null || true
   cp "$data/stdout.log" "$out/$label-$name-stdout.log" 2>/dev/null || true
   cp "$data/screen.png" "$out/$label-$name.png" 2>/dev/null || true
@@ -38,6 +43,18 @@ run desktop || ok=1
 # Steam's Gaming Mode sets SteamGamepadUI=1 for the games it starts: NEXUS must go full screen
 run gamingmode SteamGamepadUI=1 SteamDeck=1 || ok=1
 grep -q "Gaming Mode true" "$out/$label-gamingmode.log" 2>/dev/null || { echo "::error::$label: Gaming Mode was not recognised"; ok=1; }
+# the interface's sounds decode (WebKit's Web Audio through the bundled GStreamer)
+grep -q "ui: sounds loaded \([0-9]*\)/\1 " "$out/$label-desktop.log" 2>/dev/null || { echo "::error::$label: interface sounds did not load"; grep "ui: sounds" "$out/$label-desktop.log"; ok=1; }
+# and are heard: with a PulseAudio null sink (where available) the start-up sound must reach it
+if [ -n "${NEXUS_SMOKE_AUDIO:-}" ]; then
+  if python3 - "$out/$label-audio.wav" <<'PY'
+import sys, wave, array, math
+w = wave.open(sys.argv[1]); a = array.array("h", w.readframes(w.getnframes()))
+peak = max((abs(x) for x in a), default=0); rms = math.sqrt(sum(x * x for x in a) / max(1, len(a)))
+print(f"recorded {len(a)} samples, peak {peak}, rms {rms:.1f}"); sys.exit(0 if peak > 500 else 1)
+PY
+  then echo "$label: interface sound reached the audio device"; else echo "::error::$label: no interface sound reached the audio device"; ok=1; fi
+fi
 # controller navigation in NEXUS needs the web view's Gamepad API (WebKitGTK built with libmanette)
 grep -q "gamepad API available" "$out/$label-desktop.log" 2>/dev/null || { echo "::error::$label: the web view has no Gamepad API (no controller navigation)"; ok=1; }
 exit $ok

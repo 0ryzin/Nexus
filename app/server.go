@@ -301,10 +301,24 @@ func (s *Server) routes() {
 		a.Log.Printf("ui[%s]: %s", b.Level, b.Message)
 		writeJSON(w, true)
 	})
+	// Steam's on-screen keyboard (Linux, Steam running): Steam opens it for the focused window.
+	// Settings › General › On-screen keyboard › Steam keyboard; the interface falls back to its own.
+	m.HandleFunc("POST /api/app/steam-keyboard", func(w http.ResponseWriter, r *http.Request) {
+		if runtime.GOOS != "linux" || !steamRunning() {
+			writeErr(w, 409, errors.New("Steam is not running"))
+			return
+		}
+		if err := xdgOpen("steam://open/keyboard"); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		a.Log.Printf("ui: asked Steam for its on-screen keyboard")
+		writeJSON(w, true)
+	})
 	m.HandleFunc("POST /api/app/open-link", func(w http.ResponseWriter, r *http.Request) {
 		var b struct{ Which string }
 		_ = readBody(r, &b)
-		link := map[string]string{"github-device": "https://github.com/login/device", "github-apps": "https://github.com/settings/applications", "github-settings": "https://github.com/settings/profile"}[b.Which]
+		link := map[string]string{"github-device": "https://github.com/login/device", "github-apps": "https://github.com/settings/applications", "github-settings": "https://github.com/settings/profile", "github-signup": "https://github.com/signup"}[b.Which]
 		if b.Which == "release" { // the page of the newest release (Linux updates are downloaded there)
 			if p := a.Updater.Last().Page; strings.HasPrefix(p, "https://github.com/") {
 				link = p
@@ -2360,6 +2374,20 @@ func (s *Server) routes() {
 		writeJSON(w, map[string]any{"status": st, "account": a.Account.Status()})
 	})
 	m.HandleFunc("POST /api/account/link/cancel", func(w http.ResponseWriter, r *http.Request) { a.Account.CancelLink(); acct(w, nil) })
+	// game saves through the account (savesync.go)
+	m.HandleFunc("GET /api/saves/sync", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, a.SaveSync.Status()) })
+	m.HandleFunc("POST /api/saves/sync/resolve", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Key, Keep string }
+		if err := readBody(r, &b); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		if err := a.SaveSync.Resolve(b.Key, b.Keep); err != nil {
+			writeErr(w, 409, err)
+			return
+		}
+		writeJSON(w, a.SaveSync.Status())
+	})
 	m.HandleFunc("POST /api/account/sync", func(w http.ResponseWriter, r *http.Request) {
 		_, err := a.Account.Sync()
 		acct(w, err)
@@ -2509,18 +2537,25 @@ func networkUp() bool {
 	return false
 }
 
+// xdgOpen opens a file, folder or link with the desktop's program for it (Linux).
+func xdgOpen(target string) error {
+	c := exec.Command("xdg-open", target)
+	c.Env = hostEnv()
+	return c.Start()
+}
+
 func openInExplorer(dir string) error {
 	if runtime.GOOS == "windows" {
 		return exec.Command("explorer.exe", dir).Start()
 	}
-	return exec.Command("xdg-open", dir).Start()
+	return xdgOpen(dir)
 }
 
 func revealInExplorer(file string) error {
 	if runtime.GOOS == "windows" {
 		return exec.Command("explorer.exe", "/select,", file).Start()
 	}
-	return exec.Command("xdg-open", filepath.Dir(file)).Start()
+	return xdgOpen(filepath.Dir(file))
 }
 
 // openWithDefaultApp opens a file in the program Windows uses for it (Photos, a video player).
@@ -2528,7 +2563,7 @@ func openWithDefaultApp(file string) error {
 	if runtime.GOOS == "windows" {
 		return exec.Command("explorer.exe", file).Start() // opens it in its default program
 	}
-	return exec.Command("xdg-open", file).Start()
+	return xdgOpen(file)
 }
 
 // engineInfo describes the NEXUS engine for the Settings page: installed builds, the active

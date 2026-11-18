@@ -348,7 +348,13 @@ jobs:
           "$PWD/$ai" --engine-check "$RUNNER_TEMP/ai-check.json" || true
           cat "$RUNNER_TEMP/ai-check.json"
           python3 -c "import json,sys; r=json.load(open(sys.argv[1])); sys.exit(0 if r.get('ready') else 1)" "$RUNNER_TEMP/ai-check.json"
-          bash app/tools/release/linux/smoke.sh "$PWD/$ai" "$RUNNER_TEMP/smoke-host" host
+          # a sound server with a silent sink: the interface's start-up sound must arrive there
+          sudo apt-get install -y --no-install-recommends pulseaudio pulseaudio-utils >/dev/null
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg"; mkdir -p "$XDG_RUNTIME_DIR"; chmod 700 "$XDG_RUNTIME_DIR"
+          pulseaudio --start --exit-idle-time=-1 --disallow-exit
+          pactl load-module module-null-sink sink_name=nexus_null >/dev/null
+          pactl set-default-sink nexus_null
+          NEXUS_SMOKE_AUDIO=1 bash app/tools/release/linux/smoke.sh "$PWD/$ai" "$RUNNER_TEMP/smoke-host" host
 
       # the AppImage on systems without WebKitGTK installed: Arch Linux (what SteamOS is built on)
       # and plain Ubuntu, each with only a virtual display added (Ubuntu also gets GTK 3 and ALSA,

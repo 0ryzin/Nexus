@@ -31,6 +31,19 @@ type fakeGitHub struct {
 	renewals int            // successful renewals
 	down     bool           // the network is down: every connection is dropped
 	scopes   []string       // scope asked for at each device-flow start
+	// savesync_test.go: raw file URLs, one per stored revision (as GitHub's raw_url)
+	base string
+	raw  map[string]string // path -> content
+}
+
+// rawURL stores content as a revision of a Gist file and returns its raw address.
+func (f *fakeGitHub) rawURL(id, name, content string) string {
+	if f.raw == nil {
+		f.raw = map[string]string{}
+	}
+	p := fmt.Sprintf("/raw/%s/%d/%s", id, len(f.raw)+1, name)
+	f.raw[p] = content
+	return f.base + p
 }
 
 func (f *fakeGitHub) userOf(auth string) int {
@@ -52,6 +65,10 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	auth := r.Header.Get("Authorization")
+	if c, ok := f.raw[r.URL.Path]; ok && strings.HasPrefix(r.URL.Path, "/raw/") { // public by its address
+		fmt.Fprint(w, c)
+		return
+	}
 	switch {
 	case r.URL.Path == "/login/oauth/access_token" && r.URL.Query().Get("grant_type") == "refresh_token":
 		rt := r.URL.Query().Get("refresh_token")
@@ -129,10 +146,12 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			f.owner = map[string]int{}
 		}
 		f.owner[id] = f.userOf(auth)
+		fs := map[string]any{}
 		for n, c := range b.Files {
 			f.gists[id][n] = c.Content
+			fs[n] = map[string]any{"raw_url": f.rawURL(id, n, c.Content)}
 		}
-		json.NewEncoder(w).Encode(map[string]string{"id": id})
+		json.NewEncoder(w).Encode(map[string]any{"id": id, "files": fs})
 	case strings.HasPrefix(r.URL.Path, "/gists/"):
 		id := strings.TrimPrefix(r.URL.Path, "/gists/")
 		g, ok := f.gists[id]
@@ -151,7 +170,7 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		fs := map[string]any{}
 		for n, c := range g {
-			fs[n] = map[string]any{"content": c}
+			fs[n] = map[string]any{"content": c, "raw_url": f.rawURL(id, n, c)}
 		}
 		json.NewEncoder(w).Encode(map[string]any{"id": id, "files": fs})
 	default:

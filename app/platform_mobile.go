@@ -292,7 +292,8 @@ func (a *App) PlatformInfo() map[string]any {
 	m := a.mobile()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	out := map[string]any{"platform": runtime.GOOS, "mobile": m.device != nil}
+	out := map[string]any{"platform": runtime.GOOS, "mobile": m.device != nil,
+		"steamDeck": steamDeck(), "gamingMode": gamingMode(), "steam": steamRunning()}
 	if m.device != nil {
 		d := *m.device
 		d.ThermalStatus = m.thermal

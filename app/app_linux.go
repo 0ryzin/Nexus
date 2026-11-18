@@ -21,6 +21,7 @@ extern void goFocus(int in);
 extern void goFullscreenChanged(int on);
 extern void goRunQueue(void);
 extern int goKey(unsigned int keyval);
+extern void goOpenURI(char *uri);
 
 static GtkWidget *nx_win;
 static WebKitWebView *nx_view;
@@ -42,7 +43,7 @@ static gboolean nx_policy(WebKitWebView *v, WebKitPolicyDecision *dec, WebKitPol
 	if (t != WEBKIT_POLICY_DECISION_TYPE_NEW_WINDOW_ACTION) return FALSE;
 	WebKitNavigationAction *a = webkit_navigation_policy_decision_get_navigation_action(WEBKIT_NAVIGATION_POLICY_DECISION(dec));
 	const char *uri = webkit_uri_request_get_uri(webkit_navigation_action_get_request(a));
-	if (uri) gtk_show_uri_on_window(GTK_WINDOW(nx_win), uri, GDK_CURRENT_TIME, NULL);
+	if (uri) goOpenURI((char*)uri);
 	webkit_policy_decision_ignore(dec);
 	return TRUE;
 }
@@ -60,7 +61,10 @@ static int nx_create(const char *title, int w, int h, int fullscreen, int decora
 	GdkRGBA bg = {0x10 / 255.0, 0x12 / 255.0, 0x14 / 255.0, 1};
 	WebKitWebsiteDataManager *dm = webkit_website_data_manager_new("base-data-directory", data, "base-cache-directory", cache, NULL);
 	WebKitWebContext *ctx = webkit_web_context_new_with_website_data_manager(dm);
-	nx_view = WEBKIT_WEB_VIEW(webkit_web_view_new_with_context(ctx));
+	// interface sounds play without a click first: controller presses are not "user gestures"
+	// to WebKit, so with its default autoplay policy a controller-only start stayed silent
+	WebKitWebsitePolicies *pol = webkit_website_policies_new_with_policies("autoplay", WEBKIT_AUTOPLAY_ALLOW, NULL);
+	nx_view = WEBKIT_WEB_VIEW(g_object_new(WEBKIT_TYPE_WEB_VIEW, "web-context", ctx, "website-policies", pol, NULL));
 	webkit_web_view_set_background_color(nx_view, &bg);
 	WebKitSettings *s = webkit_web_view_get_settings(nx_view);
 	webkit_settings_set_enable_developer_extras(s, dev);
@@ -139,12 +143,16 @@ type gtkUI struct {
 
 var theGTK *gtkUI
 
-// gamingMode: NEXUS runs inside Steam's Gaming Mode (gamescope), e.g. on a Steam Deck.
-func gamingMode() bool {
-	if os.Getenv("SteamGamepadUI") == "1" || os.Getenv("SteamDeck") == "1" && os.Getenv("XDG_CURRENT_DESKTOP") != "KDE" {
-		return true
+
+// goOpenURI: a link the interface opens in a new window goes to the desktop's browser, started
+// with the desktop's environment (platform_env.go hostEnv), not the AppImage's.
+//
+//export goOpenURI
+func goOpenURI(uri *C.char) {
+	u := C.GoString(uri)
+	if strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "steam://") {
+		_ = xdgOpen(u)
 	}
-	return strings.Contains(strings.ToLower(os.Getenv("XDG_CURRENT_DESKTOP")), "gamescope") || os.Getenv("GAMESCOPE_WAYLAND_DISPLAY") != ""
 }
 
 //export goFocus

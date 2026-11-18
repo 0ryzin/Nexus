@@ -236,6 +236,7 @@ const SEARCH_EXTRA = [
   ['controller gamepad pad joystick buttons mapping xbox playstation dualsense', 'controllers', 'Controllers'],
   ['theme dark light accent colour color', 'appearance', 'Theme and accent colour'],
   ['boot intro splash startup animation logo', 'general', 'Startup animation'],
+  ['keyboard on-screen osk typing steam deck text', 'general', 'On-screen keyboard'],
   ['keys prod.keys firmware', 'sysfiles', 'System files'],
   ['saves save data backup', 'savedata', 'Save data'],
   ['volume sound audio', 'general', 'Sounds'],

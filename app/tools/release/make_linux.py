@@ -206,7 +206,10 @@ def appimage_gstreamer(appdir, triple):
     os.makedirs(dest, exist_ok=True)
     want = ["coreelements", "app", "audioconvert", "audioresample", "autodetect", "playback", "typefindfunctions",
             "volume", "wavparse", "pulseaudio", "pipewire", "alsa", "audiomixer", "audiotestsrc", "uridecodebin3", "isomp4",
-            "opus", "vorbis", "ogg", "flac", "mpg123", "gio", "opengl", "videoconvertscale", "videoconvert", "videoscale"]
+            "opus", "vorbis", "ogg", "flac", "mpg123", "gio", "opengl", "videoconvertscale", "videoconvert", "videoscale",
+            # WebKit's Web Audio (NEXUS's interface sounds): decodeAudioData uses deinterleave,
+            # playback uses interleave; without them every sound fails to load, silently
+            "interleave", "audiorate", "rawparse", "audioparsers", "level"]
     found = []
     for w in want:
         p = os.path.join(src, f"libgst{w}.so")
