@@ -188,7 +188,7 @@ func goKey(keyval C.uint) C.int {
 		return 0
 	}
 	on := !u.IsFullscreen()
-	C.nx_fullscreen(cbool(on))
+	C.nx_fullscreen(gtkBool(on))
 	go func() {
 		if !u.app.Emu.State().Running {
 			_, _ = u.app.Settings.Update(func(g *GlobalSettings) { g.Display.Fullscreen = on })
@@ -221,7 +221,7 @@ func (u *gtkUI) SetFullscreen(on bool) {
 	if u.gaming {
 		return // gamescope shows NEXUS full screen; there is no window to switch to
 	}
-	u.dispatch(func() { C.nx_fullscreen(cbool(on)) })
+	u.dispatch(func() { C.nx_fullscreen(gtkBool(on)) })
 }
 func (u *gtkUI) Minimize() {
 	if !u.gaming {
@@ -237,7 +237,7 @@ func (u *gtkUI) pick(title string, folder bool, filter string) (string, error) {
 		ct, cf := C.CString(title), C.CString(gtkPattern(filter))
 		defer C.free(unsafe.Pointer(ct))
 		defer C.free(unsafe.Pointer(cf))
-		p := C.nx_pick(ct, cbool(folder), cf)
+		p := C.nx_pick(ct, gtkBool(folder), cf)
 		if p != nil {
 			out = C.GoString(p)
 			C.nx_free(p)
@@ -262,7 +262,7 @@ func gtkPattern(filter string) string {
 	return strings.ReplaceAll(filter, "\x00", "")
 }
 
-func cbool(b bool) C.int {
+func gtkBool(b bool) C.int {
 	if b {
 		return 1
 	}
@@ -332,7 +332,7 @@ func runUI(a *App, url string) {
 	defer C.free(unsafe.Pointer(cd))
 	defer C.free(unsafe.Pointer(cc))
 	dev := os.Getenv("NEXUS_DEVTOOLS") == "1"
-	if C.nx_create(ct, C.int(w), C.int(h), cbool(full), cbool(!u.gaming), ci, cd, cc, cbool(dev)) == 0 {
+	if C.nx_create(ct, C.int(w), C.int(h), gtkBool(full), gtkBool(!u.gaming), ci, cd, cc, gtkBool(dev)) == 0 {
 		fatalBox("NEXUS could not open its window: no display was found (DISPLAY / WAYLAND_DISPLAY).")
 		return
 	}
