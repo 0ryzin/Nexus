@@ -147,11 +147,18 @@ func testNewAppWithPaths(t testing.TB, p *Paths) (*App, error) {
 // stopTestSession ends a test's game session and waits until NEXUS has written its records, so
 // nothing writes into the test folder while it is removed.
 func stopTestSession(a *App) {
-	if !a.Emu.State().Running {
-		return
+	if a.Emu.State().Running {
+		_ = a.Emu.Stop(true)
+		for i := 0; i < 250 && a.Emu.State().Running; i++ {
+			time.Sleep(20 * time.Millisecond)
+		}
 	}
-	_ = a.Emu.Stop(true)
-	for i := 0; i < 250 && a.Emu.State().Running; i++ {
-		time.Sleep(20 * time.Millisecond)
+	// the monitor writes play time and compatibility after the state says stopped; the test's
+	// folder is removed next ("directory not empty" in CI otherwise)
+	done := make(chan struct{})
+	go func() { a.Emu.WaitMonitors(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
 	}
 }

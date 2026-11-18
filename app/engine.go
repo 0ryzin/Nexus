@@ -63,6 +63,9 @@ const engineID = "nexus"
 type Emulator struct {
 	app *App
 	mu  sync.Mutex
+	// monitors: running session monitors, which keep writing play time and compatibility for a
+	// moment after the state says stopped (WaitMonitors)
+	monitors sync.WaitGroup
 	// crash: the session record that lets NEXUS report a session it did not see end (crashreport.go)
 	crash *crashTracker
 	prep  shaderPrep // shader preparation (shaderprep.go)
@@ -551,9 +554,13 @@ func (e *Emulator) startEngine(host EngineHost, req EngineRequest, st RunState) 
 	}
 	e.app.Profiles.RecordLaunch(st.ProfileID, st.GameKey, st.Title)
 	e.setState(st)
-	go e.monitor(host, st, sessionFrameGenOn(req.ConfigFile))
+	e.monitors.Add(1)
+	go func() { defer e.monitors.Done(); e.monitor(host, st, sessionFrameGenOn(req.ConfigFile)) }()
 	return nil
 }
+
+// WaitMonitors waits until every session's monitor has finished its last writes.
+func (e *Emulator) WaitMonitors() { e.monitors.Wait() }
 
 // checkpointEvery is how often an in-progress session is saved so that a crash of NEXUS or of
 // the PC loses at most this much play time.

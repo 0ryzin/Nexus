@@ -747,7 +747,9 @@ func unzipSafe(data []byte, dir string, limit int64) error {
 	var total int64
 	for _, f := range zr.File {
 		name := filepath.FromSlash(f.Name)
-		if name == "" || filepath.IsAbs(name) || strings.HasPrefix(filepath.Clean(name), "..") || strings.Contains(f.Name, "\\") {
+		// rooted ("/x"), drive ("C:x") and backslash names are refused on every system: on Windows
+		// "/x" is not "absolute" for filepath.IsAbs but is rooted
+		if name == "" || filepath.IsAbs(name) || strings.HasPrefix(f.Name, "/") || strings.Contains(f.Name, ":") || strings.HasPrefix(filepath.Clean(name), "..") || strings.Contains(f.Name, "\\") {
 			return fmt.Errorf("unsafe path %q", f.Name)
 		}
 		dst := filepath.Join(dir, filepath.Clean(name))
