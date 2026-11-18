@@ -1602,7 +1602,7 @@ func (s *Server) routes() {
 			writeErr(w, 400, errors.New("Install prod.keys first."))
 			return
 		}
-		if _, err := a.Sys.InstallKeys(a.Sys.ProdKeys(), p); err != nil {
+		if _, err := a.Sys.InstallTitleKeys(p); err != nil {
 			writeErr(w, 400, err)
 			return
 		}

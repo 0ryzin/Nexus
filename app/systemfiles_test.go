@@ -270,3 +270,63 @@ func TestSystemFilesFirmware(t *testing.T) {
 		t.Fatal(st)
 	}
 }
+
+// TestTitleKeysNeverBreakProdKeys: the Steam Deck report. Installing title.keys alone used to
+// move the installed prod.keys to the archive and then copy from where it had been: "not
+// accepted", and prod.keys gone. Each file is now checked and installed on its own.
+func TestTitleKeysNeverBreakProdKeys(t *testing.T) {
+	app, _ := newTestApp(t, "")
+	app.Sys.noBackground = true
+	in := t.TempDir()
+	k := testKeys{header: bytes.Repeat([]byte{0x11, 0x22}, 16), kak: bytes.Repeat([]byte{0x33}, 16), kek: bytes.Repeat([]byte{0x44}, 16)}
+	prod := filepath.Join(in, "prod.keys")
+	os.WriteFile(prod, []byte(fmt.Sprintf("header_key = %s\nkey_area_key_application_00 = %s\ntitlekek_00 = %s\nmaster_key_00 = %s\n",
+		hex.EncodeToString(k.header), hex.EncodeToString(k.kak), hex.EncodeToString(k.kek), strings.Repeat("ab", 16))), 0o644)
+	if _, err := app.Sys.InstallKeys(prod, ""); err != nil {
+		t.Fatal(err)
+	}
+	installed, _ := os.ReadFile(app.Sys.ProdKeys())
+	intact := func(step string) {
+		t.Helper()
+		now, err := os.ReadFile(app.Sys.ProdKeys())
+		if err != nil || !bytes.Equal(now, installed) || !app.Sys.KeysStatus().Valid {
+			t.Fatalf("%s: prod.keys changed or lost (%v)", step, err)
+		}
+	}
+	// invalid title keys: refused, nothing changed
+	bad := filepath.Join(in, "bad-title.keys")
+	os.WriteFile(bad, []byte("hello\nworld\n"), 0o644)
+	if _, err := app.Sys.InstallTitleKeys(bad); err == nil {
+		t.Fatal("invalid title.keys accepted")
+	}
+	intact("invalid title.keys")
+	if fileExists(app.Sys.TitleKeys()) {
+		t.Fatal("an invalid title.keys was installed")
+	}
+	// prod.keys chosen by mistake as title.keys: refused with a clear reason
+	if _, err := app.Sys.InstallTitleKeys(prod); err == nil || !strings.Contains(err.Error(), "not a title.keys") {
+		t.Fatalf("prod.keys as title.keys: %v", err)
+	}
+	intact("prod.keys as title.keys")
+	// valid title keys: installed, prod.keys untouched
+	good := filepath.Join(in, "title.keys")
+	os.WriteFile(good, []byte(strings.Repeat("01", 16)+" = "+strings.Repeat("02", 16)+"\r\n"+strings.Repeat("03", 16)+"="+strings.Repeat("04", 16)+"\n"), 0o644)
+	ki, err := app.Sys.InstallTitleKeys(good)
+	if err != nil || ki.TitleKeys != 2 {
+		t.Fatalf("%+v %v", ki, err)
+	}
+	intact("valid title.keys")
+	// replacing title keys keeps a copy of the old ones; prod.keys still untouched
+	if _, err := app.Sys.InstallTitleKeys(good); err != nil {
+		t.Fatal(err)
+	}
+	if arch, _ := filepath.Glob(filepath.Join(app.Paths.Trash, "system-files-*", "title-keys", "title.keys")); len(arch) == 0 {
+		t.Fatal("old title.keys not kept")
+	}
+	intact("title.keys replaced")
+	// the old route (prod.keys reinstalled from its own installed path, with title keys) works
+	if _, err := app.Sys.InstallKeys(app.Sys.ProdKeys(), good); err != nil {
+		t.Fatal(err)
+	}
+	intact("prod.keys from its installed path")
+}

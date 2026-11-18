@@ -276,32 +276,67 @@ func countKeyLines(p string) int {
 }
 
 // InstallKeys validates and installs prod.keys (and an optional title.keys).
-// An existing file is archived, never overwritten in place.
+// Both files are read and checked before anything changes; the installed files are copied to the
+// archive and replaced atomically, so a failure leaves the working files exactly as they were.
+// (It used to move the installed files to the archive first: installing title.keys alone passed
+// the installed prod.keys as the source, which was then moved away before being copied, so the
+// title keys were "not accepted" and prod.keys was gone.)
 func (s *SystemFiles) InstallKeys(prod, title string) (KeysInfo, error) {
 	ki := s.ValidateKeys(prod)
 	if !ki.Valid {
 		return ki, errors.New(strings.Join(ki.Errors, " "))
 	}
-	if title != "" && countKeyLines(title) == 0 {
-		return ki, errors.New("The title.keys file contains no valid entries.")
+	prodData, err := os.ReadFile(prod)
+	if err != nil {
+		return ki, err
+	}
+	var titleData []byte
+	if title != "" {
+		if titleData, err = readTitleKeys(title); err != nil {
+			return ki, err
+		}
 	}
 	if err := os.MkdirAll(s.KeysDir(), 0o755); err != nil {
 		return ki, err
 	}
-	s.archive("keys", []string{s.ProdKeys(), s.TitleKeys()}, title == "")
-	if err := copyFileAtomic(prod, s.ProdKeys()); err != nil {
+	paths := []string{s.ProdKeys()}
+	if title != "" {
+		paths = append(paths, s.TitleKeys())
+	}
+	s.archiveCopy("keys", paths)
+	if err := writeFileAtomic(s.ProdKeys(), prodData); err != nil {
 		return ki, err
 	}
 	if title != "" {
-		if err := copyFileAtomic(title, s.TitleKeys()); err != nil {
+		if err := writeFileAtomic(s.TitleKeys(), titleData); err != nil {
 			return ki, err
 		}
 	}
+	return s.keysInstalled()
+}
+
+// InstallTitleKeys validates and installs title.keys on its own; prod.keys is not touched.
+func (s *SystemFiles) InstallTitleKeys(title string) (KeysInfo, error) {
+	data, err := readTitleKeys(title)
+	if err != nil {
+		return s.KeysStatus(), err
+	}
+	if err := os.MkdirAll(s.KeysDir(), 0o755); err != nil {
+		return s.KeysStatus(), err
+	}
+	s.archiveCopy("title-keys", []string{s.TitleKeys()})
+	if err := writeFileAtomic(s.TitleKeys(), data); err != nil {
+		return s.KeysStatus(), err
+	}
+	return s.keysInstalled()
+}
+
+func (s *SystemFiles) keysInstalled() (KeysInfo, error) {
 	s.saveMeta(func(m *sysMeta) { m.KeysInstalled = nowUnix() })
 	warns := s.deployKeys()
-	ki = s.KeysStatus()
+	ki := s.KeysStatus()
 	ki.Warnings = append(ki.Warnings, warns...)
-	s.app.Log.Printf("system files: keys installed (%d keys, master key %02x)", ki.Count, ki.MasterKeyMax)
+	s.app.Log.Printf("system files: keys installed (%d keys, master key %02x, %d title keys)", ki.Count, ki.MasterKeyMax, ki.TitleKeys)
 	// only after a successful install, and before returning: a background copy used to start on
 	// every call (rejected files too) and could copy keys while the next install wrote them
 	s.app.Emu.SyncSystemVault()
@@ -310,6 +345,52 @@ func (s *SystemFiles) InstallKeys(prod, title string) (KeysInfo, error) {
 		go s.app.Library.Scan()
 	}
 	return ki, nil
+}
+
+// titleKeyLine: "<rights ID, 32 hex digits> = <title key, 32 hex digits>".
+var titleKeyLine = regexp.MustCompile(`^[0-9A-Fa-f]{32}\s*=\s*[0-9A-Fa-f]{32}$`)
+
+// readTitleKeys reads a title.keys file and checks it holds title keys (not, say, prod.keys).
+func readTitleKeys(path string) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	n, other := 0, 0
+	for _, l := range strings.Split(string(data), "\n") {
+		l = strings.TrimSpace(l)
+		switch {
+		case l == "" || strings.HasPrefix(l, "#") || strings.HasPrefix(l, ";"):
+		case titleKeyLine.MatchString(l):
+			n++
+		default:
+			other++
+		}
+	}
+	if n == 0 {
+		if other > 0 && keyLine.MatchString(strings.TrimSpace(strings.SplitN(string(data), "\n", 2)[0])) {
+			return nil, errors.New("This file is not a title.keys file: it has named keys (like prod.keys), not lines of a 32-digit rights ID = a 32-digit title key. Nothing was changed.")
+		}
+		return nil, errors.New("The title.keys file contains no valid entries (each line is a 32-digit rights ID = a 32-digit title key). Nothing was changed.")
+	}
+	return data, nil
+}
+
+// archiveCopy copies files into <data>\Archived\system-files-<time>\<kind>, leaving them in place.
+func (s *SystemFiles) archiveCopy(kind string, paths []string) {
+	base := filepath.Join(s.app.Paths.Trash, "system-files-"+time.Now().Format("20060102-150405"))
+	dst := filepath.Join(base, kind)
+	for i := 2; dirExists(dst); i++ {
+		dst = filepath.Join(fmt.Sprintf("%s-%d", base, i), kind)
+	}
+	for _, p := range paths {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		_ = os.MkdirAll(dst, 0o755)
+		_ = os.WriteFile(filepath.Join(dst, filepath.Base(p)), data, 0o600)
+	}
 }
 
 // archive moves files aside into <data>\Archived\system-files-<time>.

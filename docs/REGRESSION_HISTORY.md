@@ -5,6 +5,17 @@ Newest first.
 
 ## 0.8.0 (in development)
 
+### Installing title.keys "not accepted" and prod.keys lost (Steam Deck report, 18 Nov)
+- **Cause:** *Install title.keys* called `InstallKeys(<installed prod.keys>, title)`. InstallKeys
+  first moved the installed files to the archive, then copied prod.keys from its installed path,
+  which no longer existed: the copy failed ("not accepted") and prod.keys was left in the archive.
+- **Fix:** `InstallTitleKeys` checks and installs title.keys alone; prod.keys is never touched.
+  `InstallKeys` reads and checks both files before anything changes, copies the installed files to
+  the archive (they stay in place) and replaces them atomically. A title.keys file must hold
+  `<32-digit rights ID> = <32-digit key>` lines; a prod.keys chosen by mistake is named as such.
+- **Test:** `TestTitleKeysNeverBreakProdKeys` (invalid title keys, prod.keys as title keys, valid
+  title keys, replacement, the old route).
+
 ### Play time nearly doubled on the Steam Deck (15.5 h shown as ~31 h, 18 Nov)
 - **Evidence (the user's PC data):** the account listed the PC three times ("Toms_Pc", three
   device IDs, one per earlier sign-in) plus the Deck. Each PC ID's last upload of its play time
