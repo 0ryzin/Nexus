@@ -48,8 +48,7 @@ async def main():
             widgets: {{ details: true, recent: true, playtime: true, storage: true }} }})""")
         await pg.wait_for_timeout(500)
         grid = await pg.evaluate("[$$('#tiles .tile.folder').length, $$('#tiles .tile').filter(t => t._game).map(t => t._game.key), $$('#home-pages .hp-tab').map(t => t.textContent), $$('#home-widgets .widget').length]")
-        recent = await pg.evaluate("S.recent.length > 0")
-        want_tabs = ["Games", "Favourites"] + (["Recently played"] if recent else []) + ["Weekend"]
+        want_tabs = ["Games", "Favourites", "Weekend"]  # no "Recently played" tab: the main row is in that order
         check(grid[0] == 1 and keys[2] not in grid[1] and keys[3] not in grid[1] and grid[2] == want_tabs and grid[3] == 3,
               f"Grid: folder tile, its games only in it, pages, widgets: {grid}")
         if SHOTS: await pg.screenshot(path=os.path.join(SHOTS, "home-grid.png"))
@@ -68,8 +67,6 @@ async def main():
         fav = await pg.evaluate("[HomeState.page, $$('#tiles .tile').filter(t => t._game).map(t => t._game.key)]")
         check(fav[0] == "fav" and fav[1] == [keys[1]], f"RB: Favourites page {fav}")
         await pg.evaluate(f"window.__press({RB})"); await pg.wait_for_timeout(400)
-        if recent:
-            await pg.evaluate(f"window.__press({RB})"); await pg.wait_for_timeout(400)
         wk = await pg.evaluate("[HomeState.page, $$('#tiles .tile').filter(t => t._game).map(t => t._game.key)]")
         check(wk[0] == "p1" and wk[1] == [keys[0]], f"RB: the custom page {wk}")
         await pg.evaluate("HomeState.page = 'all'; renderHome()"); await pg.wait_for_timeout(400)

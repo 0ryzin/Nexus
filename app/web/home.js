@@ -60,7 +60,8 @@ function homePageList() {
   const p = homePrefs();
   const out = [{ id: 'all', name: 'Games' }];
   if (p.favorites.length) out.push({ id: 'fav', name: 'Favourites' });
-  if (S.recent.length) out.push({ id: 'recent', name: 'Recently played' });
+  // no "Recently played" page: the main row is already in recent order (newest first, All
+  // Software at its end), so the tab repeated it; with no favourites or pages no tab strip shows
   for (const pg of p.pages) out.push({ id: pg.id, name: pg.name });
   return out;
 }
@@ -74,7 +75,6 @@ function homeItems() {
   if (!pages.some(x => x.id === HomeState.page)) HomeState.page = 'all';
   const page = HomeState.page;
   if (page === 'fav') return homeSorted(playable.filter(g => p.favorites.includes(g.key)), sort).map(g => ({ g }));
-  if (page === 'recent') return S.recent.map(gameByKey).filter(g => g && isPlayable(g) && !g.hidden).slice(0, 24).map(g => ({ g }));
   const custom = p.pages.find(x => x.id === page);
   if (custom) return homeSorted(playable.filter(g => custom.games.includes(g.key)), sort).map(g => ({ g }));
   const inFolder = new Set(p.folders.flatMap(f => f.games));
