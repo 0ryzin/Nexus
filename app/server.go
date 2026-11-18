@@ -1616,7 +1616,7 @@ func (s *Server) routes() {
 			writeErr(w, 404, errors.New("Profile not found."))
 			return
 		}
-		if b.Confirm != p.Name {
+		if !strings.EqualFold(strings.TrimSpace(b.Confirm), strings.TrimSpace(p.Name)) {
 			writeErr(w, 400, errors.New("Confirmation did not match the profile name."))
 			return
 		}

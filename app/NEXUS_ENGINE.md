@@ -1,6 +1,6 @@
 # The NEXUS engine: investigation, architecture, status and plan
 
-## NEXUS Engine 0.8.0 (in development): Lichii build 316, patches 0018-0041
+## NEXUS Engine 0.8.0 (in development): Lichii build 316, patches 0018-0042
 
 Base: Lichii `build-316` (`5a66c8959`), 41 NEXUS patches. Interface version stays 2; the additions
 below are optional exports that NEXUS looks up by name (older engine builds simply lack them).
@@ -27,6 +27,7 @@ below are optional exports that NEXUS looks up by name (older engine builds simp
 | 0039 | Test only: the commit-room test expects a value on Linux, which patch 0020 reports |
 | 0040 | Build only: FFmpeg builds natively from source on Linux (one `--cc` argument with ccache, native builds no longer treated as cross builds, linked with the compiler driver) |
 | 0041 | `shader_worker_limit` (Renderer): how many threads compile shaders while a game runs (0: the engine's choice). NEXUS: Background compilation › Reduced = 2 |
+| 0042 | Switch 2 detection falls back to the title id NEXUS identified (`titleId` in the request) when the file check (`FindSwitch2Program`) finds no Switch 2 program: 12 GiB layout and 31.25 MHz guest clock, with a warning in the log. Suspected cause of Ocarina of Time's black picture below 12 GB and ~10 fps at 12 GB (Steam Deck and PC); not confirmed with the game |
 
 `nexus_engine_prepare_shaders(json)`: `{"game", "dataDir", "configFile", "titleId": "<hex>",
 "contents": [...], "force": false}`; 0 started, -1 a game or preparation runs, -2 bad request. It

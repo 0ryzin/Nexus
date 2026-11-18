@@ -1,0 +1,118 @@
+From 16634c35b28f963f72b07054e62f7671645f3ba6 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 18 Nov 2026 19:42:43 +0000
+Subject: [PATCH] NEXUS: Switch 2 detection falls back to the title id the
+ front end identified
+
+FindSwitch2Program reads the program's main.npdm from the game file before the kernel starts,
+to choose the 12 GiB memory layout and the 31.25 MHz guest clock. When it finds nothing (a
+file layout it does not read), the process still runs as Switch 2 from its own metadata, but
+with the configured memory layout and the Switch 1 clock. A Steam Deck and a PC report exactly
+that for Ocarina of Time: a black picture below 12 GiB, about 10 fps at 12 GiB.
+
+NEXUS passes the title id from its library (titleId, already in the request); a 0x04... id is
+used when the file check finds nothing, with a warning in the log. No change when the file
+check works.
+---
+ src/core/core.cpp                 | 25 ++++++++++++++++++++++++-
+ src/core/core.h                   |  5 +++++
+ src/nexus_engine/nexus_engine.cpp |  6 ++++++
+ 3 files changed, 35 insertions(+), 1 deletion(-)
+
+diff --git a/src/core/core.cpp b/src/core/core.cpp
+index 5c88fcc05..786c33a46 100644
+--- a/src/core/core.cpp
++++ b/src/core/core.cpp
+@@ -156,6 +156,14 @@ std::optional<u64> Switch2ProgramId(FileSys::ProgramMetadata& metadata,
+ 
+ } // namespace
+ 
++namespace {
++std::atomic<u64> g_switch2_hint{0};
++} // namespace
++
++void SetSwitch2ProgramHint(u64 program_id) {
++    g_switch2_hint = program_id;
++}
++
+ // Detect the platform and program before initializing the kernel memory layout and guest clock.
+ std::optional<u64> FindSwitch2Program(const FileSys::VirtualFile& file, u64 program_id,
+                                       std::size_t program_index) {
+@@ -459,11 +467,26 @@ struct System::Impl {
+             fs_controller.InitTempStorage();
+         }
+ 
+-        const std::optional<u64> switch2_program_id =
++        std::optional<u64> switch2_program_id =
+             virtual_filesystem != nullptr
+                 ? FindSwitch2Program(GetGameFileFromPath(virtual_filesystem, filepath),
+                                      params.program_id, params.program_index)
+                 : std::nullopt;
++        // NEXUS: the file check found no Switch 2 program, but the front end identified a Switch 2
++        // title (0x04... ids). Without this the game itself still runs as Switch 2 (the process
++        // reads its own metadata), but with the configured memory layout and the Switch 1 guest
++        // clock: a black picture below 12 GiB and frame deadlines 1.63x too long.
++        if (const u64 hint = g_switch2_hint.exchange(0);
++            !switch2_program_id && (hint >> 56) == 0x04) {
++            LOG_WARNING(Core,
++                        "Switch 2 program not found in the game file; using the title id the "
++                        "front end identified ({:016X})",
++                        hint);
++            switch2_program_id = hint;
++        }
++        if (switch2_program_id) {
++            LOG_INFO(Core, "Switch 2 program {:016X}", *switch2_program_id);
++        }
+         const bool switch2_program = switch2_program_id.has_value();
+         Kernel::KSystemControl::SetApplicationProgramId(switch2_program_id.value_or(0));
+         Settings::SetCurrentProgramIsSwitch2(switch2_program);
+diff --git a/src/core/core.h b/src/core/core.h
+index 0a8793989..abf9a3a3c 100644
+--- a/src/core/core.h
++++ b/src/core/core.h
+@@ -143,6 +143,11 @@ FileSys::VirtualFile GetGameFileFromPath(const FileSys::VirtualFilesystem& vfs,
+ std::optional<u64> FindSwitch2Program(const FileSys::VirtualFile& file, u64 program_id,
+                                       std::size_t program_index);
+ 
++/// NEXUS: the program id the front end identified for the next Load (0 = none). When it is a
++/// Switch 2 id (0x04...) and FindSwitch2Program finds nothing in the file, Load still uses the
++/// Switch 2 memory layout and guest clock, and logs that the hint was needed.
++void SetSwitch2ProgramHint(u64 program_id);
++
+ /// Enumeration representing the return values of the System Initialize and Load process.
+ enum class SystemResultStatus : u32 {
+     Success,             ///< Succeeded
+diff --git a/src/nexus_engine/nexus_engine.cpp b/src/nexus_engine/nexus_engine.cpp
+index 0e94bffb8..8e47b10d3 100644
+--- a/src/nexus_engine/nexus_engine.cpp
++++ b/src/nexus_engine/nexus_engine.cpp
+@@ -109,6 +109,8 @@ struct Request {
+     int volume{100};
+     std::uintptr_t owner_window{};
+     std::vector<std::string> contents; // update / DLC containers from the user's game folders
++    // the title NEXUS identified (its library); a hint for Switch 2 detection (core.h)
++    std::uint64_t title_id{};
+     bool auto_map_controller{false};   // map player 1 to the first connected controller
+     // NEXUS controller layout: Switch button -> physical gamepad position (east, south, ...),
+     // applied on top of the automatic mapping. Empty = the default positional layout.
+@@ -952,6 +954,7 @@ void RunSession(Request req) {
+         system.GetUserChannel().clear();
+ 
+         Service::AM::FrontendAppletParameters params{.applet_id = Service::AM::AppletId::Application};
++        Core::SetSwitch2ProgramHint(req.title_id);
+         const auto result = system.Load(*window, req.game, params);
+         if (result != Core::SystemResultStatus::Success) {
+             const char* code = "load";
+@@ -1448,6 +1451,9 @@ NEXUS_API int32_t nexus_engine_start(const char* request_json) {
+         req.shader_dir = j.value("shaderDir", std::string{});
+         req.config_file = j.at("configFile").get<std::string>();
+         req.title = j.value("title", std::string{"NEXUS"});
++        if (const auto t = j.value("titleId", std::string{}); !t.empty()) {
++            req.title_id = std::strtoull(t.c_str(), nullptr, 16);
++        }
+         req.fullscreen = j.value("fullscreen", true);
+         req.volume = j.value("volume", 100);
+         req.auto_map_controller = j.value("autoMapController", false);
+-- 
+2.43.0
+

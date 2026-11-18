@@ -509,7 +509,10 @@ function dialog({ title, text, pre, buttons = [{ label: 'OK', value: true, prima
     let done = false;
     const finish = v => { if (done) return; done = true; layer.close(); resolve(v); };
     btns.forEach((el, i) => el.addEventListener('click', () => finish(input ? (buttons[i].value === null ? null : (buttons[i].value === true ? inp.value : buttons[i].value)) : buttons[i].value)));
-    if (inp) inp.addEventListener('submit', () => { const p = buttons.find(b => b.primary) || buttons[0]; finish(p.value === true ? inp.value : p.value); });
+    // Enter in the field confirms: the primary button, else the one that returns the text (a
+    // "danger" Delete is not primary). It fell back to the first button, Cancel, so Enter after
+    // typing a name to delete a user cancelled without a word.
+    if (inp) inp.addEventListener('submit', () => { const p = buttons.find(b => b.primary) || buttons.find(b => b.value === true) || buttons[buttons.length - 1]; finish(p.value === true ? inp.value : p.value); });
     const primary = buttons.findIndex(b => b.primary);
     const layer = openLayer(box, { onBack: () => finish(cancelValue), initial: inp || btns[primary >= 0 ? primary : 0] });
     if (inp && S.lastInput !== 'gamepad') setTimeout(() => inp.focus(), 50);
@@ -1516,7 +1519,8 @@ async function deleteProfile(id, layer) {
   const p = profileById(id);
   const typed = await dialog({ title: `Delete ${p.name}?`, text: `Type the name "${p.name}" to confirm. Their save data will be archived in NEXUS data\\Archived and can be restored manually.`, input: { placeholder: p.name }, buttons: [{ label: 'Cancel', value: null }, { label: 'Delete', value: true, danger: true }] });
   if (typed === null || typed === undefined) return;
-  if (typed !== p.name) { alertDlg('Not deleted', 'The name did not match.'); return; }
+  // capitals and spaces around the name do not matter ("Mins" deletes "MiNS")
+  if (typed.trim().toLowerCase() !== p.name.trim().toLowerCase()) { await alertDlg('Not deleted', `The name did not match. Type ${p.name} to delete this user.`); return; }
   // signed in: this device never brings the user back; optionally the account forgets it too
   let fromAccount = false;
   if (AccountUI.st?.signedIn) {

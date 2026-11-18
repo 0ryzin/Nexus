@@ -46,7 +46,12 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
 - **Navigation:** Home screen and Themes merged into *Personalisation*; shortcuts to Shaders,
   Performance and Graphics removed from the dock (still in Settings). Clicking a profile opens it;
   "Play as" switches. The red expanding selection ring is now a quiet white/black ring.
-- Fixed: deleting a profile could hang NEXUS.
+- Fixed: deleting a profile could hang NEXUS; Enter in the delete dialog cancelled instead of
+  deleting; the name had to match in capitals ("Mins" now deletes "MiNS").
+- **Ocarina of Time black screen below 12 GB (suspected cause, engine patch 0042):** when the
+  engine does not recognise a Switch 2 game from its file before starting it, it ran it with the
+  configured memory and the Switch 1 clock. NEXUS now tells the engine the title it identified;
+  the engine log says when this was needed. Not confirmed with the game yet.
 - Controller fixes found by a new controller-only sweep of every Home shortcut and settings
   category at the Deck's 1280×800: Right on a settings category now goes into the panel (it went
   to the search box), and Down past a short panel's last row no longer jumps into the category list.

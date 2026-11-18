@@ -5,6 +5,21 @@ Newest first.
 
 ## 0.8.0 (in development)
 
+### "MiNS" could not be deleted (Steam Deck report, 18 Nov)
+- **Problem:** typing the user's name in the delete dialog and pressing Enter did not delete it.
+- **Causes (three):**
+  1. Enter in a dialog's text field chose the *primary* button, or else the first button. The
+     delete dialog's Delete is a danger button, not primary, so Enter chose Cancel and closed
+     without a message.
+  2. The name had to match exactly: "Mins" did not delete "MiNS" (said only "did not match").
+  3. When deletion was reached (Delete clicked), `ProfileStore.Delete` deadlocked (entry below).
+- **Fix:** Enter confirms with the button that returns the text when none is primary; the name
+  is compared without regard to capitals or surrounding spaces (interface and server); the
+  mismatch message names what to type.
+- **Test:** `tools/uitest/profile_delete.py` (CI): keyboard ("mins" + Enter), controller only
+  (A on Delete; B cancels), wrong name, restart, data archived. The build before the fix hangs
+  in it.
+
 ### Settings with a controller: Right went to the search box; Down left the panel (18 Nov)
 - **Problem:** at 1280×800 (Steam Deck) Right on a settings category focused the search box above
   the list; Down past the last row of a short panel moved into the category list and switched
