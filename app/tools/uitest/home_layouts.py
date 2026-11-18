@@ -48,8 +48,8 @@ async def main():
             widgets: {{ details: true, recent: true, playtime: true, storage: true }} }})""")
         await pg.wait_for_timeout(500)
         grid = await pg.evaluate("[$$('#tiles .tile.folder').length, $$('#tiles .tile').filter(t => t._game).map(t => t._game.key), $$('#home-pages .hp-tab').map(t => t.textContent), $$('#home-widgets .widget').length]")
-        want_tabs = ["Games", "Favourites", "Weekend"]  # no "Recently played" tab: the main row is in that order
-        check(grid[0] == 1 and keys[2] not in grid[1] and keys[3] not in grid[1] and grid[2] == want_tabs and grid[3] == 3,
+        want_tabs = ["Home", "Favourites", "Weekend"]  # no "Recently played" tab: the main row is in that order
+        check(grid[0] == 1 and keys[2] not in grid[1] and keys[3] not in grid[1] and grid[2] == want_tabs and grid[3] == 2,  # "Recently played" card removed
               f"Grid: folder tile, its games only in it, pages, widgets: {grid}")
         if SHOTS: await pg.screenshot(path=os.path.join(SHOTS, "home-grid.png"))
         # the controller: move through the grid, Down to the Play button, shoulder buttons switch pages

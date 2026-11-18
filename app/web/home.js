@@ -14,7 +14,6 @@ const HOME_LAYOUTS = [
 ];
 const HOME_WIDGETS = [
   ['details', 'Selected game', 'Play time, last played and version of the game you are on (Cards and Grid).'],
-  ['recent', 'Recently played', 'Your last three games.'],
   ['playtime', 'Total play time', 'All your play time in NEXUS.'],
   ['favorites', 'Favourites', 'How many favourites you have, and the first ones.'],
   ['added', 'Recently added', 'Games NEXUS found most recently.'],
@@ -58,7 +57,9 @@ function homeSorted(list, sort) {
 
 function homePageList() {
   const p = homePrefs();
-  const out = [{ id: 'all', name: 'Games' }];
+  // the main row's tab (only shown next to Favourites or the user's own pages) is "Home", not a
+  // separate "Games" section
+  const out = [{ id: 'all', name: 'Home' }];
   if (p.favorites.length) out.push({ id: 'fav', name: 'Favourites' });
   // no "Recently played" page: the main row is already in recent order (newest first, All
   // Software at its end), so the tab repeated it; with no favourites or pages no tab strip shows
@@ -196,7 +197,7 @@ function homeWidgets() {
     if (g.artSource) b.append(h('img', { src: `/art/${g.key}?v=${g.artRev || 0}&w=128`, alt: '', loading: 'lazy' }));
     b.append(h('span', {}, g.title)); b.addEventListener('click', () => launchGame(g.key)); return b;
   };
-  if (on('recent')) { const gs = S.recent.map(gameByKey).filter(g => g && isPlayable(g)).slice(0, 2); box.append(card('Recently played', ...(gs.length ? gs.map(mini) : [h('span', { class: 'w-none' }, 'Nothing yet')]))); }
+  // no "Recently played" card: the game row is already newest first (removed on request)
   if (on('playtime')) { const total = Object.values(S.stats).reduce((a, s) => a + (s.seconds || 0), 0); box.append(card('Total play time', h('b', { class: 'w-big' }, total ? fmtPlay(total) : '0 min'))); }
   if (on('favorites')) { const gs = p.favorites.map(gameByKey).filter(Boolean); box.append(card(`Favourites (${gs.length})`, ...(gs.length ? gs.slice(0, 2).map(mini) : [h('span', { class: 'w-none' }, 'Options › Organise')]))); }
   if (on('added')) { const gs = S.games.filter(g => isPlayable(g) && !g.hidden && g.added).sort((a, b) => b.added - a.added).slice(0, 2); box.append(card('Recently added', ...(gs.length ? gs.map(mini) : [h('span', { class: 'w-none' }, 'Nothing yet')]))); }
@@ -336,7 +337,7 @@ function homeSettingsPanel(p) {
   p.append(h('h3', {}, 'Restore'));
   p.append(rowButton('Restore the default Home screen', { danger: true, sub: 'Classic layout, default widgets and shortcuts, plain theme background. Your folders, pages and favourites are kept.', onClick: async () => {
     if (!await confirmDlg('Restore the default Home screen?', 'Layout, panels, widgets, shortcuts and background colour go back to NEXUS’s defaults. Folders, pages, favourites and hidden games are kept.', 'Restore')) return;
-    await patchProfile(S.profile.id, { sort: 'recent', home: { layout: 'classic', effects: 'glass', gameBackground: false, bgColor: '', dock: [], dockHidden: [], widgets: Object.fromEntries(HOME_WIDGETS.map(([k]) => [k, k === 'recent' || k === 'details'])), count: 12 } });
+    await patchProfile(S.profile.id, { sort: 'recent', home: { layout: 'classic', effects: 'glass', gameBackground: false, bgColor: '', dock: [], dockHidden: [], widgets: Object.fromEntries(HOME_WIDGETS.map(([k]) => [k, k === 'details'])), count: 12 } });
     renderHome(); rebuildPanel();
   } }));
 }

@@ -45,9 +45,10 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
   formats are listed as skipped with the reason (no conversion is invented). Background shader
   compilation can use fewer threads ("Reduced", engine patch 0041).
 - **Navigation:** Home screen and Themes merged into *Personalisation*; shortcuts to Shaders,
-  Performance and Graphics removed from the dock (still in Settings); Home's "Recently played"
-  tab removed (the main row is already newest-first, ending with All Software), so with no
-  favourites or pages there is no Games/Recently played tab strip. Clicking a profile opens it;
+  Performance and Graphics removed from the dock (still in Settings); Home has no "Games" or "Recently played" section any more (Windows and Linux: one
+  interface): the tabs above the game row and the Recently played card (Cards/Grid) are gone; the
+  game row is newest first and ends with All Software. With favourites or own pages, the first tab
+  is "Home". Recent-play data is kept (sorting, profile page). Clicking a profile opens it;
   "Play as" switches. The red expanding selection ring is now a quiet white/black ring.
 - Test downloads: each file on its own; the CI bundles that unpacked to `out/` with both Linux
   files are renamed `zz-release-bundle-…-not-a-download`.
