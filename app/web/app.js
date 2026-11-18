@@ -230,9 +230,13 @@ const Nav = {
     const a = this.cur.getBoundingClientRect();
     const ac = { x: a.left + a.width / 2, y: a.top + a.height / 2 };
     const sameRow = this.cur.closest('[data-row]');
+    // a column marked data-nav-column keeps Up/Down inside it (a settings panel: Down past its
+    // last row must not jump into the category list beside it)
+    const column = (dir === 'up' || dir === 'down') && this.cur.closest('[data-nav-column]');
     let best = null, bestScore = Infinity;
     for (const el of items) {
       if (el === this.cur) continue;
+      if (column && !column.contains(el)) continue;
       if ((dir === 'left' || dir === 'right') && sameRow && !sameRow.contains(el) && sameRow.dataset.row === 'strict') continue;
       const b = el.getBoundingClientRect();
       const bc = { x: b.left + b.width / 2, y: b.top + b.height / 2 };
@@ -2806,6 +2810,16 @@ function showSettings(cat = 'general', opts = {}) {
     if (id === '-') { cats.append(h('div', { class: 'cat-group' }, label)); continue; }
     const b = h('button', { class: 'cat' + (id === cat ? ' sel' : ''), 'data-nav': true }, label);
     b._cat = id;
+    // Right goes into the panel, to its item nearest this row: plain geometry picked the search
+    // box above the list (closer than the panel's first row on a 1280×800 Steam Deck screen)
+    b._navMove = dir => {
+      if (dir !== 'right') return false;
+      const items = Nav.items($('#set-panel')).filter(el => { const r = el.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight; });
+      if (!items.length) return false;
+      const y = b.getBoundingClientRect().top;
+      Nav.setFocus(items.reduce((best, el) => Math.abs(el.getBoundingClientRect().top - y) < Math.abs(best.getBoundingClientRect().top - y) ? el : best));
+      return true;
+    };
     b.addEventListener('click', () => { if (id === 'controllers') { Controllers.show(); return; } selectCat(id, true); });
     b.addEventListener('navfocus', () => { if (S.lastInput !== 'mouse' && id !== 'controllers') selectCat(id, false); });
     cats.append(b);

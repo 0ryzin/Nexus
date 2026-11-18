@@ -47,6 +47,9 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
   Performance and Graphics removed from the dock (still in Settings). Clicking a profile opens it;
   "Play as" switches. The red expanding selection ring is now a quiet white/black ring.
 - Fixed: deleting a profile could hang NEXUS.
+- Controller fixes found by a new controller-only sweep of every Home shortcut and settings
+  category at the Deck's 1280×800: Right on a settings category now goes into the panel (it went
+  to the search box), and Down past a short panel's last row no longer jumps into the category list.
 - **Frame generation shows the truth:** while a game runs, NEXUS shows whether frame generation
   is really running or why not (engine patch 0033). The built-in method is named for what it is,
   NEXUS's optical-flow interpolation on any Vulkan GPU, instead of "AMD FSR 3".

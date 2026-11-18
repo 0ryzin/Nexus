@@ -5,6 +5,17 @@ Newest first.
 
 ## 0.8.0 (in development)
 
+### Settings with a controller: Right went to the search box; Down left the panel (18 Nov)
+- **Problem:** at 1280×800 (Steam Deck) Right on a settings category focused the search box above
+  the list; Down past the last row of a short panel moved into the category list and switched
+  category.
+- **Cause:** Nav.move's geometry scored the nearby search box above the panel's first row, and
+  nothing kept Up/Down inside the panel.
+- **Fix:** category buttons send Right to the panel row nearest them; `#set-panel` is a
+  `data-nav-column`, which keeps Up/Down inside it.
+- **Test:** `tools/uitest/controller_sweep.py` (CI): every Home shortcut and settings category,
+  controller only.
+
 ### Deleting a profile hung NEXUS (found by a test, 18 Nov)
 - **Problem:** deleting a user never returned; NEXUS stopped responding to that request.
 - **Cause:** `ProfileStore.Delete` held the store's lock and called `SaveDir`, which calls `Get`,
