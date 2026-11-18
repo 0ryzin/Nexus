@@ -41,6 +41,11 @@ Run `uname -m` to check: `x86_64` means AMD64 and `aarch64` means ARM64.
    - each start must reach Home or the profile picker and save a screenshot;
    - the second run uses `SteamGamepadUI=1 SteamDeck=1` and must log "Gaming Mode true".
 
+ARM64: the engine's unit tests run on ARM64 except `[jit_codegen_options]`. That test compares
+dynarmic's x86-64 code generation and aborts in dynarmic's ARM64 backend; upstream runs it on
+x86-64 only. Games on ARM64 Linux use that backend and are less mature than on AMD64. No game has
+been tested on ARM64 here.
+
 Requirements: glibc 2.39 or newer, a Vulkan driver (Mesa RADV, NVIDIA) or OpenGL 4.6.
 
 ## Data
