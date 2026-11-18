@@ -489,7 +489,7 @@ func (e *Emulator) Launch(g *Game, profileID string) error {
 	req := EngineRequest{Game: g.Path, DataDir: e.DataDir(), ShaderDir: e.sharedForEngine(), TitleID: g.TitleID, ConfigFile: cfg, Title: "NEXUS — " + g.Title,
 		Fullscreen: s.Emulator.Fullscreen, Volume: vol, OwnerWindow: e.app.UI.WindowHandle(),
 		Contents: e.extraContents(g), AutoMapController: e.inputProfileFor(g, pr) == "",
-		HomeKey: s.Emulator.HomeKey, HomeButton: s.Emulator.HomeButton,
+		HomeKey: s.Emulator.HomeKey, HomeButton: s.Emulator.HomeButton, HomePaddles: s.Emulator.HomePaddles,
 		FullscreenKey: s.Emulator.FullscreenKey, ScreenshotKey: s.Emulator.ScreenshotKey, CaptureButton: s.Emulator.CaptureButton,
 		RecordKey:     recordKey(s),
 		ScreenshotDir: e.app.Media.ScreenshotsDir(), ScreenshotName: captureName(g),

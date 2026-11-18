@@ -111,6 +111,7 @@ type EngineRequest struct {
 	SaveFolders map[string]map[string]string `json:"saveFolders,omitempty"`
 	HomeKey     string                       `json:"homeKey"`
 	HomeButton  bool                         `json:"homeButton"`
+	HomePaddles []string                     `json:"homePaddles,omitempty"`
 	// F11 / F12 by default ("" = off); keys used by the game controls go to the game
 	FullscreenKey string `json:"fullscreenKey"`
 	ScreenshotKey string `json:"screenshotKey"`

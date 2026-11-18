@@ -1,0 +1,86 @@
+From 2738e218711c8d96525e7cbf63b7e1380dd3f617 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 18 Nov 2026 23:30:21 +0000
+Subject: [PATCH] NEXUS: NEXUS Home on a back button (Steam Deck L4/R4/L5/R5,
+ controller paddles)
+
+The request's homePaddles (l4, r4, l5, r5) name SDL's paddle buttons that open NEXUS Home like
+the Guide button; the Switch has no such buttons, so no game control is lost. The first press is
+logged so a user can see the button arrived (Steam Input may own them in Gaming Mode).
+---
+ src/nexus_engine/nexus_engine.cpp | 38 +++++++++++++++++++++++++++++++
+ 1 file changed, 38 insertions(+)
+
+diff --git a/src/nexus_engine/nexus_engine.cpp b/src/nexus_engine/nexus_engine.cpp
+index 8e47b10d3..f4dc4453d 100644
+--- a/src/nexus_engine/nexus_engine.cpp
++++ b/src/nexus_engine/nexus_engine.cpp
+@@ -120,6 +120,9 @@ struct Request {
+     // controller's Guide/Home button returns to NEXUS
+     std::string home_key;
+     bool home_button{true};
++    // NEXUS Home on a back button (Steam Deck L4/R4/L5/R5, Xbox Elite / DualSense Edge paddles),
++    // where SDL reports them: "l4" | "r4" | "l5" | "r5", several allowed; empty = none
++    std::vector<std::string> home_paddles;
+     // NEXUS 0.3: per-game save folders in the save directory (see savedata_factory.h)
+     std::map<u64, FileSys::NexusSaveFolder> save_folders;
+     // window and capture shortcuts (SDL scancode names; "" = off). Keys used by the game controls
+@@ -632,6 +635,20 @@ void AutoMapController(InputCommon::InputSubsystem& input, Core::System& system,
+     system.HIDCore().ReloadInputDevices();
+ }
+ 
++/// A back button (paddle) chosen for NEXUS Home. SDL names a Steam Deck's L4/R4 the first left/right
++/// paddles and L5/R5 the second ones (SDL_gamepad.h).
++bool IsHomePaddle(const std::vector<std::string>& paddles, std::uint8_t button) {
++    for (const std::string& p : paddles) {
++        if ((p == "l4" && button == SDL_GAMEPAD_BUTTON_LEFT_PADDLE1) ||
++            (p == "r4" && button == SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1) ||
++            (p == "l5" && button == SDL_GAMEPAD_BUTTON_LEFT_PADDLE2) ||
++            (p == "r5" && button == SDL_GAMEPAD_BUTTON_RIGHT_PADDLE2)) {
++            return true;
++        }
++    }
++    return false;
++}
++
+ /// NEXUS Home and NEXUS screenshots use the controller's Guide/Home and capture buttons: they
+ /// are removed from the game's controls so a press never reaches the game (on a Switch the HOME
+ /// press would open the game's/system's "return to HOME" handling).
+@@ -1067,6 +1084,20 @@ void RunSession(Request req) {
+                         }
+                         continue;
+                     }
++                    // a back button chosen for NEXUS Home (the Switch has none, so no game control
++                    // is lost); the press is logged once so a user can see the button arrived
++                    if (pad && IsHomePaddle(req.home_paddles, event.gbutton.button)) {
++                        if (pad_down) {
++                            static bool logged = false;
++                            if (!logged) {
++                                logged = true;
++                                LOG_INFO(Frontend, "NEXUS Engine: back button {} pressed: NEXUS Home",
++                                         static_cast<int>(event.gbutton.button));
++                            }
++                            home_press();
++                        }
++                        continue;
++                    }
+                     if (key && fullscreen_key != SDL_SCANCODE_UNKNOWN && event.key.scancode == fullscreen_key) {
+                         if (key_down && e.shown && !e.suspended) {
+                             if (e.embedded) {
+@@ -1467,6 +1498,13 @@ NEXUS_API int32_t nexus_engine_start(const char* request_json) {
+         req.controller_type = j.value("controllerType", std::string{});
+         req.home_key = j.value("homeKey", std::string{});
+         req.home_button = j.value("homeButton", true);
++        if (j.contains("homePaddles") && j["homePaddles"].is_array()) {
++            for (const auto& v : j["homePaddles"]) {
++                if (v.is_string()) {
++                    req.home_paddles.push_back(v.get<std::string>());
++                }
++            }
++        }
+         req.fullscreen_key = j.value("fullscreenKey", std::string{"F11"});
+         req.screenshot_key = j.value("screenshotKey", std::string{"Alt+F12"});
+         req.record_key = j.value("recordKey", std::string{"F12"});
+-- 
+2.43.0
+

@@ -3843,6 +3843,14 @@ Object.assign(Panels, {
     p.append(changedMark(rowChoice('When you press Home in a game', [{ v: 'background', l: 'Keep the game running (muted)' }, { v: 'pause', l: 'Pause the game' }], es.homeAction || 'background', v => saveSettings({ emulator: { homeAction: v } }),
       'Keep running: the game carries on in the background without sound and ignores your controls until you choose Resume (a green dot shows it is running). Pause: the game stops where it is. Either way one press of Home is one trip to NEXUS Home.'), 'emulator.homeAction'));
     p.append(changedMark(rowToggle('Controller Home button', es.homeButton !== false, v => saveSettings({ emulator: { homeButton: v } }), 'The Xbox Guide button, the PlayStation button or a controller\u2019s Home button takes you straight to NEXUS Home (the game never sees it). Choose Resume Game to go back. If Steam or Windows uses the button for itself, use the Home key instead.'), 'emulator.homeButton'));
+    {
+      const pads = es.homePaddles || [];
+      const cur = pads[0] || '';
+      p.append(changedMark(rowChoice('Back button for NEXUS Home', [{ v: '', l: 'None' }, { v: 'l4', l: 'L4' }, { v: 'r4', l: 'R4' }, { v: 'l5', l: 'L5' }, { v: 'r5', l: 'R5' }], cur,
+        v => saveSettings({ emulator: { homePaddles: v ? [v] : [] } }),
+        'A Steam Deck back button (or an Elite / DualSense Edge paddle) takes you to NEXUS Home while the game keeps running. The Switch has no such buttons, so no game control is lost. ' +
+        'In Steam Deck Gaming Mode, Steam Input owns the back buttons: if pressing it does nothing there, open Steam \u203a NEXUS \u203a Controller settings \u203a Edit layout \u203a Back grip buttons and set it to the NEXUS Home key (' + (es.homeKey || 'Shift+H') + '; add Shift as an extra command).'), 'emulator.homePaddles'));
+    }
     p.append(h('h3', {}, 'While playing'));
     p.append(changedMark(rowChoice('Pause a game left in the background after', [{ v: 5, l: '5 minutes' }, { v: 15, l: '15 minutes' }, { v: 30, l: '30 minutes' }, { v: 60, l: '1 hour' }, { v: 0, l: 'Never' }], es.backgroundMinutes ?? 15, v => saveSettings({ emulator: { backgroundMinutes: v } }),
       'A game kept running behind NEXUS Home is paused after this long, so a forgotten game stops using your processor and graphics card. Resume continues where it was.'), 'emulator.backgroundMinutes'));

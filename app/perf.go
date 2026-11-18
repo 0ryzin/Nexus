@@ -21,20 +21,20 @@ import (
 
 type PerfSample struct {
 	At         int64         `json:"at"`
-	FPS        *float64      `json:"fps"`               // presented frames per second (nil: no game)
-	FrameMs    *float64      `json:"frameMs"`           // average frame time over the last second
-	CPU        *float64      `json:"cpu"`               // % of all cores
-	CPUTemp    *float64      `json:"cpuTemp"`           // °C
-	GPU        *float64      `json:"gpu"`               // % (3D engine, busiest adapter)
-	GPUTemp    *float64      `json:"gpuTemp"`           // °C
-	VRAMUsedMB *float64      `json:"vramUsedMb"`        // dedicated GPU memory in use
-	VRAMMB     *float64      `json:"vramMb"`            // dedicated GPU memory size
-	RAMUsedMB  *float64      `json:"ramUsedMb"`         // system memory in use
-	RAMMB      *float64      `json:"ramMb"`             // installed system memory
-	RAMSpeed   *float64      `json:"ramSpeedMts"`       // configured memory speed, MT/s
-	CPUMHz     *float64      `json:"cpuMhz,omitempty"`  // current processor clock (average of the cores)
-	GPUMHz     *float64      `json:"gpuMhz,omitempty"`  // current graphics clock
-	PowerW     *float64      `json:"powerW,omitempty"`  // processor package / APU power (Steam Deck: the whole APU)
+	FPS        *float64      `json:"fps"`              // presented frames per second (nil: no game)
+	FrameMs    *float64      `json:"frameMs"`          // average frame time over the last second
+	CPU        *float64      `json:"cpu"`              // % of all cores
+	CPUTemp    *float64      `json:"cpuTemp"`          // °C
+	GPU        *float64      `json:"gpu"`              // % (3D engine, busiest adapter)
+	GPUTemp    *float64      `json:"gpuTemp"`          // °C
+	VRAMUsedMB *float64      `json:"vramUsedMb"`       // dedicated GPU memory in use
+	VRAMMB     *float64      `json:"vramMb"`           // dedicated GPU memory size
+	RAMUsedMB  *float64      `json:"ramUsedMb"`        // system memory in use
+	RAMMB      *float64      `json:"ramMb"`            // installed system memory
+	RAMSpeed   *float64      `json:"ramSpeedMts"`      // configured memory speed, MT/s
+	CPUMHz     *float64      `json:"cpuMhz,omitempty"` // current processor clock (average of the cores)
+	GPUMHz     *float64      `json:"gpuMhz,omitempty"` // current graphics clock
+	PowerW     *float64      `json:"powerW,omitempty"` // processor package / APU power (Steam Deck: the whole APU)
 	BatteryPct *float64      `json:"batteryPct,omitempty"`
 	BatteryW   *float64      `json:"batteryW,omitempty"` // battery draw (discharging) or charge rate
 	Charging   bool          `json:"charging,omitempty"`

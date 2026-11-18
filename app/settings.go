@@ -96,6 +96,9 @@ type EmulatorSettings struct {
 	// Guide/Home button. A key that is one of the game's controls stays with the game.
 	HomeKey    string `json:"homeKey"`
 	HomeButton bool   `json:"homeButton"`
+	// HomePaddles: back buttons that open NEXUS Home ("l4" "r4" "l5" "r5": a Steam Deck's back
+	// buttons, an Elite or Edge controller's paddles), where the controller reports them
+	HomePaddles []string `json:"homePaddles"`
 	// While playing: fullscreen/window toggle and screenshot keys ("" = off), the controller's
 	// capture/share button for screenshots, and the fade from the loading screen into the game.
 	FullscreenKey string `json:"fullscreenKey"`
@@ -150,7 +153,7 @@ func DefaultSettings() GlobalSettings {
 	s.Library.ArtProviders = []string{}
 	s.Engine = map[string]string{"graphics.gpu": gpuAuto}
 	s.Updates = UpdateSettings{AutoCheck: true, Repo: defaultReleaseRepo}
-	s.Emulator = EmulatorSettings{Fullscreen: true, QuitCombo: true, ManageSaves: true, WhoPlays: "several", HomeKey: "Shift+H", HomeButton: true,
+	s.Emulator = EmulatorSettings{Fullscreen: true, QuitCombo: true, ManageSaves: true, WhoPlays: "several", HomeKey: "Shift+H", HomeButton: true, HomePaddles: []string{"l4"},
 		FullscreenKey: "F11", ScreenshotKey: "Alt+F12", CaptureButton: true, FadeIn: true, PrepareShaders: true, HomeAction: "background", Overrides: map[string]string{}}
 	return s
 }
@@ -224,6 +227,13 @@ func LoadSettings(p *Paths) (*SettingsStore, error) {
 			st.s.Emulator.HomeKey = "Shift+H"
 		}
 		st.s.KeysVersion, changed = 3, true
+	}
+	if st.s.KeysVersion < 4 {
+		// 0.8.0: L4 (the Steam Deck's upper left back button) opens NEXUS Home
+		if st.s.Emulator.HomePaddles == nil {
+			st.s.Emulator.HomePaddles = []string{"l4"}
+		}
+		st.s.KeysVersion, changed = 4, true
 	}
 	if !st.s.PerfMonitor.ShadersOffered {
 		// 0.8.0: the performance bar shows shader compilation (once; removing it is respected)
