@@ -207,3 +207,56 @@ func TestUnzipSafeRefusesEscapes(t *testing.T) {
 		t.Fatal("size limit not applied")
 	}
 }
+
+// TestTemporaryUserRemoved: a user made only to get into NEXUS, deleted after signing in, is not
+// brought back by synchronisation, and with "remove from account" new devices do not receive it.
+func TestTemporaryUserRemoved(t *testing.T) {
+	t.Setenv("NEXUS_ACCOUNT_SERVER", "")
+	f := &fakeGitHub{gists: map[string]map[string]string{}, desc: map[string]string{}, approved: map[string]bool{}}
+	ts := httptest.NewServer(f)
+	defer ts.Close()
+	f.base = ts.URL
+	oldW, oldA := githubWeb, githubAPI
+	githubWeb, githubAPI = ts.URL, ts.URL
+	defer func() { githubWeb, githubAPI = oldW, oldA }()
+
+	pc, _ := newTestApp(t, "")
+	deck, _ := newTestApp(t, "")
+	pc.Profiles.Create("Tom", Avatar{Kind: "preset", Preset: "star", Color: "#ff0000"})
+	signInGitHub(t, pc, f, "PC")
+	mustSync(t, pc)
+	tmp, _ := deck.Profiles.Create("Temp", Avatar{Kind: "preset", Preset: "star", Color: "#00ff00"})
+	signInGitHub(t, deck, f, "Steam Deck")
+	mustSync(t, deck)
+	mustSync(t, pc)
+	if len(pc.Profiles.List()) != 2 {
+		t.Fatalf("Temp did not reach the PC: %+v", pc.Profiles.List())
+	}
+	if _, err := deck.Profiles.Delete(tmp.ID); err != nil {
+		t.Fatal(err)
+	}
+	deck.Account.UserRemoved(tmp.ID, true)
+	mustSync(t, deck)
+	mustSync(t, deck)
+	for _, p := range deck.Profiles.List() {
+		if p.Name == "Temp" {
+			t.Fatal("Temp came back on the deck")
+		}
+	}
+	// a new device does not receive it; the PC keeps its own copy
+	third, _ := newTestApp(t, "")
+	signInGitHub(t, third, f, "Laptop")
+	mustSync(t, third)
+	for _, p := range third.Profiles.List() {
+		if p.Name == "Temp" {
+			t.Fatal("a new device received a user removed from the account")
+		}
+	}
+	if len(third.Profiles.List()) != 1 {
+		t.Fatalf("%+v", third.Profiles.List())
+	}
+	mustSync(t, pc)
+	if len(pc.Profiles.List()) != 2 {
+		t.Fatal("the PC's copy was deleted by synchronisation")
+	}
+}

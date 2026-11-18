@@ -87,6 +87,10 @@ type accountState struct {
 	Cursor      int64               `json:"cursor"`
 	Base        map[string]syncBase `json:"base"`
 	ProfileMap  map[string]string   `json:"profileMap,omitempty"` // account user id -> local profile id
+	// RemovedUsers: account users deleted on this device; never brought back here by sync
+	RemovedUsers []string `json:"removedUsers,omitempty"`
+	// RemoveRemote: account users to remove from the account at the next sync (the user asked)
+	RemoveRemote []string `json:"removeRemote,omitempty"`
 	Conflicts   []AccountConflict   `json:"conflicts,omitempty"`
 	History     []SyncEvent         `json:"history,omitempty"`
 	LastSync    int64               `json:"lastSync,omitempty"`
@@ -1079,6 +1083,11 @@ func (ac *Account) pendingKeys() []string {
 			out = append(out, k)
 		}
 	}
+	ac.mu.Lock()
+	for _, u := range ac.st.RemoveRemote {
+		out = append(out, "profile/"+u)
+	}
+	ac.mu.Unlock()
 	if cats["amiibo"] { // removed here since the last synchronisation
 		for k, b := range base {
 			if keyCategory(k) == "amiibo" && b.Hash != "" {
@@ -1101,6 +1110,9 @@ func (ac *Account) applyItem(key string, data []byte, deleted bool, from string)
 	case "profile":
 		if deleted {
 			return nil // users are never deleted by synchronisation (their saves are here)
+		}
+		if ac.userRemovedHere(name) {
+			return nil // deleted on this device on purpose: not brought back
 		}
 		var x syncProfile
 		if err := json.Unmarshal(data, &x); err != nil {
@@ -1639,7 +1651,16 @@ func (ac *Account) syncOnce(cursor int64, sum *SyncSummary) error {
 			sum.Conflicts++
 			continue
 		}
-		sent = append(sent, func() { ac.setBase(k, syncBase{res.Version, hashBytes(data)}) })
+		key := k
+		sent = append(sent, func() {
+			ac.setBase(key, syncBase{res.Version, hashBytes(data)})
+			if keyCategory(key) == "profile" && !ok {
+				ac.mu.Lock()
+				ac.st.RemoveRemote = removeString(ac.st.RemoveRemote, strings.TrimPrefix(key, "profile/"))
+				ac.mu.Unlock()
+				ac.app.Log.Printf("account: user %s removed from the account", key)
+			}
+		})
 		sum.Uploaded++
 	}
 	if err := be.flush(); err != nil { // nothing counts as sent unless it was written
@@ -1676,6 +1697,9 @@ func (ac *Account) matchUser(key string, it remoteItem) {
 		return
 	}
 	id := strings.TrimPrefix(key, "profile/")
+	if ac.userRemovedHere(id) {
+		return
+	}
 	if _, ok := ac.app.Profiles.Get(id); ok {
 		return
 	}
@@ -1796,4 +1820,53 @@ func imageExt(b []byte) string {
 		return ".gif"
 	}
 	return ".png"
+}
+
+func removeString(l []string, v string) []string {
+	out := l[:0:0]
+	for _, x := range l {
+		if x != v {
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
+func (ac *Account) userRemovedHere(accountUser string) bool {
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+	for _, u := range ac.st.RemovedUsers {
+		if u == accountUser {
+			return true
+		}
+	}
+	return false
+}
+
+// UserRemoved: a user was deleted on this device. The account's copy of that user is not brought
+// back here; with fromAccount it is also removed from the account (other devices keep theirs,
+// new devices no longer receive it). Local data was archived by the profile store.
+func (ac *Account) UserRemoved(localID string, fromAccount bool) {
+	ac.mu.Lock()
+	acc := localID
+	for k, v := range ac.st.ProfileMap {
+		if v == localID {
+			acc = k
+			delete(ac.st.ProfileMap, k)
+		}
+	}
+	if _, synced := ac.st.Base["profile/"+acc]; !synced {
+		ac.mu.Unlock()
+		return // never reached the account
+	}
+	ac.st.RemovedUsers = append(removeString(ac.st.RemovedUsers, acc), acc)
+	if fromAccount && ac.st.SignedIn {
+		ac.st.RemoveRemote = append(removeString(ac.st.RemoveRemote, acc), acc)
+	}
+	ac.saveLocked()
+	ac.mu.Unlock()
+	if fromAccount {
+		ac.app.Log.Printf("account: user %s will be removed from the account", acc)
+		ac.Kick()
+	}
 }

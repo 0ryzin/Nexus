@@ -1513,8 +1513,16 @@ async function deleteProfile(id, layer) {
   const typed = await dialog({ title: `Delete ${p.name}?`, text: `Type the name "${p.name}" to confirm. Their save data will be archived in NEXUS data\\Archived and can be restored manually.`, input: { placeholder: p.name }, buttons: [{ label: 'Cancel', value: null }, { label: 'Delete', value: true, danger: true }] });
   if (typed === null || typed === undefined) return;
   if (typed !== p.name) { alertDlg('Not deleted', 'The name did not match.'); return; }
+  // signed in: this device never brings the user back; optionally the account forgets it too
+  let fromAccount = false;
+  if (AccountUI.st?.signedIn) {
+    const v = await dialog({ title: `Also remove ${p.name} from your NEXUS account?`, text: `Remove from account: devices you sign in on later do not get ${p.name}. Devices that already have ${p.name} keep that user and its saves until you delete it there too.\n\nOnly on this device: your account and your other devices are not changed.`,
+      buttons: [{ label: 'Cancel', value: null }, { label: 'Only on this device', value: 'local' }, { label: 'Remove from account too', value: 'account', danger: true }], cancelValue: null });
+    if (!v) return;
+    fromAccount = v === 'account';
+  }
   try {
-    const r = await api(`/api/profiles/${id}`, { method: 'DELETE', body: { confirm: typed } });
+    const r = await api(`/api/profiles/${id}`, { method: 'DELETE', body: { confirm: typed, fromAccount } });
     layer.close();
     await loadState();
     toast(`${p.name} was removed. Data archived.`, I.check);

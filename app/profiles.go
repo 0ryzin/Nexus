@@ -353,7 +353,7 @@ func (st *ProfileStore) Delete(id string) (string, error) {
 	if err := os.MkdirAll(archive, 0o755); err != nil {
 		return "", err
 	}
-	if sd := st.SaveDir(id); dirExists(sd) {
+	if sd := st.saveDirFor(*pr); dirExists(sd) {
 		if err := os.Rename(sd, filepath.Join(archive, "Saves")); err != nil {
 			return "", fmt.Errorf("could not archive saves: %w", err)
 		}
@@ -378,6 +378,13 @@ func (st *ProfileStore) SaveDir(id string) string {
 	if !ok {
 		return filepath.Join(st.p.Saves, "_unknown-"+safeFolderName(id))
 	}
+	return st.saveDirFor(p)
+}
+
+// saveDirFor is SaveDir for a profile already in hand; it does not take the lock, so Delete
+// can use it (SaveDir from inside Delete deadlocked: profile deletion never returned).
+func (st *ProfileStore) saveDirFor(p Profile) string {
+	id := p.ID
 	if p.PlayerID == "" { // not migrated yet (Migrate assigns one)
 		return filepath.Join(st.p.Saves, safeFolderName(id))
 	}

@@ -1606,7 +1606,10 @@ func (s *Server) routes() {
 		writeJSON(w, p)
 	})
 	m.HandleFunc("DELETE /api/profiles/{id}", func(w http.ResponseWriter, r *http.Request) {
-		var b struct{ Confirm string }
+		var b struct {
+			Confirm     string
+			FromAccount bool `json:"fromAccount"`
+		}
 		_ = readBody(r, &b)
 		p, ok := a.Profiles.Get(r.PathValue("id"))
 		if !ok {
@@ -1627,6 +1630,7 @@ func (s *Server) routes() {
 			return
 		}
 		a.Controllers.RemoveProfile(p.ID)
+		a.Account.UserRemoved(p.ID, b.FromAccount)
 		a.Log.Printf("profile %s (%s) removed; data archived to %s", p.Name, p.ID, archive)
 		a.Events.Emit("profiles.changed", nil)
 		writeJSON(w, map[string]string{"archive": archive})
