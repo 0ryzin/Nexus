@@ -67,6 +67,43 @@ def nexus_api_version():
     return int(re.search(r"const engineAPIVersion = (\d+)", src).group(1))
 
 
+# Libraries the engine links from the build system that some systems lack (a plain Arch
+# install, some Steam Deck images): copied next to the engine in both packages. Graphics,
+# input and C runtime libraries (libc, libudev, libdrm, libGL/libvulkan, X11) are left to the
+# system, which must provide its own.
+BUNDLE_DEPS = re.compile(r"^lib(usb-1\.0|ssl|crypto|lz4|zstd|opus)\.so")
+
+
+def bundle_engine_deps(lib, dest):
+    out = subprocess.check_output(["ldd", lib], text=True)
+    for line in out.splitlines():
+        m = re.match(r"\s*(\S+) => (/\S+)", line)
+        if m and BUNDLE_DEPS.match(m.group(1)) and not os.path.exists(os.path.join(dest, m.group(1))):
+            shutil.copy2(os.path.realpath(m.group(2)), os.path.join(dest, m.group(1)))
+            os.chmod(os.path.join(dest, m.group(1)), 0o755)
+            print(f"  engine dependency bundled: {m.group(1)}")
+            copy_licences([m.group(1)], os.path.join(os.path.dirname(dest), "Licences", "linux-libraries"))
+
+
+def copy_licences(names, outdir):
+    """The Debian/Ubuntu copyright file (licence texts) of each package a bundled library came from."""
+    names = sorted(set(n for n in names if ".so" in n))
+    if not names or not shutil.which("dpkg-query"):
+        return
+    r = subprocess.run(["dpkg-query", "-S"] + [f"*/{n}" for n in names], capture_output=True, text=True)
+    pkgs = set()
+    for line in r.stdout.splitlines():
+        pk = line.split(":", 1)[0]
+        for p in pk.split(","):
+            pkgs.add(p.strip())
+    os.makedirs(outdir, exist_ok=True)
+    for pk in sorted(pkgs):
+        for src in (f"/usr/share/doc/{pk}/copyright", f"/usr/share/doc/{pk.split(':')[0]}/copyright"):
+            if os.path.exists(src):
+                shutil.copy2(src, os.path.join(outdir, pk.split(":")[0] + ".txt"))
+                break
+
+
 def stage_engine(engine_dir, dest, lock, patches):
     """Engine/: nexus_engine.so and the libraries the build made, with engine.json listing them."""
     os.makedirs(dest, exist_ok=True)
@@ -78,6 +115,7 @@ def stage_engine(engine_dir, dest, lock, patches):
     lib = os.path.join(dest, "nexus_engine.so")
     if not os.path.exists(lib):
         sys.exit("nexus_engine.so is missing from the engine build")
+    bundle_engine_deps(lib, dest)
     # the engine finds the libraries next to it, wherever NEXUS is extracted
     for f in os.listdir(dest):
         run("patchelf", "--set-rpath", "$ORIGIN", os.path.join(dest, f))
@@ -205,6 +243,9 @@ def make_appimage(st, root, out, name, arch, tools):
     appimage_webkit(appdir, triple)
     for helper in glob.glob(os.path.join(appdir, "usr", "lib", triple, "webkit2gtk-4.1", "WebKit*Process")):
         run(tools["linuxdeploy"], "--appdir", appdir, "--executable", helper, env=env)
+    # licence texts of every library the AppImage carries (GTK, WebKitGTK, GStreamer ...)
+    bundled = [f for _, _, fs in os.walk(os.path.join(appdir, "usr", "lib")) for f in fs]
+    copy_licences(bundled, os.path.join(nexus_dir, "Licences", "linux-libraries"))
     # AppRun: from usr/ (WebKit's helpers, above), with the bundled GStreamer plugins, and
     # without a library path from the environment (Steam sets one for its runtime)
     for f in ("AppRun", "AppRun.wrapped"):
