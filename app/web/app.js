@@ -1937,11 +1937,80 @@ async function shaderImportZip(g, f) {
   try {
     toast('Reading the shader caches in the ZIP…', I.chip);
     const r = await api(`/api/games/${encodeURIComponent(g.key)}/shaders/import-zip`, { body: f });
-    const lines = r.files.map(x => `\u2022 ${x.name}${x.format ? ` (${x.format})` : ''}: ${x.action === 'added' ? `${x.added.toLocaleString()} new entries added` : x.action === 'installed' ? 'installed' : 'not used'}${x.reason ? ` \u2014 ${x.reason}` : ''}`);
+    const lines = r.files.map(x => `\u2022 ${x.name}${x.format ? ` (${x.format})` : ''}: ${x.action === 'added' ? `${x.added.toLocaleString()} new entries added` : x.action === 'installed' ? 'installed' : x.action === 'checked' ? 'checked' : 'not used'}${x.reason ? ` \u2014 ${x.reason}` : ''}`);
     const head = r.usable ? (r.added ? `${r.added.toLocaleString()} shader entries were added to ${g.title}; they are built before you play.` : `The shader data for ${g.title} was installed.`)
       : `Nothing in this ZIP could be used for ${g.title}. Nothing was changed.`;
     alertDlg('Import Shaders', head + '\n\n' + lines.slice(0, 12).join('\n') + (lines.length > 12 ? `\n\u2026 and ${lines.length - 12} more file(s)` : ''));
   } catch (e) { alertDlg('Import failed', e.message); }
+}
+
+// ---------- Import Shader Data / Export Shader Data (shaderio.go): background jobs with a result
+const mb = n => (n / 1048576).toFixed(n < 10485760 ? 1 : 0) + ' MB';
+async function shaderJobRun(start) {
+  let j;
+  try { j = await start(); } catch (e) { alertDlg('Shader data', e.message); return; }
+  if (!j || j.cancelled) return;
+  if (j.noPicker) return 'noPicker';
+  // progress while it runs; the dialog can be hidden, the job goes on
+  let hidden = false;
+  const title = j.kind === 'export' ? `Exporting ${j.title}'s shader data` : `Importing shader data for ${j.title}`;
+  dialog({ title, text: (j.step || 'Starting') + '\u2026', buttons: [{ label: 'Hide', value: true, primary: true }] }).then(() => { hidden = true; });
+  await new Promise(r => setTimeout(r, 30));
+  const box = $$('.dialog').slice(-1)[0], line = box?.querySelector('.d-body p');
+  while (true) {
+    await new Promise(r => setTimeout(r, 400));
+    try { j = await api('/api/shaders/job'); } catch { continue; }
+    if (!j) break;
+    if (line) line.textContent = (j.step || '') + (j.state === 'running' ? '\u2026 NEXUS keeps working meanwhile; Hide closes this.' : '');
+    if (j.state !== 'running') break;
+  }
+  if (!hidden && box?.isConnected) Nav.layers.find(l => l.root.contains(box))?.onBack();
+  shaderJobResult(j);
+}
+function shaderJobResult(j) {
+  if (!j) return;
+  if (j.state === 'failed') { alertDlg(j.kind === 'export' ? 'Export Shader Data' : 'Import Shader Data', `${j.title}: ${j.error}`); return; }
+  const n = v => Number(v || 0).toLocaleString();
+  if (j.kind === 'export') {
+    const x = j.export;
+    alertDlg('Shader data exported', `${j.title}: ${n(x.programs)} shader programs and ${n(x.graphics + x.compute)} pipelines were saved to\n${x.path} (${mb(x.bytes)}).\n\nCopy it to your other device and choose the game's Import Shader Data › From a ZIP file. It holds the game's shader code, so keep it to your own devices. Graphics-card-specific data is not included; each device builds that itself.`);
+    return;
+  }
+  const backup = j.backup ? `\n\nThe game's previous shader data was backed up first (${j.backup.split(/[\\/]/).pop()}).` : '';
+  if (j.kind === 'import-device') {
+    const r = j.pack;
+    alertDlg('Shader data imported', (r.added ? `${n(r.added)} shader entries came from ${j.device} and were added to ${j.title}; they are built before you play.` : `${j.device} has nothing this device lacks for ${j.title}.`) + (r.present ? ` ${n(r.present)} were already here and were kept.` : '') + backup);
+    return;
+  }
+  const r = j.zip;
+  const lines = r.files.map(x => `• ${x.name}${x.format ? ` (${x.format})` : ''}: ${x.action === 'added' ? `${n(x.added)} new entries added` : x.action === 'installed' ? 'installed' : 'not used'}${x.reason ? ` — ${x.reason}` : ''}`);
+  const skipped = r.files.filter(x => x.action === 'skipped').length;
+  const head = r.usable ? (r.added ? `${n(r.added)} shader entries were added to ${j.title}; they are built before you play.` : `Everything usable in this ZIP was already here for ${j.title}, or it was installed for the engine to convert.`)
+    : `Nothing in this ZIP could be used for ${j.title}. Nothing was changed.`;
+  alertDlg('Import Shader Data', `${head}\n${r.files.length} file(s) in the archive: ${r.usable} used, ${skipped} not used${r.files.length - r.usable - skipped ? ', the export description checked' : ''}.${backup}\n\n` + lines.slice(0, 12).join('\n') + (lines.length > 12 ? `\n… and ${lines.length - 12} more file(s)` : ''));
+}
+async function shaderExportZip(g) {
+  const r = await shaderJobRun(() => api(`/api/games/${encodeURIComponent(g.key)}/shaders/export-zip`, { body: {} }));
+  if (r === 'noPicker') shaderExport(g); // no folder picker (development in a browser): download
+}
+async function shaderImportMenu(g) {
+  const v = await dialog({ title: `Import Shader Data for ${g.title}`, text: 'From a ZIP file: a ZIP made by Export Shader Data on another NEXUS, or one with original shader-cache files from the NEXUS Engine or the emulators it is based on. NEXUS reads it where it is, checks every file and converts what its engine can use; the ZIP is not changed.\n\nFrom another device: your other NEXUS device on the same network sends its shader data for this game directly (it needs Device Linking).',
+    buttons: [{ label: 'Cancel', value: null }, { label: 'From another device', value: 'device' }, { label: 'From a ZIP file', value: 'zip', primary: true }], cancelValue: null });
+  if (v === 'zip') {
+    const r = await shaderJobRun(() => api(`/api/games/${encodeURIComponent(g.key)}/shaders/import-zip-file`, { body: {} }));
+    if (r === 'noPicker') shaderImport(g); // no native picker: choose and upload the file
+  }
+  if (v === 'device') {
+    let d; try { d = await api('/api/shaders/devices'); } catch (e) { alertDlg('Import Shader Data', e.message); return; }
+    if (!d.linking || !d.devices.length) {
+      alertDlg('No other device to import from', (d.linking ? 'No other NEXUS device is linked to this one yet.' : 'Device Linking (NEXUS’s direct connection between your own devices) is off on this device: it is still experimental.')
+        + `\n\nThe reliable way today: on the other device choose ${g.title}'s Export Shader Data, copy the ZIP here (USB stick, network folder, cloud drive), then Import Shader Data › From a ZIP file.\n\nShader data is never sent through your NEXUS Account: it holds the game's own code.`);
+      return;
+    }
+    const id = d.devices.length === 1 ? d.devices[0].id : await listPick('Import from which device?', d.devices.map(x => ({ v: x.id, l: x.name })));
+    if (!id) return;
+    await shaderJobRun(() => api(`/api/games/${encodeURIComponent(g.key)}/shaders/import-device`, { body: { deviceId: id } }));
+  }
 }
 
 // ---------- game options menu
@@ -1975,8 +2044,8 @@ function gameMenu(key, view = 'main') {
     ]],
     isPlayable(g) ? ['Shaders', [
       idle ? ['shaders', S.prep?.key === key ? 'Stop Preparing Shaders' : 'Prepare Shaders Now', I.chip, S.prep?.key === key ? prepLabel(S.prep) : 'Find and convert this game’s shaders before you play'] : null,
-      idle ? ['shexport', 'Export Shader Data', I.download || I.folder, 'For your other devices'] : null,
-      idle ? ['shimport', 'Import Shader Data…', I.plus, 'From your other devices (.nxshaders)'] : null,
+      idle ? ['shimport', 'Import Shader Data…', I.plus, 'From a ZIP file or another device'] : null,
+      idle ? ['shexport', 'Export Shader Data…', I.download || I.folder, 'A ZIP for your other devices'] : null,
       !idle ? ['', 'Close the game to manage its shaders', I.chip] : null,
     ]] : null,
     [null, [['more', 'More…', I.more, 'Artwork, game location, remove from library']]],
@@ -2005,8 +2074,8 @@ function gameMenu(key, view = 'main') {
       case 'saves': saveDataPage(S.profile?.id); break;
       case 'more': gameMenu(key, 'more'); break;
       case 'back': gameMenu(key); break;
-      case 'shexport': shaderExport(g); break;
-      case 'shimport': shaderImport(g); break;
+      case 'shexport': shaderExportZip(g); break;
+      case 'shimport': shaderImportMenu(g); break;
       case 'shaders':
         if (S.prep?.key === key) { api('/api/shaders/prepare/cancel', { body: {} }).catch(() => { }); break; }
         api(`/api/games/${encodeURIComponent(key)}/prepare-shaders`, { body: {} })

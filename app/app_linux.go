@@ -143,7 +143,6 @@ type gtkUI struct {
 
 var theGTK *gtkUI
 
-
 // goOpenURI: a link the interface opens in a new window goes to the desktop's browser, started
 // with the desktop's environment (platform_env.go hostEnv), not the AppImage's.
 //

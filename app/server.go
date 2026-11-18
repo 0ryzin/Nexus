@@ -600,6 +600,106 @@ func (s *Server) routes() {
 		}
 		writeJSON(w, true)
 	})
+	// Import Shader Data / Export Shader Data from the game menu (shaderio.go): background jobs
+	m.HandleFunc("GET /api/shaders/job", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, a.Emu.shaderJobs.get()) })
+	m.HandleFunc("GET /api/shaders/devices", func(w http.ResponseWriter, r *http.Request) {
+		type dev struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+			Seen int64  `json:"lastSync"`
+		}
+		out := struct {
+			Linking bool  `json:"linking"`
+			Devices []dev `json:"devices"`
+		}{Linking: a.Link != nil, Devices: []dev{}}
+		if a.Link != nil {
+			for _, d := range a.Link.Devices() {
+				out.Devices = append(out.Devices, dev{d.DeviceID, d.Name, d.LastSync})
+			}
+		}
+		writeJSON(w, out)
+	})
+	shaderGame := func(w http.ResponseWriter, r *http.Request) (*Game, bool) {
+		g, ok := a.Library.Get(r.PathValue("key"))
+		if !ok || g.TitleID == "" {
+			writeErr(w, 404, errors.New("No such game, or it has no title ID."))
+			return nil, false
+		}
+		return &g, true
+	}
+	shaderPick := func(w http.ResponseWriter, path string, folder bool, title, filter string) (string, bool) {
+		if path != "" {
+			return path, true
+		}
+		var p string
+		var err error
+		if folder {
+			p, err = a.UI.PickFolder(title)
+		} else {
+			p, err = a.UI.PickFile(title, filter)
+		}
+		if errors.Is(err, errNotSupported) {
+			writeJSON(w, map[string]any{"noPicker": true})
+			return "", false
+		}
+		if err != nil || p == "" {
+			writeJSON(w, map[string]any{"cancelled": true})
+			return "", false
+		}
+		return p, true
+	}
+	m.HandleFunc("POST /api/games/{key}/shaders/export-zip", func(w http.ResponseWriter, r *http.Request) {
+		g, ok := shaderGame(w, r)
+		if !ok {
+			return
+		}
+		var b struct{ Dir string }
+		_ = readBody(r, &b)
+		dir, ok := shaderPick(w, b.Dir, true, "Choose where to save "+g.Title+"'s shader data", "")
+		if !ok {
+			return
+		}
+		j, err := a.Emu.StartShaderExport(g, dir)
+		if err != nil {
+			writeErr(w, 409, err)
+			return
+		}
+		writeJSON(w, j)
+	})
+	m.HandleFunc("POST /api/games/{key}/shaders/import-zip-file", func(w http.ResponseWriter, r *http.Request) {
+		g, ok := shaderGame(w, r)
+		if !ok {
+			return
+		}
+		var b struct{ Path string }
+		_ = readBody(r, &b)
+		p, ok := shaderPick(w, b.Path, false, "Choose a ZIP with "+g.Title+"'s shader data", "ZIP archive (*.zip)|*.zip|All files|*.*|")
+		if !ok {
+			return
+		}
+		j, err := a.Emu.StartShaderZipImport(g, p)
+		if err != nil {
+			writeErr(w, 409, err)
+			return
+		}
+		writeJSON(w, j)
+	})
+	m.HandleFunc("POST /api/games/{key}/shaders/import-device", func(w http.ResponseWriter, r *http.Request) {
+		g, ok := shaderGame(w, r)
+		if !ok {
+			return
+		}
+		var b struct {
+			Device string `json:"deviceId"`
+		}
+		_ = readBody(r, &b)
+		j, err := a.Emu.StartShaderDeviceImport(g, b.Device)
+		if err != nil {
+			writeErr(w, 409, err)
+			return
+		}
+		writeJSON(w, j)
+	})
 	// portable shader data between your own devices (shadercache.go)
 	m.HandleFunc("GET /api/games/{key}/shaders/export", func(w http.ResponseWriter, r *http.Request) {
 		g, ok := a.Library.Get(r.PathValue("key"))

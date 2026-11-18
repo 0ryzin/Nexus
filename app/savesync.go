@@ -94,8 +94,8 @@ type SaveSyncConflict struct {
 }
 
 type saveSyncState struct {
-	Account   string                  `json:"account"` // the account the bases belong to
-	Base      map[string]saveBase     `json:"base"`
+	Account   string                      `json:"account"` // the account the bases belong to
+	Base      map[string]saveBase         `json:"base"`
 	Conflicts map[string]SaveSyncConflict `json:"conflicts,omitempty"`
 	// Resolve: the user's choice for a conflict, carried out at the next run ("local"|"remote")
 	Resolve map[string]string `json:"resolve,omitempty"`
@@ -103,18 +103,18 @@ type saveSyncState struct {
 
 // SaveSyncStatus is shown in Settings › NEXUS Account › Game saves.
 type SaveSyncStatus struct {
-	Enabled    bool           `json:"enabled"`
-	Supported  bool           `json:"supported"`
-	State      string         `json:"state"` // idle | running | done | failed | offline
-	Message    string         `json:"message,omitempty"`
-	Last       int64          `json:"last,omitempty"`
-	Saves      int            `json:"saves"`
-	Pending    int            `json:"pending"`
-	Sent       int            `json:"sent"`
-	Received   int            `json:"received"`
+	Enabled    bool               `json:"enabled"`
+	Supported  bool               `json:"supported"`
+	State      string             `json:"state"` // idle | running | done | failed | offline
+	Message    string             `json:"message,omitempty"`
+	Last       int64              `json:"last,omitempty"`
+	Saves      int                `json:"saves"`
+	Pending    int                `json:"pending"`
+	Sent       int                `json:"sent"`
+	Received   int                `json:"received"`
 	Conflicts  []SaveSyncConflict `json:"conflicts"`
-	TooLarge   []string       `json:"tooLarge,omitempty"`
-	WaitingFor []string       `json:"waitingFor,omitempty"` // users whose game is running
+	TooLarge   []string           `json:"tooLarge,omitempty"`
+	WaitingFor []string           `json:"waitingFor,omitempty"` // users whose game is running
 }
 
 type SaveSync struct {
@@ -791,4 +791,3 @@ func unzipSafe(data []byte, dir string, limit int64) error {
 	}
 	return nil
 }
-

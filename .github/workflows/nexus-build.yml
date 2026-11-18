@@ -60,6 +60,8 @@ jobs:
           NEXUS_HARDWARE= python3 tools/uitest/controller_sweep.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
           NEXUS_HARDWARE= python3 tools/uitest/profile_delete.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
           NEXUS_HARDWARE= python3 tools/uitest/home_sections.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
+          mkdir -p "$RUNNER_TEMP/shfix" && NEXUS_SHADER_FIXTURE="$RUNNER_TEMP/shfix" go test -count=1 -run 'TestMakeShaderFixture$' .
+          NEXUS_HARDWARE= python3 tools/uitest/shader_data.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix" "$RUNNER_TEMP/shfix"
           # last: it leaves a menu controller and users chosen in the shared test data
           NEXUS_HARDWARE= python3 tools/uitest/controller_prompts.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
 

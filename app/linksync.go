@@ -670,6 +670,8 @@ func (l *DeviceLink) serveSync(w wire, dev TrustedDevice, hello linkMsg) {
 			}
 			base[a.Path] = a.Hash
 			_ = w.send(linkMsg{T: "ok"})
+		case "shaders": // Import Shader Data › From another device (shaderio.go)
+			l.serveShaderPack(w, m)
 		case "stats":
 			l.receiveStats(m)
 			_ = w.send(linkMsg{T: "stats", Data: mustJSON(l.statsBundle(m.Account))})

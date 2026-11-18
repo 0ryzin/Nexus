@@ -41,9 +41,13 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
 - **Steam Deck preset for Switch 2 games** (applied once per game on first start when nothing is
   set): 810p, FSR 1, low GPU accuracy, background shaders, 30 fps cap. The 12 GB memory layout is no
   longer refused for Switch 2 games. Not measured on a Deck.
-- **Shader ZIP import:** recognises NEXUS/Lichii caches inside a ZIP and installs them; other
-  formats are listed as skipped with the reason (no conversion is invented). Background shader
-  compilation can use fewer threads ("Reduced", engine patch 0041).
+- **Import Shader Data… / Export Shader Data…** in each game's right-click menu: export to a ZIP
+  (shader pack + a description naming the game, format and checksums); import from a ZIP (NEXUS
+  exports and original NEXUS-engine-family caches, recognised by header; other formats reported
+  with the reason, nothing invented) or from another device linked by Device Linking (directly on
+  the local network, never through the account). Background job with progress, backup first,
+  only new entries added, the source never changed. Background shader compilation can use fewer
+  threads ("Reduced", engine patch 0041).
 - **Navigation:** Home screen and Themes merged into *Personalisation*; shortcuts to Shaders,
   Performance and Graphics removed from the dock (still in Settings); Home has no "Games" or "Recently played" section any more (Windows and Linux: one
   interface): the tabs above the game row and the Recently played card (Cards/Grid) are gone; the

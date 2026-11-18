@@ -196,7 +196,33 @@ the last 15 seconds of this run; nothing is assumed or carried over from earlier
 
 ## Moving shader data to another device (0.8.0)
 
-A game's Options menu has **Export Shader Data** and **Import Shader Data…**:
+A game's right-click menu (and its Options menu, and a controller's menu button on the game) has
+**Import Shader Data…** and **Export Shader Data…** (`app/shaderio.go`). Both run in the
+background, one at a time, with progress, so a large cache does not freeze NEXUS; the result
+says how many entries were added, which files were used and which were skipped and why.
+
+- **Export Shader Data…** asks for a folder and writes `<title> shaders [<title id>].zip`
+  containing the shader pack (below) and `nexus-shader-export.json`: kind, title, title ID,
+  emulator (NEXUS Engine), format, exporting device, NEXUS version, time and every file's size
+  and SHA-256. Lock files, temporary files and driver caches are never exported. With no shader
+  data yet it says so.
+- **Import Shader Data… › From a ZIP file** picks a ZIP and imports it where it is (it is not
+  copied, changed or deleted): a NEXUS export (its description must name this game and its
+  checksums must match, else nothing changes), or a ZIP of original cache files (table below).
+- **Import Shader Data… › From another device** lists the NEXUS devices linked with this one
+  (*Settings › Device Linking*: paired devices, mutual TLS on the local network) and asks the
+  chosen one for its shader pack of this title; it arrives directly, never through the NEXUS
+  Account (see below). A device that is off or unreachable is reported as such and nothing
+  starts; with no linked device NEXUS says how to link one, and offers the ZIP way.
+- Every import copies the current log to a backup first (`lichii-cache.v2.bin.nexus-backup-*`,
+  the last 3 kept) and adds only records this device does not have.
+
+Tests: `shaderio_test.go` (export of 15,000 programs, import on a second device, re-import adds
+nothing, another game's export refused, lock/escape/other-game files skipped, linked-device
+transfer and an unreachable device), `tools/uitest/shader_data.py` (CI: the menu entries, both
+import ways, export, re-import of the export, the source ZIP unchanged).
+
+The shader pack itself:
 
 - Export writes a *shader pack* (`<title> shaders [<title id>].nxshaders`) with the live portable
   records of the game's `lichii-cache.v2.bin`: shader programs, graphics and compute pipelines (with
@@ -228,7 +254,9 @@ someone shared. The ZIP only carries the files and is never used as a cache. NEX
 - reads every file inside it, in nested folders too, in memory;
 - refuses unsafe paths;
 - skips lock and temporary files, and files under another game's title ID;
-- recognises each cache by its own header, not its name.
+- recognises each cache by its own header, not its name;
+- imports current-format logs before older-format caches, so the result does not depend on the
+  order of files in the archive.
 
 | Format (header) | What NEXUS does |
 |---|---|

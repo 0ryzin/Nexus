@@ -35,8 +35,8 @@ type SteamStatus struct {
 	Shortcuts    []steamShort    `json:"shortcuts"`  // NEXUS shortcuts in Steam
 	ArtInstalled map[string]bool `json:"artInstalled,omitempty"`
 	// Offered: what NEXUS already offered once at start ("menu", "art"), so it never asks twice
-	Offered map[string]bool `json:"offered"`
-	IconPath string         `json:"iconPath"` // the icon file to pick in Steam › Properties
+	Offered  map[string]bool `json:"offered"`
+	IconPath string          `json:"iconPath"` // the icon file to pick in Steam › Properties
 }
 
 func (a *App) steamOfferPath() string { return filepath.Join(a.Paths.System, "steam-offers.json") }

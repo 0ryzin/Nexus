@@ -90,16 +90,16 @@ type accountState struct {
 	// RemovedUsers: account users deleted on this device; never brought back here by sync
 	RemovedUsers []string `json:"removedUsers,omitempty"`
 	// RemoveRemote: account users to remove from the account at the next sync (the user asked)
-	RemoveRemote []string `json:"removeRemote,omitempty"`
-	Conflicts   []AccountConflict   `json:"conflicts,omitempty"`
-	History     []SyncEvent         `json:"history,omitempty"`
-	LastSync    int64               `json:"lastSync,omitempty"`
-	LastError   string              `json:"lastError,omitempty"`
-	Offline     bool                `json:"offline,omitempty"`
-	Devices     []accountDevice     `json:"devices,omitempty"`
-	OnboardSeen bool                `json:"onboardSeen,omitempty"`
-	Provider    string              `json:"provider,omitempty"` // github | server
-	GistID      string              `json:"gistId,omitempty"`
+	RemoveRemote []string          `json:"removeRemote,omitempty"`
+	Conflicts    []AccountConflict `json:"conflicts,omitempty"`
+	History      []SyncEvent       `json:"history,omitempty"`
+	LastSync     int64             `json:"lastSync,omitempty"`
+	LastError    string            `json:"lastError,omitempty"`
+	Offline      bool              `json:"offline,omitempty"`
+	Devices      []accountDevice   `json:"devices,omitempty"`
+	OnboardSeen  bool              `json:"onboardSeen,omitempty"`
+	Provider     string            `json:"provider,omitempty"` // github | server
+	GistID       string            `json:"gistId,omitempty"`
 	// HoldUploads: signed in to a different account than before on this device. Downloads go
 	// on; this device's data is not sent to the new account until the user chooses (so data
 	// that came from the other account is never copied into this one by accident).

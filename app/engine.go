@@ -66,6 +66,8 @@ type Emulator struct {
 	// monitors: running session monitors, which keep writing play time and compatibility for a
 	// moment after the state says stopped (WaitMonitors)
 	monitors sync.WaitGroup
+	// shaderJobs: the shader import or export running in the background (shaderio.go)
+	shaderJobs shaderJobs
 	// crash: the session record that lets NEXUS report a session it did not see end (crashreport.go)
 	crash *crashTracker
 	prep  shaderPrep // shader preparation (shaderprep.go)

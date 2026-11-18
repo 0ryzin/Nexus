@@ -20,7 +20,6 @@ import (
 	"strings"
 )
 
-
 func readHex(p string) uint32 {
 	b, err := os.ReadFile(p)
 	if err != nil {

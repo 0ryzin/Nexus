@@ -37,6 +37,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -80,7 +81,11 @@ func (e *Emulator) ImportShaderZip(zipPath string, g *Game) (ShaderZipResult, er
 	}
 	defer zr.Close()
 	seen := map[string]bool{}
-	for _, f := range zr.File {
+	// older-format caches last: one is installed only while the game has no current-format log,
+	// so a log elsewhere in the same archive must be imported first, whatever the archive order
+	files := append([]*zip.File(nil), zr.File...)
+	sort.SliceStable(files, func(i, j int) bool { return !isLegacyZipEntry(files[i]) && isLegacyZipEntry(files[j]) })
+	for _, f := range files {
 		if f.FileInfo().IsDir() {
 			continue
 		}
@@ -91,6 +96,11 @@ func (e *Emulator) ImportShaderZip(zipPath string, g *Game) (ShaderZipResult, er
 		switch {
 		case strings.Contains(name, "../") || strings.HasPrefix(name, "/"):
 			out.Reason = "unsafe path in the archive; ignored"
+			add()
+			continue
+		case base == shaderExportManifest:
+			out.Action, out.Format = "checked", "NEXUS export description"
+			out.Reason = "names the game, format and checksums; checked before importing"
 			add()
 			continue
 		case strings.HasSuffix(base, ".lock") || strings.HasSuffix(base, ".tmp") || strings.HasPrefix(base, "."):
@@ -222,4 +232,21 @@ func readZipEntry(f *zip.File, limit int64) ([]byte, error) {
 		return nil, errors.New("too large")
 	}
 	return b, nil
+}
+
+// isLegacyZipEntry: the entry starts like an older-format (yuzu-family) shader cache.
+func isLegacyZipEntry(f *zip.File) bool {
+	if f.FileInfo().IsDir() || f.UncompressedSize64 < 12 || f.UncompressedSize64 > maxShaderZipEntry {
+		return false
+	}
+	rc, err := f.Open()
+	if err != nil {
+		return false
+	}
+	defer rc.Close()
+	head := make([]byte, len(legacyCacheMagic))
+	if _, err := io.ReadFull(rc, head); err != nil {
+		return false
+	}
+	return string(head) == legacyCacheMagic
 }
