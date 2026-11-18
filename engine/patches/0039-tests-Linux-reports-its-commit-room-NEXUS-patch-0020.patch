@@ -1,0 +1,27 @@
+From 6aa234b7c3b1c252db757588260fd4fa7025eee6 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 18 Nov 2026 13:38:08 +0000
+Subject: [PATCH] tests: Linux reports its commit room (NEXUS patch 0020), so
+ expect it there
+
+---
+ src/tests/video_core/host_memory_limit.cpp | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/src/tests/video_core/host_memory_limit.cpp b/src/tests/video_core/host_memory_limit.cpp
+index be6ccc403..f5cf120b5 100644
+--- a/src/tests/video_core/host_memory_limit.cpp
++++ b/src/tests/video_core/host_memory_limit.cpp
+@@ -57,6 +57,9 @@ TEST_CASE("The system's commit room is reported where there is a commit limit",
+     REQUIRE(room.has_value());
+     const Common::ProcessMemoryUsage usage = Common::GetProcessMemoryUsage();
+     REQUIRE(*room <= usage.system_commit_limit);
++#elif defined(__linux__)
++    // NEXUS patch 0020: Linux reports MemAvailable + SwapFree (or the strict-mode commit room)
++    REQUIRE(room.has_value());
+ #else
+     REQUIRE_FALSE(room.has_value());
+ #endif
+-- 
+2.43.0
+
