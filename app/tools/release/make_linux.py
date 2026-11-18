@@ -218,6 +218,32 @@ def appimage_gstreamer(appdir, triple):
     return found
 
 
+def appimage_rpaths(appdir):
+    """linuxdeploy's GTK plugin sets every ELF file under usr/lib to RUNPATH $ORIGIN, which is
+    right only for the libraries directly in usr/lib. Programs and plugins in folders below it
+    (NEXUS in usr/lib/nexus, WebKit's helpers, GStreamer plugins) also need usr/lib itself, or
+    they find the bundled libraries only on systems that have their own copies."""
+    libdir = os.path.join(appdir, "usr", "lib")
+    fixed = 0
+    for d, _, files in os.walk(libdir):
+        if os.path.abspath(d) == os.path.abspath(libdir):
+            continue
+        rel = os.path.relpath(libdir, d)
+        for f in files:
+            p = os.path.join(d, f)
+            if os.path.islink(p) or not os.path.isfile(p):
+                continue
+            with open(p, "rb") as fh:
+                if fh.read(4) != b"\x7fELF":
+                    continue
+            r = subprocess.run(["patchelf", "--print-rpath", p], capture_output=True, text=True)
+            if r.returncode != 0:
+                continue  # not a dynamic ELF file
+            subprocess.check_call(["patchelf", "--set-rpath", f"$ORIGIN:$ORIGIN/{rel}", p])
+            fixed += 1
+    print(f"  RUNPATH set to reach usr/lib for {fixed} programs and plugins below it")
+
+
 def make_appimage(st, root, out, name, arch, tools):
     triple = TRIPLE[arch]
     appdir = os.path.join(st, "AppDir")
@@ -255,6 +281,7 @@ def make_appimage(st, root, out, name, arch, tools):
             os.remove(p)
     shutil.copy2(os.path.join(HERE, "linux", "AppRun"), os.path.join(appdir, "AppRun"))
     os.chmod(os.path.join(appdir, "AppRun"), 0o755)
+    appimage_rpaths(appdir)
     shutil.copytree(os.path.join(root, "Engine"), os.path.join(nexus_dir, "Engine"))
     # the engine's files must be exactly those listed in engine.json (NEXUS checks them)
     m = json.load(open(os.path.join(nexus_dir, "Engine", "engine.json")))
