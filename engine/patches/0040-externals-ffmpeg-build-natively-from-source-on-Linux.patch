@@ -1,0 +1,61 @@
+From 6d6e8e2fac1f200d6d2c01c18a425f2706e9e3c9 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 18 Nov 2026 14:02:15 +0000
+Subject: [PATCH] externals/ffmpeg: build natively from source on Linux
+
+- Pass a compiler launcher (ccache) and the compiler as one --cc argument: set() made a list,
+  which became two configure arguments ("Unknown option /usr/bin/cc").
+- Compare host and target with STREQUAL: "A MATCHES B" took B's name as the pattern, so every
+  native build was configured as a cross build.
+- Let FFmpeg link with the compiler driver instead of --ld=${CMAKE_LINKER} (bare ld), with
+  which configure's link tests failed ("no atomics are available").
+---
+ externals/ffmpeg/CMakeLists.txt | 18 +++++++++++++-----
+ 1 file changed, 13 insertions(+), 5 deletions(-)
+
+diff --git a/externals/ffmpeg/CMakeLists.txt b/externals/ffmpeg/CMakeLists.txt
+index 7e2ca9218..c5e26275e 100644
+--- a/externals/ffmpeg/CMakeLists.txt
++++ b/externals/ffmpeg/CMakeLists.txt
+@@ -32,8 +32,10 @@ if (NOT LICHII_USE_BUNDLED_FFMPEG)
+     # User attempts to do a FFmpeg cross compilation because...
+     # Here we just quickly test against host/system processors not matching
+     # TODO: Test for versions not matching as well?
+-    elseif (NOT (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES CMAKE_SYSTEM_PROCESSOR
+-    AND CMAKE_HOST_SYSTEM_NAME MATCHES CMAKE_SYSTEM_NAME))
++    # (STREQUAL on the values: "A MATCHES B" took B's name as the pattern, so every native build
++    # was treated as a cross build)
++    elseif (NOT (CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
++    AND CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME))
+         string(TOLOWER "${CMAKE_SYSTEM_NAME}" FFmpeg_SYSTEM_NAME)
+         if (FFmpeg_SYSTEM_NAME STREQUAL "openorbis" OR FFmpeg_SYSTEM_NAME STREQUAL "managarm")
+             set(FFmpeg_SYSTEM_NAME "none")
+@@ -258,8 +260,14 @@ else()
+ 
+     # `configure` parameters builds only exactly what yuzu needs from FFmpeg
+     # `--disable-vdpau` is needed to avoid linking issues
+-    set(FFmpeg_CC ${CMAKE_C_COMPILER_LAUNCHER}  ${CMAKE_C_COMPILER})
+-    set(FFmpeg_CXX ${CMAKE_CXX_COMPILER_LAUNCHER}  ${CMAKE_CXX_COMPILER})
++    # one string ("ccache cc"), not a list: as a list it became two configure arguments
++    string(STRIP "${CMAKE_C_COMPILER_LAUNCHER} ${CMAKE_C_COMPILER}" FFmpeg_CC)
++    string(STRIP "${CMAKE_CXX_COMPILER_LAUNCHER} ${CMAKE_CXX_COMPILER}" FFmpeg_CXX)
++    # FFmpeg links with the compiler driver; only Android's cross build names the linker
++    set(FFmpeg_LD_FLAG "")
++    if (ANDROID)
++        set(FFmpeg_LD_FLAG --ld=${CMAKE_LINKER})
++    endif()
+     add_custom_command(
+         OUTPUT
+             ${FFmpeg_MAKEFILE}
+@@ -280,7 +288,7 @@ else()
+                 --enable-pic
+                 --cc=${FFmpeg_CC}
+                 --cxx=${FFmpeg_CXX}
+-                --ld=${CMAKE_LINKER}
++                ${FFmpeg_LD_FLAG}
+                 --extra-cflags=${CMAKE_C_FLAGS}
+                 --extra-cxxflags=${CMAKE_CXX_FLAGS}
+                 --extra-ldflags=${CMAKE_C_LINK_FLAGS}
+-- 
+2.43.0
+
