@@ -1,4 +1,4 @@
-From 6d6e8e2fac1f200d6d2c01c18a425f2706e9e3c9 Mon Sep 17 00:00:00 2001
+From 3e7348a7277cdee4bb1707488c314a4463c62053 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 18 Nov 2026 14:02:15 +0000
 Subject: [PATCH] externals/ffmpeg: build natively from source on Linux
@@ -7,14 +7,15 @@ Subject: [PATCH] externals/ffmpeg: build natively from source on Linux
   which became two configure arguments ("Unknown option /usr/bin/cc").
 - Compare host and target with STREQUAL: "A MATCHES B" took B's name as the pattern, so every
   native build was configured as a cross build.
-- Let FFmpeg link with the compiler driver instead of --ld=${CMAKE_LINKER} (bare ld), with
-  which configure's link tests failed ("no atomics are available").
+- Let FFmpeg link with the compiler driver (only Android's cross build passes --ld), with which
+  configure's link tests failed ("no atomics are available").
+- Link libavutil again after libswscale (static archives resolve left to right).
 ---
- externals/ffmpeg/CMakeLists.txt | 18 +++++++++++++-----
- 1 file changed, 13 insertions(+), 5 deletions(-)
+ externals/ffmpeg/CMakeLists.txt | 22 ++++++++++++++++------
+ 1 file changed, 16 insertions(+), 6 deletions(-)
 
 diff --git a/externals/ffmpeg/CMakeLists.txt b/externals/ffmpeg/CMakeLists.txt
-index 7e2ca9218..c5e26275e 100644
+index 7e2ca9218..a14eaaa04 100644
 --- a/externals/ffmpeg/CMakeLists.txt
 +++ b/externals/ffmpeg/CMakeLists.txt
 @@ -32,8 +32,10 @@ if (NOT LICHII_USE_BUNDLED_FFMPEG)
@@ -56,6 +57,17 @@ index 7e2ca9218..c5e26275e 100644
                  --extra-cflags=${CMAKE_C_FLAGS}
                  --extra-cxxflags=${CMAKE_CXX_FLAGS}
                  --extra-ldflags=${CMAKE_C_LINK_FLAGS}
+@@ -333,7 +341,9 @@ else()
+     add_custom_target(ffmpeg-configure ALL DEPENDS ${FFmpeg_MAKEFILE})
+     add_custom_target(ffmpeg-build ALL DEPENDS ${FFmpeg_BUILD_LIBRARIES} ffmpeg-configure)
+     link_libraries(${FFmpeg_LIBVA_LIBRARIES})
+-    set(FFmpeg_LIBRARIES ${FFmpeg_BUILD_LIBRARIES} ${FFmpeg_HWACCEL_LIBRARIES}
++    # static archives resolve left to right: libswscale (after libavutil in the component list)
++    # needs libavutil again after it
++    set(FFmpeg_LIBRARIES ${FFmpeg_BUILD_LIBRARIES} ${FFmpeg_avutil_LIBRARY} ${FFmpeg_HWACCEL_LIBRARIES}
+         CACHE PATH "Paths to FFmpeg libraries" FORCE)
+     unset(FFmpeg_BUILD_LIBRARIES)
+     unset(FFmpeg_HWACCEL_FLAGS)
 -- 
 2.43.0
 
