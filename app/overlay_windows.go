@@ -564,3 +564,5 @@ func outsideRound(x, y, w, h, r int32) bool {
 	dx, dy := x-cx, y-cy
 	return dx*dx+dy*dy > r*r
 }
+
+func perfOverlayNote() string { return "" }

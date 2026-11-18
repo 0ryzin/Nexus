@@ -32,13 +32,19 @@ type PerfSample struct {
 	RAMUsedMB  *float64      `json:"ramUsedMb"`         // system memory in use
 	RAMMB      *float64      `json:"ramMb"`             // installed system memory
 	RAMSpeed   *float64      `json:"ramSpeedMts"`       // configured memory speed, MT/s
+	CPUMHz     *float64      `json:"cpuMhz,omitempty"`  // current processor clock (average of the cores)
+	GPUMHz     *float64      `json:"gpuMhz,omitempty"`  // current graphics clock
+	PowerW     *float64      `json:"powerW,omitempty"`  // processor package / APU power (Steam Deck: the whole APU)
+	BatteryPct *float64      `json:"batteryPct,omitempty"`
+	BatteryW   *float64      `json:"batteryW,omitempty"` // battery draw (discharging) or charge rate
+	Charging   bool          `json:"charging,omitempty"`
 	Shaders    *ShaderStatus `json:"shaders,omitempty"` // this session's shaders (engine 0.8)
 	Notes      []string      `json:"notes,omitempty"`
 }
 
 var PerfMetrics = []EmuChoice{{"fps", "FPS"}, {"frametime", "Frame time"}, {"cpu", "CPU usage"}, {"cputemp", "CPU temperature"},
 	{"gpu", "GPU usage"}, {"gputemp", "GPU temperature"}, {"vram", "GPU memory"}, {"ram", "RAM usage"}, {"ramspeed", "RAM speed"},
-	{"shaders", "Shader compilation"}}
+	{"shaders", "Shader compilation"}, {"clocks", "CPU and GPU clocks"}, {"power", "Power draw"}, {"battery", "Battery"}}
 
 type perfSampler struct {
 	mu         sync.Mutex
@@ -234,6 +240,28 @@ func perfSegments(s PerfSample, metrics []string) []PerfSeg {
 			out = append(out, PerfSeg{"mem", "RAM", num(s.RAMSpeed, "%.0f"), unit(s.RAMSpeed, "MT/s")})
 		case "shaders":
 			out = append(out, shaderSegment(s.Shaders))
+		case "clocks":
+			if s.CPUMHz != nil {
+				out = append(out, PerfSeg{"cpu", "CPU", fmt.Sprintf("%.1f", *s.CPUMHz/1000), "GHz"})
+			} else {
+				out = append(out, PerfSeg{"cpu", "CPU CLK", "N/A", ""})
+			}
+			out = append(out, PerfSeg{"gpu", "GPU", num(s.GPUMHz, "%.0f"), unit(s.GPUMHz, "MHz")})
+		case "power":
+			out = append(out, PerfSeg{"temp", "POWER", num(s.PowerW, "%.1f"), unit(s.PowerW, "W")})
+		case "battery":
+			v, u := "N/A", ""
+			if s.BatteryPct != nil {
+				v, u = fmt.Sprintf("%.0f", *s.BatteryPct), "%"
+				if s.BatteryW != nil {
+					sign := "−"
+					if s.Charging {
+						sign = "+"
+					}
+					u += fmt.Sprintf(" %s%.1f W", sign, *s.BatteryW)
+				}
+			}
+			out = append(out, PerfSeg{"mem", "BAT", v, u})
 		}
 	}
 	return out

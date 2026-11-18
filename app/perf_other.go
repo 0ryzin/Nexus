@@ -9,8 +9,9 @@ import (
 	"strings"
 )
 
-// Non-Windows (development builds): CPU and RAM from /proc where present; everything else is
-// reported as unavailable.
+// Linux (desktop PCs and the Steam Deck): CPU and RAM from /proc; the GPU, temperatures, clocks,
+// power and battery from the kernel's sysfs (amdgpu, k10temp, power_supply), the same sources
+// MangoHud reads. Anything the kernel does not expose here stays unavailable (nil), never guessed.
 type sysSampler struct {
 	idle, total uint64
 	have        bool
@@ -54,4 +55,5 @@ func (s *sysSampler) fill(p *PerfSample) {
 			p.RAMMB, p.RAMUsedMB = fptr(total), fptr(total-avail)
 		}
 	}
+	sysfsSample(p, "/sys")
 }
