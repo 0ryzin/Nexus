@@ -119,7 +119,7 @@ numbers; they are not Windows or Steam Deck figures.
 | Game in front | 0.08 → 0.08 | 0.37 → 0.37 | 20.3 → 20.0 |
 
 After 30 rounds of navigation: DOM nodes 678 → 656, listeners 192 → 171, server 20.4 → 20.0 MB.
-The differences are within run-to-run noise; save sync adds about 0.4 MB. Nothing in the pass
+The differences are within run-to-run noise; the server uses about 0.4 MB more (cause not measured separately). Nothing in the pass
 needed optimising; Steam Deck game performance (Ocarina of Time) is not measured (no Deck here).
 
 ## 0.8.0: startup, measured (17 Nov)
