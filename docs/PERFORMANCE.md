@@ -104,6 +104,24 @@ Times are seconds; the Play click is at most 0.2 s before the session starts (`n
 - **Not measured:** time from selecting a save to control of Link, CPU use per thread. A stutter
   trace (`EDEN_NX2_STUTTER_TRACE=1`) of one save load would show the second.
 
+## 0.8.0 refinement pass: no regression, measured (18 Nov)
+
+Linux, headless Chrome, stand-in engine, `idle_baseline.py` (8 s per screen) and `nav_soak.py`
+(30 rounds), build `896280a` (before the pass) against the pass's build. Compare builds with these
+numbers; they are not Windows or Steam Deck figures.
+
+| Screen (idle) | Page busy, % of a core (before → after) | NEXUS server CPU % | Server memory MB |
+|---|---|---|---|
+| Home | 0.12 → 0.11 | 0.0 → 0.0 | 18.7 → 19.1 |
+| Home + controller | 0.55 → 0.58 | 0.25 → 0.0 | 18.7 → 19.2 |
+| Library + controller | 0.77 → 0.65 | 0.0 → 0.0 | 18.7 → 19.2 |
+| Settings + controller | 0.45 → 0.36 | 0.0 → 0.0 | 18.7 → 19.2 |
+| Game in front | 0.08 → 0.08 | 0.37 → 0.37 | 20.3 → 20.0 |
+
+After 30 rounds of navigation: DOM nodes 678 → 656, listeners 192 → 171, server 20.4 → 20.0 MB.
+The differences are within run-to-run noise; save sync adds about 0.4 MB. Nothing in the pass
+needed optimising; Steam Deck game performance (Ocarina of Time) is not measured (no Deck here).
+
 ## 0.8.0: startup, measured (17 Nov)
 
 **On the user's PC (Windows, from `nexus.log`, before the change; not re-measured after):**
