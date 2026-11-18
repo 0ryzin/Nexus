@@ -179,11 +179,12 @@ def appimage_webkit(appdir, triple):
     """WebKitGTK starts helper processes (WebKitWebProcess, WebKitNetworkProcess) from a path fixed
     when it was built (/usr/lib/<triple>/webkit2gtk-4.1). Inside the image they are at
     usr/lib/<triple>/webkit2gtk-4.1, and AppRun starts NEXUS with usr/ as its working folder, so
-    the path is rewritten to the same-length relative "././lib/<triple>/webkit2gtk-4.1"."""
+    the path is rewritten to the same-length relative "././/lib/<triple>/webkit2gtk-4.1"."""
     sysdir = f"/usr/lib/{triple}/webkit2gtk-4.1"
     dest = os.path.join(appdir, "usr", "lib", triple, "webkit2gtk-4.1")
     shutil.copytree(sysdir, dest, dirs_exist_ok=True)
-    old, new = sysdir.encode(), ("././" + sysdir[len("/usr/"):]).encode()
+    # "/usr/" (5 bytes) becomes "././/" (5 bytes, the same as "./")
+    old, new = sysdir.encode(), ("././/" + sysdir[len("/usr/"):]).encode()
     assert len(old) == len(new)
     libs = glob.glob(os.path.join(appdir, "usr", "lib", "libwebkit2gtk-4.1.so*")) + glob.glob(os.path.join(appdir, "usr", "lib", "libjavascriptcoregtk-4.1.so*"))
     patched = 0
