@@ -2293,6 +2293,12 @@ function settingRows(container, view, section, { mode, engine, save, filter }) {
         container.append(infoRow(st.label, resolutionOf(effValue(view, 'graphics.scale', engine)[0], effValue(view, 'system.docked', engine)[0]), st.help));
         continue;
       }
+      // a Switch 2 game always gets 12 GB from the engine (it switches before the game starts),
+      // whatever this says: show that instead of a choice that changes nothing for it
+      if (id === 'memory.layout' && /^04[0-9a-f]{14}$/i.test(view.game?.titleId || '')) {
+        container.append(infoRow(st.label, '12 GB (set by the engine)', 'Switch 2 games are made for 12 GB, so the engine always gives them 12 GB, whatever is chosen here or globally. This setting changes nothing for this game, and lowering it does not make the game faster.'));
+        continue;
+      }
       if (id === 'system.firmware') {
         container.append(infoRow(st.label, view.firmware || 'Not installed', view.firmware ? 'Installed in Settings › System files.' : 'Install your firmware in Settings › System files.'));
         continue;

@@ -39,21 +39,36 @@ internal resolution, background shader compilation, a frame cap, and keeping GPU
 the Hookshot report), possibly more in small interiors. 25-40 fps is not achievable on the Deck
 with current Switch 2 emulation; NEXUS does not claim it.
 
-## The 12 GB question
+## The 12 GB question (updated 18 Nov, 22:30, with the user's PC result)
 
-The emulated console's memory layout (*Emulated memory (DRAM)*, engine `memory_layout_mode`)
-sets how much memory the emulated system reports and maps. Switch 2 games size their heap from it
-and need 12 GB; the engine switches to 12 GB itself for a Switch 2 program, *if* its check of
-the game file before start-up recognises it (`FindSwitch2Program`). The user sees a black picture
-below 12 GB on both the Deck and a PC, so that check is missing their copy; the game process then
-still runs as Switch 2 (it reads its own metadata) but with the configured memory and the
-Switch 1 guest clock (19.2 MHz instead of 31.25 MHz), which also stretches frame waits 1.63x.
-Engine patch 0042 makes NEXUS's title id the fallback. Not confirmed with the game: the engine
-log line `Switch 2 program ... 12 GiB` or the patch's warning will show it.
+New evidence: on the user's PC the game now renders at **4 GB** and runs at the **same frame rate
+as at 12 GB**. In the NEXUS engine (`core.cpp`, `System::Load`) a Switch 2 program is always
+switched to the 12 GB layout (`memory_layout_mode` = 12 GB) before the kernel starts, whatever the
+setting says, when the pre-start check (`FindSwitch2Program`) recognises the game. Identical frame
+rates at "4" and "12" mean that recognition works for the user's copy: both runs used 12 GB.
+Therefore:
 
-12 GB is not "expensive" by itself: memory is reserved as address space and only pages the game
-touches use RAM. It is not forced on Switch 1 games.
+- **The DRAM setting was never the variable** for this game in NEXUS. 12 GB is the game's real
+  requirement (Switch 2 consoles have 12 GB; the game sizes its heap from it), and it is applied
+  automatically. Lowering it does not make the game faster or lighter. NEXUS now shows the row as
+  "12 GB (set by the engine)" for Switch 2 games.
+- Engine patch 0042 (title ID fallback) was written for the case where recognition fails; the PC
+  result shows it does not fail for this copy. It stays as a safety net (no change when the check
+  works).
+- The earlier black screen therefore came from something that differed between runs, not memory.
+  Candidates with evidence, in order: (1) first-run pipeline building on AMD: Lichii recorded the
+  intro freezing for 6-18 minutes on AMD while the driver optimises two compute shaders (closed
+  issue), and NEXUS builds the game's pipelines on the first run; the Deck's 4-core CPU makes this
+  much longer than on a PC; (2) AMD-specific rendering faults in this game: Lichii tracks AMD black
+  screens and device losses at the intro-to-3D handover (#871, open; #249, #503, #669 fixed in
+  builds before NEXUS's base 316); (3) the earliest test used an older emulator build ("when I first
+  started using emulators"), from before those fixes.
+- Why the Deck differs from the PC: AMD RDNA 2 graphics with SteamOS's Mesa RADV (the PC's GPU
+  vendor and driver differ), task/mesh draws on the compute fallback on RDNA 2 (the engine does
+  this on purpose: native mesh draws hang RDNA 2, `vulkan_device.cpp`), 4 Zen 2 cores, and 16 GB
+  shared with the GPU (the emulated 12 GB is reserved address space; only pages the game touches
+  use RAM, but Longshot's README warns that 16 GB systems may need swap for this game).
+- Without a Deck log the exact Deck cause stays unconfirmed. The engine log (`System/Engine/log/
+  eden_log.txt`) of a black-screen run would show a device loss (`Device loss occurred`), pipeline
+  building, or neither.
 
-Sources: lichiiemulator.com/compatibility-status, github.com/Syyrhc/Lichii-Ally/issues/4,
-fritchii.net, hookshotpc.com/hookshot, gamerbrowser.com (Fritchii v6), notebookcheck / XDA /
-Wccftech launch coverage (15-60 fps on desktop PCs).

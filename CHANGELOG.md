@@ -58,10 +58,11 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
   files are renamed `zz-release-bundle-…-not-a-download`.
 - Fixed: deleting a profile could hang NEXUS; Enter in the delete dialog cancelled instead of
   deleting; the name had to match in capitals ("Mins" now deletes "MiNS").
-- **Ocarina of Time black screen below 12 GB (suspected cause, engine patch 0042):** when the
-  engine does not recognise a Switch 2 game from its file before starting it, it ran it with the
-  configured memory and the Switch 1 clock. NEXUS now tells the engine the title it identified;
-  the engine log says when this was needed. Not confirmed with the game yet.
+- **Emulated memory (DRAM) for Switch 2 games** now shows "12 GB (set by the engine)" in the
+  game's settings: the engine always gives a Switch 2 game 12 GB when it recognises it, whatever
+  the setting, so the choice changed nothing (a PC run at "4 GB" and at "12 GB" gave the same
+  frame rate). Engine patch 0042 keeps NEXUS's title ID as a fallback for that recognition; the
+  user's PC shows it already works, so 0042 is a safety net, not the black-screen fix.
 - Controller fixes found by a new controller-only sweep of every Home shortcut and settings
   category at the Deck's 1280×800: Right on a settings category now goes into the panel (it went
   to the search box), and Down past a short panel's last row no longer jumps into the category list.
