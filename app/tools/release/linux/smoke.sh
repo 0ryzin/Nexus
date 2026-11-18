@@ -23,7 +23,8 @@ run() { # $1 = name, rest = env
   cp "$data/screen.png" "$out/$label-$name.png" 2>/dev/null || true
   if ! grep -qE "startup: (profile picker shown|home interactive)" "$data/Logs/nexus.log" 2>/dev/null; then
     echo "::error::$label/$name: the NEXUS interface did not start"
-    tail -40 "$data/stdout.log" 2>/dev/null; tail -40 "$data/Logs/nexus.log" 2>/dev/null
+    echo "--- first lines of the output"; grep -v '^\s*$' "$data/stdout.log" 2>/dev/null | grep -vE '^\s+(/|nexus/|runtime/)|^(r[0-9]+|lr|sp|pc|fault)\s' | head -40
+    echo "--- NEXUS log"; tail -25 "$data/Logs/nexus.log" 2>/dev/null
     return 1
   fi
   grep -E "startup: " "$data/Logs/nexus.log"
