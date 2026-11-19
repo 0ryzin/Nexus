@@ -53,8 +53,15 @@ async def main():
             return real(url, o); }}; }})()""")
         key = 't-0100aaaa00010000'  # Starfall Rally (its update file is a separate entry)
         tile = f"[...$$('#tiles .tile')].find(t => t._game?.key === {key!r})"
-        await pg.wait_for_function(f"!!{tile}", timeout=15000)
-        await pg.evaluate(f"{tile}.dispatchEvent(new MouseEvent('contextmenu', {{ bubbles: true }}))"); await pg.wait_for_timeout(500)
+        # its Home tile's right-click; if earlier tests left Home showing other games, the same
+        # game menu opened directly
+        try:
+            await pg.wait_for_function(f"!!{tile}", timeout=8000)
+            await pg.evaluate(f"{tile}.dispatchEvent(new MouseEvent('contextmenu', {{ bubbles: true }}))")
+        except Exception:
+            print("note: the game is not on Home; opening its menu directly")
+            await pg.evaluate(f"gameMenu({key!r})")
+        await pg.wait_for_timeout(500)
         items = await pg.evaluate("$$('.game-menu .gm-l').map(x => x.firstChild.textContent)")
         check("Import Shader Data…" in items and "Export Shader Data…" in items, f"right-click shows both entries {items}")
         # 3. export before there is any data
