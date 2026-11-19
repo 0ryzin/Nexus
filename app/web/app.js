@@ -2315,7 +2315,7 @@ function settingRows(container, view, section, { mode, engine, save, filter }) {
       // a Switch 2 game always gets 12 GB from the engine (it switches before the game starts),
       // whatever this says: show that instead of a choice that changes nothing for it
       if (id === 'memory.layout' && /^04[0-9a-f]{14}$/i.test(view.game?.titleId || '')) {
-        container.append(infoRow(st.label, '12 GB (set by the engine)', 'Switch 2 games are made for 12 GB, so the engine always gives them 12 GB, whatever is chosen here or globally. This setting changes nothing for this game, and lowering it does not make the game faster.'));
+        container.append(infoRow(st.label, '12 GB (required, set automatically)', 'Switch 2 consoles have 12 GB and their games size their memory from it, so the engine always gives Switch 2 games 12 GB; a smaller value is not offered because no game has been shown to run with less. It is reserved address space: only the memory the game actually uses takes RAM, so 12 GB here does not mean 12 GB of your RAM. A Steam Deck shows about 14 GB of its 16 GB because the rest is reserved for graphics and firmware. Switch 1 games keep the memory layout chosen here.'));
         continue;
       }
       if (id === 'system.firmware') {

@@ -19,6 +19,13 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
   other devices ask before deleting their copy. The dialog names the user and game, offers to
   delete the game's device save too, and old copies in the engine's own folder layout are removed.
   Backed up first; refused while that user is playing. Tested automatically; not yet on a Deck.
+- **Switch 2 movies (AV1) can be switched off** (Emulation settings › Advanced, also per game),
+  to tell whether Ocarina of Time's black screen on the Deck comes from movie decoding. The engine
+  log now records each movie's format and decode times (engine patch 0045).
+- **Memory message for Switch 2 games:** on a Steam Deck it explains that 12 GB is required and set
+  automatically, that it is not 12 GB of RAM, and why the Deck shows ~14 GB, once per game, instead
+  of a warning at every start. A real warning remains below 12 GB of RAM.
+- CI: an interface test that waited for ever on "Who's playing?" fixed; each test has a limit.
 
 ## 0.8.0 — in development (not released)
 

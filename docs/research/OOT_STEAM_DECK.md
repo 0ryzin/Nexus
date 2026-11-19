@@ -107,3 +107,20 @@ video path. What exactly fails needs the Deck's engine log.
 - Engine patch 0045 logs each decoder's first picture (size, pixel format) and the decode thread's
   average/longest decode time at frame 1, every 600 frames and at the end of each movie.
 - *Settings › Storage & data › Send this device's logs* on the Deck, then *Fetch* on the PC.
+
+## DRAM: is 12 GB mandatory, and why "14 GB" (19 Nov)
+
+- **Mandatory for Switch 2 games, yes.** The Switch 2 has 12 GB; the engine (`core.cpp`,
+  `System::Load`) gives every recognised Switch 2 program the 12 GB layout before the kernel starts.
+  The user's "4 GB" PC run was in fact a 12 GB run (same frame rate for that reason). No smaller
+  value is offered: running a Switch 2 game below 12 GB would need an engine change whose effect on
+  real games nobody has tested, and the brief allows a lower value only if it works.
+- **It is not 12 GB of RAM.** `common/host_memory.cpp` backs emulated memory with a memfd sized by
+  `ftruncate` (sparse) and maps it `MAP_NORESERVE`: pages take RAM only when the game touches them.
+- **"14 GB":** the warning printed `MemTotal`. A Steam Deck has 16 GB; the graphics carve-out
+  (UMA frame buffer, 1 GB by default, up to 4 GB in the BIOS) and firmware/kernel reservations are
+  not part of `MemTotal`, which leaves about 14.5 GB.
+- **0.8.1:** below 12 GB of visible RAM the launch warning stays (it can really run out). Between
+  12 and ~15.3 GB (a Deck) the message explains the above instead of warning, once per game. The
+  DRAM row reads "12 GB (required, set automatically)" with the explanation. Switch 1 games keep
+  their memory layout setting unchanged. Test: `TestSwitch2MemoryNote`.

@@ -1050,14 +1050,18 @@ func (e *Emulator) checkMemoryLayout(g *Game, s GlobalSettings) error {
 		}
 	}
 	gb, _ := strconv.Atoi(layout)
-	// Switch 2 programs always get the 12 GB layout from the engine. Like Lichii (#1478), warn on
-	// PCs with less than 16 GB of RAM - the game may run out of memory - but let it start.
+	// Switch 2 programs always get the 12 GB layout from the engine: the console has 12 GB and the
+	// games size their memory from it. The engine reserves those 12 GB as address space backed by
+	// a sparse memory file (host_memory.cpp: memfd + ftruncate, MAP_NORESERVE), so only what the
+	// game actually touches takes RAM. Warn only where that can really run out (docs/research/
+	// OOT_STEAM_DECK.md, "DRAM"), and say why a 16 GB device shows less.
 	if g != nil && isSwitch2Title(g.TitleID) {
-		if total := e.app.DetectHardware(false).Memory.TotalMB; total > 0 && total < 16*1024-768 {
-			e.app.Log.Printf("engine: Switch 2 game on a PC with %d MB of RAM", total)
-			e.app.Events.Emit("launch.warning", map[string]any{"message": fmt.Sprintf(
-				"%s is a Switch 2 game: it uses 12 GB of emulated memory, and this PC has %.0f GB of RAM. It may stop or close when memory runs out; close other programs first.",
-				g.Title, float64(total)/1024)})
+		hw := e.app.DetectHardware(false)
+		if msg := switch2MemoryNote(g.Title, hw); msg != "" {
+			e.app.Log.Printf("engine: Switch 2 game with %d MB of RAM: %s", hw.Memory.TotalMB, msg)
+			if hw.Memory.TotalMB < 12*1024 || e.firstMemoryNote(g.Key) {
+				e.app.Events.Emit("launch.warning", map[string]any{"message": msg})
+			}
 		}
 	}
 	if gb <= 4 || g != nil && isSwitch2Title(g.TitleID) {
@@ -1138,4 +1142,34 @@ func (e *Emulator) av1MoviesFor(g *Game) bool {
 		e.app.Log.Printf("engine: AV1 movies switched off for %s (setting)", g.Title)
 	}
 	return on
+}
+
+// switch2MemoryNote: what to tell a user starting a Switch 2 game on a device with less than
+// 16 GB of RAM visible (empty: nothing to say).
+func switch2MemoryNote(title string, hw Hardware) string {
+	total := hw.Memory.TotalMB
+	if total <= 0 || total >= 16*1024-768 {
+		return ""
+	}
+	gb := float64(total) / 1024
+	if total < 12*1024 {
+		return fmt.Sprintf("%s is a Switch 2 game. Switch 2 games are given the console's 12 GB of memory, and this device has %.1f GB of RAM: the game may close when it runs out. Close other programs first.", title, gb)
+	}
+	if isSteamDeckHW(hw) {
+		return fmt.Sprintf("%s is a Switch 2 game and gets the console's 12 GB of memory (required; NEXUS sets it). Your Steam Deck has 16 GB, of which the system shows %.1f GB: the rest is reserved for graphics and firmware. Only memory the game actually uses takes RAM, so this usually fits; if the game closes during play, close other programs.", title, gb)
+	}
+	return fmt.Sprintf("%s is a Switch 2 game and gets the console's 12 GB of memory (required; NEXUS sets it). This PC shows %.1f GB of RAM. Only memory the game actually uses takes RAM, so this usually fits; if the game closes during play, close other programs.", title, gb)
+}
+
+// firstMemoryNote: true the first time a game's memory note is shown on this device.
+func (e *Emulator) firstMemoryNote(key string) bool {
+	p := filepath.Join(e.app.Paths.System, "memory-notes.json")
+	seen := map[string]bool{}
+	_ = readJSONFile(p, &seen)
+	if seen[key] {
+		return false
+	}
+	seen[key] = true
+	_ = writeJSONAtomic(p, seen)
+	return true
 }
