@@ -112,6 +112,7 @@ type EngineRequest struct {
 	HomeKey     string                       `json:"homeKey"`
 	HomeButton  bool                         `json:"homeButton"`
 	HomePaddles []string                     `json:"homePaddles,omitempty"`
+	AV1Movies   bool                         `json:"av1Movies"` // engine patch 0045
 	// F11 / F12 by default ("" = off); keys used by the game controls go to the game
 	FullscreenKey string `json:"fullscreenKey"`
 	ScreenshotKey string `json:"screenshotKey"`

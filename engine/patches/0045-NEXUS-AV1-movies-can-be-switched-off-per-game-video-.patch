@@ -1,0 +1,188 @@
+From d12ccc65bda36ad672dcdf309f6f9ae5fd9c8959 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 19 Nov 2026 00:41:44 +0000
+Subject: [PATCH] NEXUS: AV1 movies can be switched off per game; video decode
+ timing in the log
+
+The request's av1Movies (default true) switches the Switch 2 video decoder's AV1 support off,
+as before patch 0044, to tell on one machine whether a game stops at an AV1 movie. The decode
+thread's frame log (frame 1, every 600, end of stream) now carries the average and longest
+decode time, and each decoder logs its first picture's size and pixel format.
+---
+ src/core/hle/service/nx2_gsv.h              | 13 +++++++++--
+ src/nexus_engine/nexus_engine.cpp           |  8 +++++++
+ src/video_core/host1x/nx2_video_decoder.cpp | 25 +++++++++++++++++++++
+ src/video_core/host1x/nx2_video_decoder.h   |  6 +++++
+ 4 files changed, 50 insertions(+), 2 deletions(-)
+
+diff --git a/src/core/hle/service/nx2_gsv.h b/src/core/hle/service/nx2_gsv.h
+index bf89bb7fc..7d3d1e1bb 100644
+--- a/src/core/hle/service/nx2_gsv.h
++++ b/src/core/hle/service/nx2_gsv.h
+@@ -3867,10 +3867,13 @@ private:
+                         (static_cast<s64>(frame.pts) - static_cast<s64>(m_stream_start->second));
+                     LOG_INFO(Service,
+                              "{} frame {} ({}x{}, pts {} us{}) in image {}, {} late dropped, "
+-                             "{} ms behind, client holds {} of {} images",
++                             "{} ms behind, client holds {} of {} images; decoding {} us "
++                             "average, {} us at most ({} inputs)",
+                              GetServiceName(), m_frames_out, width, height, frame.pts,
+                              frame.end ? ", end of stream" : "", image, m_frames_dropped,
+-                             behind_us / 1000, ClientHeldImages(), m_registered.size());
++                             behind_us / 1000, ClientHeldImages(), m_registered.size(),
++                             m_decode_calls ? m_decode_us_total / m_decode_calls : 0,
++                             m_decode_us_max, m_decode_calls);
+                 }
+                 if (frame.end) {
+                     m_stream_start.reset();
+@@ -3911,6 +3914,9 @@ private:
+                                        .count();
+             lk.lock();
+             m_decoded_frames += pictures.size();
++            ++m_decode_calls;
++            m_decode_us_total += static_cast<u64>(decode_us);
++            m_decode_us_max = (std::max)(m_decode_us_max, static_cast<u64>(decode_us));
+             if (Nx2VideoTraceEnabled()) {
+                 LOG_INFO(Service,
+                          "nx2:vdec trace decode syncpoint={} codec={} open={} pts={} eos={} "
+@@ -4134,6 +4140,9 @@ private:
+     u32 m_handed{}; ///< Output images handed out (registered or released) so far
+     u64 m_frames_out{};
+     u64 m_decoded_frames{};
++    u64 m_decode_calls{};    ///< NEXUS: decoder timing for the log (frame 1, every 600, end)
++    u64 m_decode_us_total{};
++    u64 m_decode_us_max{};
+     u64 m_frames_dropped{};
+     Nx2MovieClock m_clock;
+     u64 m_frame_interval{16667}; ///< us, from consecutive decoded frames
+diff --git a/src/nexus_engine/nexus_engine.cpp b/src/nexus_engine/nexus_engine.cpp
+index f4dc4453d..a80975baa 100644
+--- a/src/nexus_engine/nexus_engine.cpp
++++ b/src/nexus_engine/nexus_engine.cpp
+@@ -59,6 +59,7 @@
+ #include "network/network.h"
+ #include "nexus_engine.h"
+ #include "video_core/gpu.h"
++#include "video_core/host1x/nx2_video_decoder.h"
+ #include "video_core/nexus_shader_status.h"
+ #include "video_core/shader_warm/shader_warm_builder.h"
+ #include "video_core/rasterizer_interface.h"
+@@ -123,6 +124,8 @@ struct Request {
+     // NEXUS Home on a back button (Steam Deck L4/R4/L5/R5, Xbox Elite / DualSense Edge paddles),
+     // where SDL reports them: "l4" | "r4" | "l5" | "r5", several allowed; empty = none
+     std::vector<std::string> home_paddles;
++    // NEXUS 0.8.1: decode Switch 2 games' AV1 movies (off: as before the engine had AV1)
++    bool av1_movies{true};
+     // NEXUS 0.3: per-game save folders in the save directory (see savedata_factory.h)
+     std::map<u64, FileSys::NexusSaveFolder> save_folders;
+     // window and capture shortcuts (SDL scancode names; "" = off). Keys used by the game controls
+@@ -972,6 +975,10 @@ void RunSession(Request req) {
+ 
+         Service::AM::FrontendAppletParameters params{.applet_id = Service::AM::AppletId::Application};
+         Core::SetSwitch2ProgramHint(req.title_id);
++        Tegra::Host1x::SetNx2Av1Enabled(req.av1_movies);
++        if (!req.av1_movies) {
++            LOG_WARNING(Frontend, "NEXUS Engine: AV1 movies switched off for this game");
++        }
+         const auto result = system.Load(*window, req.game, params);
+         if (result != Core::SystemResultStatus::Success) {
+             const char* code = "load";
+@@ -1505,6 +1512,7 @@ NEXUS_API int32_t nexus_engine_start(const char* request_json) {
+                 }
+             }
+         }
++        req.av1_movies = j.value("av1Movies", true);
+         req.fullscreen_key = j.value("fullscreenKey", std::string{"F11"});
+         req.screenshot_key = j.value("screenshotKey", std::string{"Alt+F12"});
+         req.record_key = j.value("recordKey", std::string{"F12"});
+diff --git a/src/video_core/host1x/nx2_video_decoder.cpp b/src/video_core/host1x/nx2_video_decoder.cpp
+index 38fda3d57..0bfd9c642 100644
+--- a/src/video_core/host1x/nx2_video_decoder.cpp
++++ b/src/video_core/host1x/nx2_video_decoder.cpp
+@@ -2,6 +2,7 @@
+ // SPDX-License-Identifier: GPL-3.0-or-later
+ 
+ #include <array>
++#include <atomic>
+ #include <chrono>
+ #include <cstring>
+ #include <optional>
+@@ -20,6 +21,7 @@ extern "C" {
+ #endif
+ 
+ #include <libavutil/hwcontext.h>
++#include <libavutil/pixdesc.h>
+ #include <libswscale/swscale.h>
+ 
+ #if defined(__GNUC__) || defined(__clang__)
+@@ -29,6 +31,18 @@ extern "C" {
+ 
+ namespace Tegra::Host1x {
+ 
++namespace {
++std::atomic<bool> g_av1_enabled{true};
++} // namespace
++
++void SetNx2Av1Enabled(bool enabled) {
++    g_av1_enabled.store(enabled, std::memory_order_relaxed);
++}
++
++bool Nx2Av1Enabled() {
++    return g_av1_enabled.load(std::memory_order_relaxed);
++}
++
+ namespace {
+ 
+ std::optional<NvdecCommon::VideoCodec> CodecFromMime(std::string_view mime) {
+@@ -101,6 +115,7 @@ struct Nx2VideoDecoder::Impl {
+     /// lose theirs and take the earliest one instead.
+     std::multiset<u64> pending_pts;
+     std::vector<u8> packet; ///< FFmpeg reads up to AV_INPUT_BUFFER_PADDING_SIZE past the data
++    bool logged_first{};
+ 
+     ~Impl() {
+         sws_freeContext(scaler);
+@@ -123,6 +138,11 @@ struct Nx2VideoDecoder::Impl {
+                 pts = *pending_pts.begin();
+                 pending_pts.erase(pending_pts.begin());
+             }
++            if (!logged_first) {
++                logged_first = true;
++                LOG_INFO(HW_GPU, "nx2 video: \"{}\" first picture {}x{} {}", name, f->width,
++                         f->height, av_get_pix_fmt_name(static_cast<AVPixelFormat>(f->format)));
++            }
+             pictures.push_back({static_cast<u32>(f->width), static_cast<u32>(f->height), pts,
+                                 std::move(frame)});
+         }
+@@ -137,6 +157,11 @@ Nx2VideoDecoder::Nx2VideoDecoder(std::string_view mime) : impl{std::make_unique<
+         LOG_ERROR(HW_GPU, "nx2 video: no decoder for codec \"{}\"", mime);
+         return;
+     }
++    if (*codec == NvdecCommon::VideoCodec::AV1 && !Nx2Av1Enabled()) {
++        LOG_WARNING(HW_GPU, "nx2 video: AV1 movies are switched off in NEXUS: \"{}\" not decoded",
++                    mime);
++        return;
++    }
+     impl->decoder.emplace(*codec);
+     if (impl->decoder->GetCodec() == nullptr) {
+         LOG_ERROR(HW_GPU, "nx2 video: FFmpeg has no decoder for \"{}\"", mime);
+diff --git a/src/video_core/host1x/nx2_video_decoder.h b/src/video_core/host1x/nx2_video_decoder.h
+index 347b0e652..0156b05ee 100644
+--- a/src/video_core/host1x/nx2_video_decoder.h
++++ b/src/video_core/host1x/nx2_video_decoder.h
+@@ -32,6 +32,12 @@ enum class Nx2PictureFormat : u32 {
+     Bgra8,
+ };
+ 
++/// NEXUS: whether AV1 streams are decoded (default yes). Off, an AV1 stream gets no decoder, as
++/// before the engine had one: games then skip such movies (Ocarina of Time's title menu without
++/// its background). For diagnosing a game that stops at an AV1 movie on one machine.
++void SetNx2Av1Enabled(bool enabled);
++bool Nx2Av1Enabled();
++
+ /// Checks if stream data begins with an H.264 Annex-B start code or avcC/MP4 length-prefixed NALUs.
+ bool IsH264Stream(std::span<const u8> data);
+ 
+-- 
+2.43.0
+

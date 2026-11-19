@@ -72,3 +72,38 @@ Therefore:
   eden_log.txt`) of a black-screen run would show a device loss (`Device loss occurred`), pipeline
   building, or neither.
 
+
+## Complete black screen in 0.8.0 (19 Nov) — investigation, not yet solved
+
+**Report:** with 0.8.0 on the Deck, Ocarina of Time shows nothing at all (no intro, no menu, no
+background, no audio). The build before (CI run 44412179858, commit b0160e4) showed the menu
+without its background. No Deck log yet.
+
+**What changed between the two builds (complete list):** engine patch 0043 (L4/R4 Home: reads
+one SDL button event, cannot affect rendering), engine patch 0044 (AV1 through libdav1d: the
+intro and title movies are now *decoded* instead of skipped), and on the NEXUS side the Linux
+performance strip, Add to Steam, sounds, keys, diagnostics, artwork sync — none of which touch
+the engine's launch except the strip.
+
+**Ruled out, with evidence:**
+- The performance strip covering the screen: gamescope (source read, `steamcompmgr.cpp`) paints
+  `GAMESCOPE_EXTERNAL_OVERLAY` windows with `PaintWindowFlag::NoScale` and its own opacity, and
+  `GetPossibleFocusWindows` skips them, so the strip can neither be stretched over the game nor
+  take focus from the game window. It only exists when the performance monitor is on.
+- AV1 decoding too slow to show anything: measured here (2 server cores, AVX2) with libdav1d,
+  3840×2160 10-bit AV1: 30 fps with the engine's low-delay mode, 44 fps without; the conversion
+  to NV12 adds ~7 ms a frame. A Deck (4 cores/8 threads) should be in the same range: slow movies
+  would be late, not black. (Not measured on a Deck.)
+- dav1d with one frame of delay cannot hold a picture back for ever (dav1d decodes synchronously
+  when it has one frame context).
+
+**Most likely remaining cause:** the AV1 path itself (0044) — the only change on the game's
+video path. What exactly fails needs the Deck's engine log.
+
+**0.8.1 makes this decidable in one test:**
+- *Emulation settings › Advanced › Play Switch 2 movies (AV1)* (per game too). Off = exactly the
+  pre-0044 behaviour. If OoT's menu returns with it Off, AV1 is the cause; if it stays black,
+  it is not.
+- Engine patch 0045 logs each decoder's first picture (size, pixel format) and the decode thread's
+  average/longest decode time at frame 1, every 600 frames and at the end of each movie.
+- *Settings › Storage & data › Send this device's logs* on the Deck, then *Fetch* on the PC.

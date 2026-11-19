@@ -489,7 +489,7 @@ func (e *Emulator) Launch(g *Game, profileID string) error {
 	req := EngineRequest{Game: g.Path, DataDir: e.DataDir(), ShaderDir: e.sharedForEngine(), TitleID: g.TitleID, ConfigFile: cfg, Title: "NEXUS — " + g.Title,
 		Fullscreen: s.Emulator.Fullscreen, Volume: vol, OwnerWindow: e.app.UI.WindowHandle(),
 		Contents: e.extraContents(g), AutoMapController: e.inputProfileFor(g, pr) == "",
-		HomeKey: s.Emulator.HomeKey, HomeButton: s.Emulator.HomeButton, HomePaddles: s.Emulator.HomePaddles,
+		HomeKey: s.Emulator.HomeKey, HomeButton: s.Emulator.HomeButton, HomePaddles: s.Emulator.HomePaddles, AV1Movies: e.av1MoviesFor(g),
 		FullscreenKey: s.Emulator.FullscreenKey, ScreenshotKey: s.Emulator.ScreenshotKey, CaptureButton: s.Emulator.CaptureButton,
 		RecordKey:     recordKey(s),
 		ScreenshotDir: e.app.Media.ScreenshotsDir(), ScreenshotName: captureName(g),
@@ -1122,4 +1122,20 @@ func (e *Emulator) steamDeckFirstLaunch(g *Game) {
 	}
 	e.app.Log.Printf("optimiser: Steam Deck settings applied to %s (first start on this Deck)", g.Title)
 	e.app.Events.Emit("launch.warning", map[string]any{"message": "Steam Deck settings were applied to " + g.Title + " (handheld mode, about 810p, steady 30 fps). Game settings › Optimise for my device changes or restores them."})
+}
+
+// av1MoviesFor: whether the engine decodes the game's AV1 movies (setting adv.av1_movies, on
+// unless switched off for all games or this one).
+func (e *Emulator) av1MoviesFor(g *Game) bool {
+	v := e.app.Settings.Get().Engine["adv.av1_movies"]
+	if g != nil && e.app.Library != nil {
+		if gv, ok := gameNexusSettings(e.app.Library.GP.Get(g.Key))["adv.av1_movies"]; ok && gv != "" {
+			v = gv
+		}
+	}
+	on := v != "false"
+	if !on && g != nil {
+		e.app.Log.Printf("engine: AV1 movies switched off for %s (setting)", g.Title)
+	}
+	return on
 }

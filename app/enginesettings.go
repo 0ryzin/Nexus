@@ -71,6 +71,8 @@ var NexusSettings = []NSetting{
 	{ID: "graphics.anisotropy", Section: "graphics", Label: "Anisotropic filtering", Kind: "enum",
 		Choices: []EmuChoice{{"auto", "Automatic"}, {"default", "Game default"}, {"2", "2×"}, {"4", "4×"}, {"8", "8×"}, {"16", "16×"}}},
 	// Advanced graphics
+	{ID: "adv.av1_movies", Section: "advanced", Label: "Play Switch 2 movies (AV1)", Kind: "bool",
+		Help: "Switch 2 games' movies are AV1 video, which the engine decodes on the processor (Ocarina of Time's intro and the scene behind its title menu). Off: those movies are skipped, as in NEXUS 0.7 and earlier on Linux: the game goes on without them. Switch this off for one game if it stays on a black screen where a movie should play, and tell us; Switch 1 games are not affected."},
 	{ID: "adv.shader_cache", Section: "advanced", Label: "Disk shader cache", Kind: "bool", Help: "Keeps compiled shaders between sessions to reduce stutter."},
 	{ID: "adv.async_shaders", Section: "advanced", Label: "Compile shaders in the background while playing", Kind: "bool", Help: "On: a shader the game needs for the first time is compiled in the background and the game goes on (the new effect appears a moment later) instead of pausing until it is built. Off: the game waits for each new shader (short freezes, nothing drawn early). Shaders from earlier sessions and the game's files are prepared before play either way."},
 	{ID: "adv.shader_threads", Section: "advanced", Label: "Background compilation", Kind: "enum",
@@ -329,7 +331,7 @@ func EngineCaps() map[string]Support {
 			sup = Support{Note: s.Help}
 		case "controls.profile":
 			sup = Support{Available: true, PerGame: true}
-		case "graphics.fps_match_display": // applied by NEXUS when the session starts
+		case "graphics.fps_match_display", "adv.av1_movies": // applied by NEXUS when the session starts
 			sup = Support{Available: true, PerGame: true}
 		case "graphics.gpu": // NEXUS chooses the Vulkan device (gpu_select.go)
 			sup = Support{Available: true, PerGame: true, Choices: []string{gpuAuto, gpuIntegrated}}
