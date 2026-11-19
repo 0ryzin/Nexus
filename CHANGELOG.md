@@ -34,6 +34,10 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
   gone): import dumps of amiibo you own. Virtual amiibo made by earlier versions keep working and
   can be removed. When a game scans, the playing user's amiibo (and unassigned ones) are listed;
   other users' are one step away.
+- **Per-game frame rate (FPS unlock):** game settings › Frame Rate. Only real engine support is
+  offered: Ocarina of Time 30–240 with the built-in FPS Unlock (above 60 experimental), Mario
+  Kart World and Hyrule Warriors' own modes; other games show why not (a Switch 1 game needs a
+  frame-rate mod, which NEXUS never installs). Game default restores the original behaviour.
 - CI: an interface test that waited for ever on "Who's playing?" fixed; each test has a limit.
 
 ## 0.8.0 — in development (not released)

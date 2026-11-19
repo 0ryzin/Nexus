@@ -1071,3 +1071,8 @@ body.home-bg-color #wallpaper{background:var(--home-bg)!important}
 .mii-pic svg, .mii-preview svg { display: block; }
 .mii-edit-top { display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: center; }
 .mii-preview { background: var(--card, rgba(255,255,255,.06)); border-radius: 18px; padding: 10px; }
+
+.fps-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .8em; font-weight: 600; }
+.fps-badge.supported { background: #1f7a3d; color: #fff; }
+.fps-badge.experimental { background: #9a6a00; color: #fff; }
+.fps-badge.unavailable { background: #555; color: #fff; }

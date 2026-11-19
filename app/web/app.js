@@ -2411,13 +2411,13 @@ async function gameConfig(key, startSection = 'general') {
   const g = gameByKey(key); if (!g) return;
   let view;
   try { view = await api(`/api/games/${key}/settings`); } catch (e) { alertDlg('Could not load game settings', e.message); return; }
-  const withContent = v => { if (g.titleId && g.kind !== 'homebrew' && !v.sections.some(x => x.v === 'updates')) v.sections = [...v.sections, { v: 'updates', l: 'Game Updates' }, { v: 'mods', l: 'Mods' }]; return v; };
+  const withContent = v => { if (g.titleId && g.kind !== 'homebrew' && !v.sections.some(x => x.v === 'updates')) v.sections = [...v.sections, { v: 'fps', l: 'Frame Rate' }, { v: 'updates', l: 'Game Updates' }, { v: 'mods', l: 'Mods' }]; return v; };
   withContent(view);
   let section = startSection;
   // search within this game's settings (and "only this game's own settings")
   let query = '', onlyOwn = false;
   const own = st => view.overrides?.[st.id] !== undefined || (st.id === 'controls.profile' && !!view.inputProfile);
-  const searchable = () => view.sections.filter(x => !['general', 'updates', 'mods'].includes(x.v));
+  const searchable = () => view.sections.filter(x => !['general', 'updates', 'mods', 'fps'].includes(x.v));
   const matches = st => {
     if (onlyOwn && !own(st)) return false;
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
@@ -2530,6 +2530,7 @@ async function gameConfig(key, startSection = 'general') {
       } }));
       return;
     }
+    if (section === 'fps') { const cb = h('div'); body.append(cb); fpsPanel(cb, g, () => drawBody()); return; }
     if (section === 'updates' || section === 'mods') { const cb = h('div'); body.append(cb); gameContentPanel(cb, g, section, () => drawBody()); return; }
     if (!view.perGameOk) { body.append(h('p', { class: 'note warn' }, view.perGameReason)); return; }
     const note = { enhance: 'Applies only to this game. Frame generation suits games that already run at a steady frame rate.', graphics: 'Applies only to this game. “Use global” follows Settings › Graphics & emulation.', advanced: 'For advanced users. If a game misbehaves, use Restore defaults on the General page.',
@@ -5438,4 +5439,32 @@ async function renderRecordingSettings(p) {
     if (r?.path) save({ folder: r.path });
   } }), 'recording.folder'));
   if (rs.folder) p.append(rowButton('Use Media › Recordings again', { onClick: () => save({ folder: '' }) }));
+}
+
+// Frame Rate (fpsunlock.go): the game's own frame rate, only where the engine can change it
+// without changing the game's speed. Not frame generation.
+async function fpsPanel(box, g, redraw) {
+  let v;
+  try { v = await api(`/api/games/${encodeURIComponent(g.key)}/fps`); } catch (e) { box.append(h('p', { class: 'note warn' }, e.message)); return; }
+  const badge = st => h('span', { class: 'fps-badge ' + st }, { supported: 'Supported', experimental: 'Experimental', unavailable: 'Unavailable' }[st] || st);
+  box.append(h('h2', {}, 'Frame rate'), h('p', { class: 'fps-status' }, badge(v.status), ' ', v.summary));
+  box.append(h('p', { class: 'note' }, 'This sets how fast the game itself runs. It is not frame generation (Enhancements), which adds frames between the game\u2019s own.'));
+  if (v.requirement) {
+    box.append(h('p', { class: 'note warn' }, v.requirement));
+    if (v.fix === 'enable-builtin') box.append(rowButton('Switch on FPS Unlock (built-in)', { sub: 'A patch compiled into the NEXUS engine; it changes no files. You can switch it off again in Mods.', onClick: async () => {
+      try { await api(`/api/games/${encodeURIComponent(g.key)}/mods/toggle`, { body: { name: 'FPS Unlock (built-in)', on: true } }); redraw(); } catch (e) { alertDlg('Not changed', e.message); }
+    } }));
+  }
+  const usable = v.choices.filter(c => c.status !== 'unavailable');
+  if (usable.length > 1) {
+    box.append(rowChoice('Frame rate', usable.map(c => ({ v: c.value, l: c.label + (c.status === 'experimental' ? ' (experimental)' : '') })), v.current, async val => {
+      const c = usable.find(x => x.value === val);
+      if (c?.status === 'experimental' && !await confirmDlg(`${c.label}?`, `${c.note || 'Experimental.'}\n\nIf the game misbehaves, set Frame rate back to Game default.`, 'Use it')) { redraw(); return; }
+      try { await api(`/api/games/${encodeURIComponent(g.key)}/fps`, { body: { value: val } }); toast(val ? 'Frame rate saved for this game' : 'Back to the game\u2019s default', I.check); redraw(); } catch (e) { alertDlg('Not saved', e.message); }
+    }));
+    const cur = usable.find(c => c.value === v.current);
+    if (cur?.note) box.append(h('p', { class: 'note' }, cur.note));
+    box.append(h('p', { class: 'note' }, 'Applies the next time the game starts. Game default returns to the original behaviour.'));
+  }
+  if (v.warning) box.append(h('p', { class: 'note' }, v.warning));
 }

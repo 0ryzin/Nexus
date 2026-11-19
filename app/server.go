@@ -2045,6 +2045,24 @@ func (s *Server) routes() {
 		}
 		writeJSON(w, v)
 	})
+	m.HandleFunc("GET /api/games/{key}/fps", func(w http.ResponseWriter, r *http.Request) {
+		v, err := a.FPSView(r.PathValue("key"))
+		if err != nil {
+			writeErr(w, 404, err)
+			return
+		}
+		writeJSON(w, v)
+	})
+	m.HandleFunc("POST /api/games/{key}/fps", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ Value string }
+		_ = readBody(r, &b)
+		v, err := a.SetFPS(r.PathValue("key"), b.Value)
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, v)
+	})
 	m.HandleFunc("POST /api/games/{key}/mods/toggle", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
 			Name string

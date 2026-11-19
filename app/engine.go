@@ -313,6 +313,8 @@ func (e *Emulator) writeSessionConfig(g *Game, pr *Profile) (string, error) {
 			ini.SetSetting("Renderer", "nx2_frame_rate_limit", strconv.Itoa(int(clampF(float64(hz), 30, 240))))
 		}
 	}
+	// the game's own frame-rate choice (fpsunlock.go) wins over the limits above
+	e.applyFPS(ini, g)
 	// the graphics card (gpu_select.go): by default the fastest one, not whatever the Vulkan
 	// loader happens to list first
 	pref := firstNonEmpty(s.Engine["graphics.gpu"], gpuAuto)
