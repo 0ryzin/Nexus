@@ -62,6 +62,8 @@ async def main():
         check(first == key and "All Software" in last, f"the row: last played first ({first}), ends with All Software ({last!r})")
         await pg.evaluate("showLibrary()"); await pg.wait_for_timeout(600)
         check(await pg.evaluate("document.querySelectorAll('#lib-grid .lib-item').length") > 0, "the Library still lists the games")
+        # leave Home as the next tests expect it (classic, no favourites)
+        await pg.evaluate("homePatch({ layout: 'classic', favorites: [], folders: [], pages: [] })"); await pg.wait_for_timeout(600)
         await b.close()
     p.terminate()
     print("FAILED" if fails else "ALL PASSED")
