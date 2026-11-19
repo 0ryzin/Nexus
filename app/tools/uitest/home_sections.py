@@ -28,12 +28,24 @@ async def main():
         # launchGame waits for "Who is playing?", and an awaited evaluate never returned (CI hung
         # 31 minutes on 19 Nov)
         await pg.evaluate(f"void launchGame({key!r})")
-        # either the game starts, or "Who's playing?" comes first (answer it with the first user)
-        await pg.wait_for_function("(S.playing && S.playing.phase === 'playing') || (Nav.top()?.name === 'who-plays' && !!document.querySelector('.wp-user'))", timeout=30000)
-        if await pg.evaluate("Nav.top()?.name === 'who-plays'"):
-            await pg.evaluate("document.querySelector('.wp-user').click()")
-        await pg.wait_for_function("S.playing && S.playing.phase === 'playing'", timeout=30000)
-        check(True, "a game launches from Home")
+        # the game starts; on the way "Who's playing?" (first user) or a notice dialog (its main
+        # button) may come first; each step is printed so a CI failure shows where it stopped
+        started = False
+        for _ in range(120):
+            st = await pg.evaluate("({ phase: S.playing?.phase || '', layer: Nav.top()?.name || '', dialog: !!Nav.top()?.dialog, text: (document.querySelector('.dialog')?.innerText || '').slice(0, 160) })")
+            if st["phase"] == "playing":
+                started = True
+                break
+            if st["layer"] == "who-plays" and await pg.evaluate("!!document.querySelector('.wp-user')"):
+                print("step: who is playing -> first user")
+                await pg.evaluate("document.querySelector('.wp-user').click()")
+            elif st["dialog"]:
+                print("step: dialog:", st["text"].replace("\n", " / "))
+                await pg.evaluate("(document.querySelector('.dialog button.primary') || [...document.querySelectorAll('.dialog button')].pop())?.click()")
+            await pg.wait_for_timeout(500)
+        if not started:
+            print("state:", await pg.evaluate("JSON.stringify({ playing: S.playing, layer: Nav.top()?.name, screen: S.screen, profile: S.profile?.name })"))
+        check(started, "a game launches from Home")
         await pg.evaluate("api('/api/emulator/stop', { body: {} })"); await pg.wait_for_timeout(2500)
         await pg.evaluate("loadState().then(() => goHome())"); await pg.wait_for_timeout(1000)
         check(await pg.evaluate("S.recent.length > 0"), "recent games exist (the data is kept)")
