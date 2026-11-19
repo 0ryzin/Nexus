@@ -340,6 +340,12 @@ func (e *Emulator) writeSessionConfig(g *Game, pr *Profile) (string, error) {
 		}
 		abs, _ := filepath.Abs(dir)
 		ini.Set("Data%20Storage", "save_directory", iniPath(abs))
+		// the user's Miis, default first, into the engine's Mii database (mii.go)
+		if e.app.Miis != nil {
+			if err := e.app.Miis.PrepareForGame(pr.ID); err != nil {
+				e.app.Log.Printf("miis: not written for this game: %v", err)
+			}
+		}
 	}
 	return e.SessionPath(), ini.Save(e.SessionPath())
 }

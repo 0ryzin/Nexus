@@ -146,6 +146,7 @@ type App struct {
 	Link             *DeviceLink // experimental Device Linking; nil unless the feature is on
 	Compat           *CompatStore
 	Saves            *SaveOrganizer
+	Miis             *MiiStore // per-user Mii collections (mii.go)
 	Amiibo           *AmiiboStore
 	Account          *Account  // NEXUS Account and synchronisation (account.go)
 	SaveSync         *SaveSync // game saves through the account (savesync.go)
@@ -190,6 +191,7 @@ func NewAppWithPaths(p *Paths) (*App, error) {
 	a.Amiibo = NewAmiiboStore(a, filepath.Join(p.UserData, "Amiibo"))
 	a.Account = NewAccount(a)
 	a.SaveSync = NewSaveSync(a)
+	a.Miis = &MiiStore{app: a}
 	a.Media = NewMediaLibrary(a)
 	a.Recorder = NewRecorder(a)
 	a.Controllers = NewControllerStore(a)

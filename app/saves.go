@@ -991,7 +991,9 @@ func (o *SaveOrganizer) siblingDeviceFolder(profileID, tid string) string {
 func engineLayoutCopies(dir, tid string) []string {
 	base := filepath.Join(dir, "user", "save")
 	var out []string
-	match := func(name string) bool { return reTitleDir.MatchString(name) && strings.EqualFold(baseTitleOf(strings.ToUpper(name)), tid) }
+	match := func(name string) bool {
+		return reTitleDir.MatchString(name) && strings.EqualFold(baseTitleOf(strings.ToUpper(name)), tid)
+	}
 	users, _ := os.ReadDir(filepath.Join(base, "0000000000000000"))
 	for _, u := range users {
 		ts, _ := os.ReadDir(filepath.Join(base, "0000000000000000", u.Name()))

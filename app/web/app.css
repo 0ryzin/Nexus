@@ -1062,3 +1062,12 @@ body.home-bg-color #wallpaper{background:var(--home-bg)!important}
 #boot .oot-shine i{position:absolute;top:-10%;bottom:-10%;left:-30%;width:35%;opacity:0;background:linear-gradient(90deg,transparent,rgba(255,240,190,.75),transparent)}
 #boot .oot-white{inset:0;background:radial-gradient(circle at 50% 45%,#fff,#f3efe6)}
 #boot .oot-gold{inset:0;background:radial-gradient(circle at 50% 45%,#f6dc8a,#d4a942 45%,#8a6418)}
+
+/* Mii Creator (web/mii.js) */
+.mii-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 12px; margin: 10px 0; }
+.mii-card { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 6px; border-radius: 14px; background: var(--card, rgba(255,255,255,.06)); border: 2px solid transparent; color: inherit; font: inherit; cursor: pointer; }
+.mii-card.default { border-color: var(--accent); }
+.mii-card small { color: var(--accent); font-weight: 600; }
+.mii-pic svg, .mii-preview svg { display: block; }
+.mii-edit-top { display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: center; }
+.mii-preview { background: var(--card, rgba(255,255,255,.06)); border-radius: 18px; padding: 10px; }

@@ -2158,6 +2158,72 @@ func (s *Server) routes() {
 		}
 		writeJSON(w, true)
 	})
+	// Miis (mii.go): each user's own collection, written to the engine's Mii database at launch
+	m.HandleFunc("GET /api/profiles/{id}/miis", func(w http.ResponseWriter, r *http.Request) {
+		if err := a.Miis.checkUser(r.PathValue("id")); err != nil {
+			writeErr(w, 404, err)
+			return
+		}
+		writeJSON(w, map[string]any{"collection": a.Miis.Get(r.PathValue("id")), "limits": miiLimits(),
+			"base": map[string]any{"male": baseMiiFields(false), "female": baseMiiFields(true)}, "nameMax": miiNameMax, "max": miiMaxInDB,
+			"engineHasDatabase": fileExists(a.Miis.engineDBPath())})
+	})
+	m.HandleFunc("POST /api/profiles/{id}/miis", func(w http.ResponseWriter, r *http.Request) {
+		var b Mii
+		if err := readBody(r, &b); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		saved, err := a.Miis.Save(r.PathValue("id"), b)
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, saved)
+	})
+	m.HandleFunc("POST /api/profiles/{id}/miis/delete", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ ID string }
+		_ = readBody(r, &b)
+		if err := a.Miis.Delete(r.PathValue("id"), b.ID); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, true)
+	})
+	m.HandleFunc("POST /api/profiles/{id}/miis/default", func(w http.ResponseWriter, r *http.Request) {
+		var b struct{ ID string }
+		_ = readBody(r, &b)
+		if err := a.Miis.SetDefault(r.PathValue("id"), b.ID); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, true)
+	})
+	// import a MiiDatabase.dat: uploaded (body), or ?from=engine for the one the engine already has
+	m.HandleFunc("POST /api/profiles/{id}/miis/import", func(w http.ResponseWriter, r *http.Request) {
+		var data []byte
+		var err error
+		if r.URL.Query().Get("from") == "engine" {
+			data, err = os.ReadFile(a.Miis.engineDBPath())
+			if err != nil {
+				writeErr(w, 400, errors.New("The engine has no Mii database yet (no game has used Miis on this device)."))
+				return
+			}
+		} else {
+			defer r.Body.Close()
+			data, err = io.ReadAll(io.LimitReader(r.Body, miiDBSize+1))
+			if err != nil {
+				writeErr(w, 400, err)
+				return
+			}
+		}
+		added, skipped, err := a.Miis.Import(r.PathValue("id"), data)
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, map[string]int{"added": added, "skipped": skipped})
+	})
 	m.HandleFunc("POST /api/profiles/{id}/saves/delete", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
 			Folder     string

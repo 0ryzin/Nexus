@@ -1206,6 +1206,8 @@ function editProfile(id) {
     } }));
     body.append(h('h3', {}, 'NEXUS Account'));
     body.append(AccountUI.row());
+    body.append(h('h3', {}, 'Miis'));
+    body.append(rowButton('Miis…', { sub: 'Create and edit this user’s Miis. Games that use Miis get them when this user plays.', onClick: () => MiiUI.page(id) }));
     body.append(h('h3', {}, 'Save data'));
     body.append(rowButton('Save Data…', { sub: 'This user’s saves: view slots, import from a folder or ZIP, export, back up, restore or delete.', onClick: () => saveDataPage(id) }));
     body.append(h('h3', {}, ''));
