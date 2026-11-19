@@ -329,4 +329,13 @@ func TestTitleKeysNeverBreakProdKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	intact("prod.keys from its installed path")
+	// after a restart (a new NEXUS on the same data): both still recognised, nothing changed
+	app2, _ := testNewApp(t, app.Paths.Root)
+	st := app2.Sys.KeysStatus()
+	if !st.Valid || st.TitleKeys != 2 {
+		t.Fatalf("after restart: %+v", st)
+	}
+	if now, _ := os.ReadFile(app2.Sys.ProdKeys()); !bytes.Equal(now, installed) {
+		t.Fatal("prod.keys changed across a restart")
+	}
 }
