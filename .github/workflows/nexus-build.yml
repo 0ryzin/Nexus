@@ -23,7 +23,7 @@ jobs:
   app-tests:
     name: NEXUS tests (Linux, fast)
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: app
@@ -49,21 +49,21 @@ jobs:
           go build -o "$RUNNER_TEMP/nexus-ui" .
           mkdir -p "$RUNNER_TEMP/uifix" && touch "$RUNNER_TEMP/uifix/portable.txt"
           NEXUS_FIXTURE_ROOT="$RUNNER_TEMP/uifix" go test -count=1 -run 'TestMakeFixtures$' .
-          NEXUS_HARDWARE= python3 tools/uitest/controller_close.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
-          NEXUS_HARDWARE= python3 tools/uitest/shader_progress.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
+          NEXUS_HARDWARE= timeout 300 python3 tools/uitest/controller_close.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
+          NEXUS_HARDWARE= timeout 300 python3 tools/uitest/shader_progress.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
           node tools/uitest/eta_test.js
           node tools/uitest/pads_test.js
-          NEXUS_HARDWARE= python3 tools/uitest/home_layouts.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
-          NEXUS_HARDWARE= python3 tools/uitest/settings_search.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
-          NEXUS_HARDWARE= python3 tools/uitest/resets_osk.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
-          NEXUS_HARDWARE= python3 tools/uitest/oot_menu.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
-          NEXUS_HARDWARE= python3 tools/uitest/controller_sweep.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
-          NEXUS_HARDWARE= python3 tools/uitest/profile_delete.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
-          NEXUS_HARDWARE= python3 tools/uitest/home_sections.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
+          NEXUS_HARDWARE= timeout 300 python3 tools/uitest/home_layouts.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
+          NEXUS_HARDWARE= timeout 300 python3 tools/uitest/settings_search.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
+          NEXUS_HARDWARE= timeout 300 python3 tools/uitest/resets_osk.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
+          NEXUS_HARDWARE= timeout 300 python3 tools/uitest/oot_menu.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
+          NEXUS_HARDWARE= timeout 300 python3 tools/uitest/controller_sweep.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
+          NEXUS_HARDWARE= timeout 300 python3 tools/uitest/profile_delete.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
+          NEXUS_HARDWARE= timeout 300 python3 tools/uitest/home_sections.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
           mkdir -p "$RUNNER_TEMP/shfix" && NEXUS_SHADER_FIXTURE="$RUNNER_TEMP/shfix" go test -count=1 -run 'TestMakeShaderFixture$' .
-          NEXUS_HARDWARE= python3 tools/uitest/shader_data.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix" "$RUNNER_TEMP/shfix"
+          NEXUS_HARDWARE= timeout 300 python3 tools/uitest/shader_data.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix" "$RUNNER_TEMP/shfix"
           # last: it leaves a menu controller and users chosen in the shared test data
-          NEXUS_HARDWARE= python3 tools/uitest/controller_prompts.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
+          NEXUS_HARDWARE= timeout 300 python3 tools/uitest/controller_prompts.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
 
   windows:
     name: Engine + NEXUS (Windows x64)

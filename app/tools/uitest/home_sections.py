@@ -24,7 +24,13 @@ async def main():
         pg = await b.new_page(viewport={"width": 1280, "height": 800})
         await H.enter(pg)
         key = await pg.evaluate("S.games.find(isPlayable).key")
-        await pg.evaluate(f"launchGame({key!r})")
+        # not awaited: with several users (profile_delete.py runs before this and leaves two)
+        # launchGame waits for "Who is playing?", and an awaited evaluate never returned (CI hung
+        # 31 minutes on 19 Nov)
+        await pg.evaluate(f"void launchGame({key!r})")
+        await pg.wait_for_timeout(800)
+        if await pg.evaluate("Nav.top()?.name === 'who-plays'"):
+            await pg.evaluate("document.querySelector('.wp-user').click()")
         await pg.wait_for_function("S.playing && S.playing.phase === 'playing'", timeout=30000)
         check(True, "a game launches from Home")
         await pg.evaluate("api('/api/emulator/stop', { body: {} })"); await pg.wait_for_timeout(2500)

@@ -65,6 +65,8 @@ def start():
         try:
             api("/api/state"); break
         except Exception:
+            if p.poll() is not None or time.perf_counter() - t0 > 60:
+                raise SystemExit(f"NEXUS did not start (exit code {p.poll()})")
             time.sleep(0.005)
     ready = (time.perf_counter() - t0) * 1000
     api("/api/settings", {"startup": {"enabled": False}})
