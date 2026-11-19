@@ -28,7 +28,8 @@ async def main():
         # launchGame waits for "Who is playing?", and an awaited evaluate never returned (CI hung
         # 31 minutes on 19 Nov)
         await pg.evaluate(f"void launchGame({key!r})")
-        await pg.wait_for_timeout(800)
+        # either the game starts, or "Who's playing?" comes first (answer it with the first user)
+        await pg.wait_for_function("(S.playing && S.playing.phase === 'playing') || (Nav.top()?.name === 'who-plays' && !!document.querySelector('.wp-user'))", timeout=30000)
         if await pg.evaluate("Nav.top()?.name === 'who-plays'"):
             await pg.evaluate("document.querySelector('.wp-user').click()")
         await pg.wait_for_function("S.playing && S.playing.phase === 'playing'", timeout=30000)
