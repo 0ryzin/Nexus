@@ -28,7 +28,10 @@ package main
 //	L missing (never had it here)   received
 //	R missing                       sent
 //
-// Nothing is ever deleted by synchronisation, on this device or in the account. Saves of a user
+// A save the user deletes is recorded (MarkDeleted) and sent as a deletion record: the account's
+// copy is then never reinstalled. Another device asks before deleting its own copy (a conflict
+// with Remote.Deleted); a save played there after the deletion is simply sent again. Apart from
+// that, nothing is ever deleted by synchronisation, on this device or in the account. Saves of a user
 // whose game is running are left alone until it closes. Saves larger than maxSyncSave are not
 // synchronised (shown as such). Sync runs with the account's own synchronisation (after a game
 // closes, on start, on wake, Synchronise now), so offline changes simply wait for the next one.
@@ -76,6 +79,9 @@ type SaveMeta struct {
 	DeviceID   string `json:"deviceId"`
 	DeviceName string `json:"deviceName"`
 	Updated    int64  `json:"updated"`
+	// Deleted: the user deleted this save on DeviceName (a deletion record: no Gist, no Raw).
+	// Other devices never reinstall it, and ask before deleting their own copy.
+	Deleted bool `json:"deleted,omitempty"`
 }
 
 type saveBase struct {
@@ -99,6 +105,9 @@ type saveSyncState struct {
 	Conflicts map[string]SaveSyncConflict `json:"conflicts,omitempty"`
 	// Resolve: the user's choice for a conflict, carried out at the next run ("local"|"remote")
 	Resolve map[string]string `json:"resolve,omitempty"`
+	// Deleted: saves the user deleted on this device whose deletion the account does not know
+	// yet (key -> when). Until it does, the account's copy is never installed again here.
+	Deleted map[string]int64 `json:"deleted,omitempty"`
 }
 
 // SaveSyncStatus is shown in Settings › NEXUS Account › Game saves.
@@ -136,6 +145,9 @@ func NewSaveSync(a *App) *SaveSync {
 	}
 	if s.st.Resolve == nil {
 		s.st.Resolve = map[string]string{}
+	}
+	if s.st.Deleted == nil {
+		s.st.Deleted = map[string]int64{}
 	}
 	s.status.State = "idle"
 	return s
@@ -462,7 +474,7 @@ func (s *SaveSync) Run() (SaveSyncStatus, error) {
 
 	s.mu.Lock()
 	if s.st.Account != account { // another account: what this device knew does not apply
-		s.st = saveSyncState{Account: account, Base: map[string]saveBase{}, Conflicts: map[string]SaveSyncConflict{}, Resolve: map[string]string{}}
+		s.st = saveSyncState{Account: account, Base: map[string]saveBase{}, Conflicts: map[string]SaveSyncConflict{}, Resolve: map[string]string{}, Deleted: map[string]int64{}}
 		s.saveLocked()
 	}
 	s.mu.Unlock()
@@ -501,6 +513,7 @@ func (s *SaveSync) Run() (SaveSyncStatus, error) {
 		s.mu.Lock()
 		b, haveB := s.st.Base[key]
 		choice := s.st.Resolve[key]
+		_, deletedHere := s.st.Deleted[key]
 		s.mu.Unlock()
 		user, tid, device, valid := parseSaveKey(key)
 		if !valid {
@@ -528,7 +541,37 @@ func (s *SaveSync) Run() (SaveSyncStatus, error) {
 			}
 			changes[key], expect[key] = m, base
 		}
+		if deletedHere && haveL { // the game made a new save after the deletion: an ordinary save again
+			s.forgetDeleted(key)
+			deletedHere = false
+		}
 		switch {
+		case deletedHere: // deleted here: tell the account (never install its copy again)
+			if !haveR || r.Deleted {
+				s.forgetDeleted(key)
+				s.agree(key, "", r.Version)
+				continue
+			}
+			changes[key], expect[key] = SaveMeta{Version: r.Version + 1, TitleID: r.TitleID, Title: r.Title, User: r.User, UserName: r.UserName,
+				Device: r.Device, Folder: r.Folder, DeviceID: devID, DeviceName: devName, Updated: nowUnix(), Deleted: true}, r.Version
+		case haveR && r.Deleted && !haveL: // deleted on another device, and not here either
+			s.agree(key, "", r.Version)
+		case haveR && r.Deleted && choice == "remote": // the user agreed: delete it here too
+			if err := s.app.Saves.deleteForSync(localID, l.Folder); err != nil {
+				a.Log.Printf("save sync: deleting %s: %v", key, err)
+				continue
+			}
+			s.agree(key, "", r.Version)
+		case haveR && r.Deleted && (choice == "local" || (haveB && b.Version == r.Version)):
+			upload(r.Version) // kept, or a new save after this device took in the deletion
+		case haveR && r.Deleted: // never deleted here without asking
+			s.mu.Lock()
+			if _, known := s.st.Conflicts[key]; !known {
+				a.Log.Printf("save sync: %s was deleted on %s; asking before deleting it here", key, r.DeviceName)
+			}
+			s.st.Conflicts[key] = SaveSyncConflict{Key: key, Title: firstNonEmpty(s.titleOf(tid), r.Title, tid), UserName: l.UserName, LocalModified: l.Modified, Remote: r, Found: nowUnix()}
+			s.saveLocked()
+			s.mu.Unlock()
 		case choice == "local" && haveL:
 			upload(r.Version)
 		case choice == "remote" && haveR:
@@ -582,6 +625,10 @@ func (s *SaveSync) Run() (SaveSyncStatus, error) {
 			if !lostSet[k] {
 				sent++
 				s.agree(k, m.Hash, m.Version)
+				if m.Deleted {
+					s.forgetDeleted(k)
+					a.Log.Printf("save sync: %s deleted in the account too", k)
+				}
 			}
 		}
 	}
@@ -592,6 +639,7 @@ func (s *SaveSync) Run() (SaveSyncStatus, error) {
 			pending++
 		}
 	}
+	pending += len(s.st.Deleted)
 	s.mu.Unlock()
 	msg := "Game saves are up to date."
 	if sent+received > 0 {
@@ -621,6 +669,40 @@ func (s *SaveSync) agree(key, hash string, version int64) {
 	delete(s.st.Resolve, key)
 	s.saveLocked()
 	s.mu.Unlock()
+}
+
+func (s *SaveSync) forgetDeleted(key string) {
+	s.mu.Lock()
+	delete(s.st.Deleted, key)
+	s.saveLocked()
+	s.mu.Unlock()
+}
+
+// MarkDeleted records that the user deleted a save on this device (profile + its game folder),
+// so synchronisation sends the deletion instead of bringing the account's copy back.
+func (s *SaveSync) MarkDeleted(profileID, folder string) {
+	m := reGameFolder.FindStringSubmatch(folder)
+	if m == nil {
+		return // other copies are not synchronised
+	}
+	user := profileID
+	if ac := s.app.Account; ac != nil {
+		ac.mu.Lock()
+		for acc, local := range ac.st.ProfileMap {
+			if local == profileID {
+				user = acc
+			}
+		}
+		ac.mu.Unlock()
+	}
+	key := saveKey(user, m[1], m[3] != "")
+	s.mu.Lock()
+	s.st.Deleted[key] = nowUnix()
+	delete(s.st.Conflicts, key)
+	delete(s.st.Resolve, key)
+	s.saveLocked()
+	s.mu.Unlock()
+	s.app.Log.Printf("save sync: %s deleted on this device; the account copy will not be reinstalled", key)
 }
 
 func (s *SaveSync) setStatus(fn func(*SaveSyncStatus)) {

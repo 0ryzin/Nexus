@@ -3398,6 +3398,15 @@ const AccountUI = {
       for (const c of ss.conflicts) {
         const here = c.localModified ? new Date(c.localModified * 1000).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '?';
         const there = c.remote.modified ? new Date(c.remote.modified * 1000).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '?';
+        if (c.remote.deleted) {
+          box.append(rowButton(`${c.title} \u2014 ${c.userName}`, { icon: I.warn, sub: `Deleted on ${c.remote.deviceName}. This device still has it (saved ${here}); nothing was deleted here.`, onClick: async () => {
+            const v = await dialog({ title: `${c.title}: delete here too?`, text: `${c.userName}\u2019s save for ${c.title} was deleted on ${c.remote.deviceName}.\nThis device still has a copy, last saved ${here}.\n\nDeleting makes a backup first (Save Data \u203a Restore\u2026). Keeping sends this device\u2019s save to your account again.`,
+              buttons: [{ label: 'Decide later', value: '' }, { label: 'Keep this device\u2019s', value: 'local' }, { label: 'Delete here too', value: 'remote', danger: true }], cancelValue: '' });
+            if (!v) return;
+            try { draw(await api('/api/saves/sync/resolve', { body: { key: c.key, keep: v } })); toast(v === 'remote' ? 'Deleted (a backup was kept)' : 'Save kept', I.check); } catch (e) { alertDlg('Game saves', e.message); }
+          } }));
+          continue;
+        }
         box.append(rowButton(`${c.title} \u2014 ${c.userName}`, { icon: I.warn, sub: `Changed on this device (saved ${here}) and on ${c.remote.deviceName} (saved ${there}). Neither was overwritten.`, onClick: async () => {
           const v = await dialog({ title: `${c.title}: which save?`, text: `This device: last saved ${here}.\n${c.remote.deviceName}: last saved ${there}.\n\nThe save you do not keep is backed up first (Save Data \u203a Backups) on this device; GitHub also keeps every earlier version.`,
             buttons: [{ label: 'Decide later', value: '' }, { label: `Use ${c.remote.deviceName}\u2019s`, value: 'remote' }, { label: 'Keep this device\u2019s', value: 'local', primary: true }], cancelValue: '' });
@@ -4812,9 +4821,19 @@ async function saveDataPage(profileId) {
       add('Restore…', () => restoreDlg(pid, g, rebuild));
       add('Open', () => api(`/api/profiles/${pid}/saves/open`, { body: { folder: g.folder } }).catch(e => toast(e.message, I.warn)));
       add('Delete…', async () => {
-        if (await confirmDlg(`Delete ${g.title}'s save?`, `${pl.name}'s save for ${g.title} (${g.items.length} item${g.items.length === 1 ? '' : 's'}, ${fmtBytes(g.bytes)}) is deleted. A backup is made first, so it can be restored from Restore….`, 'Delete', true)) {
-          try { await api(`/api/profiles/${pid}/saves/delete`, { body: { folder: g.folder, confirm: true } }); toast('Deleted (a backup was kept)', I.check); rebuild(); } catch (e) { alertDlg('Could not delete', e.message); }
+        const dev = g.kind === 'account' ? pl.games.find(x => x.kind === 'device' && x.titleId === g.titleId) : null;
+        const synced = `\n\nIf you synchronise saves with a NEXUS account, the account is told too, so it does not bring the save back; your other devices ask before deleting their copy.`;
+        const what = `${pl.name}\u2019s save for ${g.title}${g.kind === 'device' ? ' (device save)' : ''}: ${g.items.length} item${g.items.length === 1 ? '' : 's'}, ${fmtBytes(g.bytes)}. Other users\u2019 saves are not touched.`;
+        const tail = `\n\nA backup is made first, so it can be restored from Restore\u2026.${synced}`;
+        let v;
+        if (dev) {
+          v = await dialog({ title: `Delete ${g.title}\u2019s save?`, text: `${what}\n\nThis game also has a device save (${fmtBytes(dev.bytes)}). Some games keep progress there, so the game may still offer Continue unless it is deleted too.${tail}`,
+            buttons: [{ label: 'Cancel', value: null }, { label: 'Delete this save only', value: 'one', danger: true }, { label: 'Delete both', value: 'both', danger: true }], cancelValue: null });
+        } else {
+          v = await confirmDlg(`Delete ${g.title}\u2019s save?`, what + tail, 'Delete', true) ? 'one' : null;
         }
+        if (!v) return;
+        try { await api(`/api/profiles/${pid}/saves/delete`, { body: { folder: g.folder, confirm: true, withDevice: v === 'both' } }); toast('Deleted (a backup was kept)', I.check); rebuild(); } catch (e) { alertDlg('Could not delete', e.message); }
       }, 'danger');
       card.append(btns);
       body.append(card);

@@ -2160,15 +2160,16 @@ func (s *Server) routes() {
 	})
 	m.HandleFunc("POST /api/profiles/{id}/saves/delete", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
-			Folder  string
-			Confirm bool
+			Folder     string
+			Confirm    bool
+			WithDevice bool `json:"withDevice"`
 		}
 		_ = readBody(r, &b)
 		if !b.Confirm {
 			writeErr(w, 400, errors.New("Deleting a save needs confirmation."))
 			return
 		}
-		bk, err := a.Saves.Delete(r.PathValue("id"), b.Folder)
+		bk, err := a.Saves.DeleteSave(r.PathValue("id"), b.Folder, b.WithDevice)
 		if err != nil {
 			writeErr(w, 400, err)
 			return

@@ -12,6 +12,14 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
 - Ocarina of Time stuck loading: investigated (see docs/COMPATIBILITY.md); not reproduced, not yet fixed.
 - Knowledge base: CLAUDE.md, docs/DEVELOPMENT_NOTES.md, COMPATIBILITY.md, REGRESSION_HISTORY.md, research/LICHII.md, research/FRITCHII.md, benchmark method in PERFORMANCE.md.
 
+## 0.8.1 — in development (not released)
+
+- **Deleting a save really deletes it.** Synchronisation used to reinstall the account's copy
+  of a deleted save, so games still offered Continue. The deletion now reaches the account;
+  other devices ask before deleting their copy. The dialog names the user and game, offers to
+  delete the game's device save too, and old copies in the engine's own folder layout are removed.
+  Backed up first; refused while that user is playing. Tested automatically; not yet on a Deck.
+
 ## 0.8.0 — in development (not released)
 
 - **Linux and Steam Deck (built and tested by CI, not released):** one AMD64 build for every

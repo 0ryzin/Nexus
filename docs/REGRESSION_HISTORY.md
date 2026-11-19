@@ -3,6 +3,33 @@
 Each entry: problem · diagnosis · cause · files · fix · test · how to recognise it again.
 Newest first.
 
+## 0.8.1 (in development)
+
+### A deleted save came back: the game still offered Continue (Steam Deck report, 19 Nov)
+- **Problem:** *Settings › Users › profile › Save Data › Delete* showed the save as deleted, but
+  Final Fantasy Resonance still offered Continue.
+- **Cause (code path, reproduced in a test):** Delete removed `Saves/<user>/<game>` (correct: the
+  engine reads exactly that folder, `save_directory` + patch 0019 folder names). But save sync's
+  three-way decision treated "not on this device, in the account" as *a save this device never
+  had* and installed the account's copy again at the next sync (start, wake, game closed, every
+  15 min). Two smaller gaps: a stale copy in the engine's own layout inside the user's folder
+  (`user/save/0000…/<user>/<title>`) was moved back by Tidy; and the game's *device save* (a
+  separate entry) stayed, which some games read for Continue.
+- **Fix:** `SaveSync.MarkDeleted` records the deletion; the next sync writes a deletion record to
+  the account (`deleted: true`, no blob URL) and never installs that save here again. Other
+  devices do not delete their copy silently: they ask (Delete here too / Keep this device's). A
+  new save made after the deletion synchronises normally. `SaveOrganizer.DeleteSave` also deletes
+  the engine-layout copies of that game in that user's folder, and, when chosen in the dialog, the
+  device save. Everything is backed up first. Refused while that user is playing, with the reason.
+  Other users' saves are never touched. Older NEXUS versions cannot install a deletion record
+  (no URL), so they do not resurrect it either; if they *play* it, they send it again.
+- **Files:** `saves.go`, `savesync.go`, `server.go`, `web/app.js`.
+- **Test:** `TestSaveDeleteStaysDeleted` (Deck deletes Tom's save + device save + engine copy;
+  two syncs and a listing later it is still gone; Ann's untouched; the account has two deletion
+  records; the PC asks, then deletes after agreeing; a new game afterwards syncs normally),
+  `TestSaveDeleteOtherCopyNotSynced`. Not yet tested on the Deck with the real game.
+- **Recognise it:** a log line `save sync: … 1 save(s) received` right after `saves: deleted …`.
+
 ## 0.8.0 (in development)
 
 ### Ocarina of Time title screen without its background on the Steam Deck (18 Nov)

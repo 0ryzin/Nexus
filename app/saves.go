@@ -881,24 +881,154 @@ func swapDir(stage, dst string) error {
 
 // Delete removes one game's save after backing it up.
 func (o *SaveOrganizer) Delete(profileID, folder string) (SaveBackup, error) {
+	return o.DeleteSave(profileID, folder, false)
+}
+
+// DeleteSave deletes one user's save of a game: the folder, any copy of the same game the engine
+// left in its own layout inside this user's save folder (which Tidy would otherwise move back),
+// and with withDevice the game's device save too. Everything is backed up first. The deletion is
+// recorded for save synchronisation so the account's copy is not reinstalled. Only this user's
+// folder is touched. Never while this user is playing.
+func (o *SaveOrganizer) DeleteSave(profileID, folder string, withDevice bool) (SaveBackup, error) {
 	if o.busy(profileID) {
-		return SaveBackup{}, errSavesBusy
+		return SaveBackup{}, errSaveDeleteBusy
 	}
 	p, err := o.folderFor(profileID, folder)
 	if err != nil {
 		return SaveBackup{}, err
 	}
-	b, err := o.Backup(profileID, folder, "before-delete")
+	folders := []string{folder}
+	if m := reGameFolder.FindStringSubmatch(folder); m != nil && withDevice && m[3] == "" {
+		if dev := o.siblingDeviceFolder(profileID, m[1]); dev != "" {
+			folders = append(folders, dev)
+		}
+	}
+	var first SaveBackup
+	for i, f := range folders {
+		b, err := o.Backup(profileID, f, "before-delete")
+		if err != nil {
+			return first, err
+		}
+		if i == 0 {
+			first = b
+		}
+	}
+	o.mu.Lock()
+	var stale []string
+	if m := reGameFolder.FindStringSubmatch(folder); m != nil {
+		stale = engineLayoutCopies(o.ProfileDir(profileID), strings.ToUpper(m[1]))
+	}
+	for _, f := range folders {
+		fp := filepath.Join(o.ProfileDir(profileID), f)
+		if err := os.RemoveAll(fp); err != nil {
+			o.mu.Unlock()
+			return first, err
+		}
+		o.app.Log.Printf("saves: deleted %s (backup made first)", fp)
+	}
+	for _, sp := range stale { // already in the backup's folder? no: back up under its own name
+		if hasSaveData(sp) {
+			if err := o.backupPath(profileID, sp, "before-delete"); err != nil {
+				o.app.Log.Printf("saves: could not back up %s: %v (kept)", sp, err)
+				continue
+			}
+		}
+		if err := os.RemoveAll(sp); err == nil {
+			o.app.Log.Printf("saves: deleted the engine-layout copy %s", sp)
+		}
+	}
+	o.mu.Unlock()
+	_ = p
+	if o.app.SaveSync != nil {
+		for _, f := range folders {
+			o.app.SaveSync.MarkDeleted(profileID, f)
+		}
+	}
+	if o.app.Account != nil {
+		o.app.Account.Kick()
+	}
+	return first, nil
+}
+
+var errSaveDeleteBusy = errors.New("This user is playing right now. Close the game first: a running game keeps its save open and would write it again.")
+
+// deleteForSync deletes a save after the user agreed to a deletion made on another device
+// (backed up first; not recorded as a new deletion).
+func (o *SaveOrganizer) deleteForSync(profileID, folder string) error {
+	if o.busy(profileID) {
+		return errSavesBusy
+	}
+	p, err := o.folderFor(profileID, folder)
 	if err != nil {
-		return SaveBackup{}, err
+		return err
+	}
+	if _, err := o.Backup(profileID, folder, "before-delete"); err != nil {
+		return err
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if err := os.RemoveAll(p); err != nil {
-		return b, err
+		return err
 	}
-	o.app.Log.Printf("saves: deleted %s (backup %s)", p, b.File)
-	return b, nil
+	o.app.Log.Printf("saves: deleted %s (deleted on another device; backup made first)", p)
+	return nil
+}
+
+// siblingDeviceFolder: the game's device-save folder in this user's save folder, if any.
+func (o *SaveOrganizer) siblingDeviceFolder(profileID, tid string) string {
+	entries, _ := os.ReadDir(o.ProfileDir(profileID))
+	for _, e := range entries {
+		if m := reGameFolder.FindStringSubmatch(e.Name()); e.IsDir() && m != nil && m[3] != "" && strings.EqualFold(m[1], tid) {
+			return e.Name()
+		}
+	}
+	return ""
+}
+
+// engineLayoutCopies: folders of the game (base title ID) in the engine's own save layout inside
+// a user's save folder (user/save/0000000000000000/<user>/<title>, account/<uuid>/<title>,
+// device/<title>).
+func engineLayoutCopies(dir, tid string) []string {
+	base := filepath.Join(dir, "user", "save")
+	var out []string
+	match := func(name string) bool { return reTitleDir.MatchString(name) && strings.EqualFold(baseTitleOf(strings.ToUpper(name)), tid) }
+	users, _ := os.ReadDir(filepath.Join(base, "0000000000000000"))
+	for _, u := range users {
+		ts, _ := os.ReadDir(filepath.Join(base, "0000000000000000", u.Name()))
+		for _, t := range ts {
+			if t.IsDir() && match(t.Name()) {
+				out = append(out, filepath.Join(base, "0000000000000000", u.Name(), t.Name()))
+			}
+		}
+	}
+	accts, _ := os.ReadDir(filepath.Join(base, "account"))
+	for _, a := range accts {
+		ts, _ := os.ReadDir(filepath.Join(base, "account", a.Name()))
+		for _, t := range ts {
+			if t.IsDir() && match(t.Name()) {
+				out = append(out, filepath.Join(base, "account", a.Name(), t.Name()))
+			}
+		}
+	}
+	devs, _ := os.ReadDir(filepath.Join(base, "device"))
+	for _, t := range devs {
+		if t.IsDir() && match(t.Name()) {
+			out = append(out, filepath.Join(base, "device", t.Name()))
+		}
+	}
+	return out
+}
+
+// backupPath backs up a folder that is not a NEXUS game folder (called with o.mu held).
+func (o *SaveOrganizer) backupPath(profileID, src, reason string) error {
+	dir := o.ProfileDir(profileID)
+	stamp := time.Now().Format("2006-01-02 15-04-05")
+	name := safeFolderName(strings.ToUpper(filepath.Base(src)) + " engine copy")
+	out := filepath.Join(o.backupsRoot(), filepath.Base(dir), fmt.Sprintf("%s %s - %s.zip", stamp, reason, name))
+	for i := 2; fileExists(out); i++ {
+		out = filepath.Join(o.backupsRoot(), filepath.Base(dir), fmt.Sprintf("%s %s (%d) - %s.zip", stamp, reason, i, name))
+	}
+	return writeZipAtomic(out, func(zw *zip.Writer) error { return zipDir(zw, src, filepath.Base(src)) })
 }
 
 // UseOtherCopy makes an "other copy" the game's save: the current save becomes an other copy.
