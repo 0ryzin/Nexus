@@ -25,6 +25,15 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
 - **Memory message for Switch 2 games:** on a Steam Deck it explains that 12 GB is required and set
   automatically, that it is not 12 GB of RAM, and why the Deck shows ~14 GB, once per game, instead
   of a warning at every start. A real warning remains below 12 GB of RAM.
+- **Mii Creator (new):** each user has their own Miis (Settings › Users › a user › Miis): create,
+  edit, delete, choose the default; works with a controller. Stored in the Switch's Mii format and
+  written to the engine's Mii database when that user starts a game (default first), so games that
+  use Miis list them. Byte-identical with the engine's own Mii code (test). Import from a
+  MiiDatabase.dat. Not yet confirmed in a real game.
+- **Amiibo:** NEXUS no longer creates amiibo (the Amiibo Creator and copying a virtual amiibo are
+  gone): import dumps of amiibo you own. Virtual amiibo made by earlier versions keep working and
+  can be removed. When a game scans, the playing user's amiibo (and unassigned ones) are listed;
+  other users' are one step away.
 - CI: an interface test that waited for ever on "Who's playing?" fixed; each test has a limit.
 
 ## 0.8.0 — in development (not released)

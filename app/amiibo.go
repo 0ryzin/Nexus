@@ -6,10 +6,9 @@ package main
 //   - dumps the user imports: NTAG215 dumps (532/540/572 bytes) of their own figures and cards,
 //     or 1 KB MIFARE dumps. NEXUS checks the structure, reads the amiibo ID and keeps a copy; the
 //     file the user chose is never changed.
-//   - virtual amiibo NEXUS creates from an amiibo ID: a plain (unencrypted, unsigned) NTAG215
-//     image with a random serial number that the engine accepts as a "plain amiibo". It works
-//     only inside NEXUS. It is not a Nintendo-authenticated amiibo, carries no signature or keys,
-//     and cannot be written to a figure or NFC tag to make one.
+//   - virtual amiibo that NEXUS 0.5-0.8.0 created from an amiibo ID (a plain NTAG215 image the
+//     engine accepts). Since 0.8.1 NEXUS creates none (no amiibo generator); existing ones stay
+//     usable and removable.
 //
 // When a game scans for an amiibo, the chosen entry's file is handed to the engine
 // (nexus_engine_amiibo). The user's own amiibo keys (key_retail.bin) are needed only for games
@@ -253,13 +252,23 @@ func (d *AmiiboDetails) clean() error {
 }
 
 // CreateVirtual adds a NEXUS virtual amiibo for an amiibo ID.
+// Since 0.8.1 only for tests: entries as earlier versions made them.
 func (s *AmiiboStore) CreateVirtual(amiiboID, name, series, owner string) (Amiibo, error) {
-	return s.CreateVirtualWith(amiiboID, AmiiboDetails{Name: name, Series: series, Owner: owner})
+	return s.createVirtualLegacy(amiiboID, AmiiboDetails{Name: name, Series: series, Owner: owner})
 }
 
 // CreateVirtualWith is the Amiibo Creator: a new virtual amiibo (new random serial number) with
 // the user's details.
 func (s *AmiiboStore) CreateVirtualWith(amiiboID string, d AmiiboDetails) (Amiibo, error) {
+	// 0.8.1: NEXUS no longer creates amiibo (the owner's brief: import legally obtained amiibo
+	// only, no generator). Virtual amiibo made by earlier versions stay usable and removable.
+	return Amiibo{}, errVirtualAmiiboRetired
+}
+
+var errVirtualAmiiboRetired = errors.New("NEXUS no longer creates amiibo. Import a dump of an amiibo you own instead (Settings › Amiibo › Import).")
+
+// createVirtualLegacy is the pre-0.8.1 Amiibo Creator, kept only for tests of entries it made.
+func (s *AmiiboStore) createVirtualLegacy(amiiboID string, d AmiiboDetails) (Amiibo, error) {
 	if err := d.clean(); err != nil {
 		return Amiibo{}, err
 	}
@@ -302,9 +311,8 @@ func (s *AmiiboStore) Duplicate(id string) (Amiibo, error) {
 	if len([]rune(name)) > 40 {
 		name = string([]rune(name)[:33]) + " (copy)"
 	}
-	d := AmiiboDetails{Name: name, Series: src.Series, Character: src.Character, GameSeries: src.GameSeries, Type: src.Type, Notes: src.Notes, Owner: src.Owner}
 	if src.Kind == "virtual" {
-		return s.CreateVirtualWith(src.AmiiboID, d)
+		return Amiibo{}, errVirtualAmiiboRetired // a copy would be a newly generated amiibo
 	}
 	data, err := os.ReadFile(s.Path(src))
 	if err != nil {

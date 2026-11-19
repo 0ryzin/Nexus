@@ -3164,7 +3164,7 @@ const AmiiboUI = {
   },
   async manage(a) {
     const opts = [{ v: 'edit', l: 'Edit details…' }, { v: 'duplicate', l: 'Duplicate' }, { v: 'owner', l: `User: ${this.ownerName(a.owner)}` }, { v: 'info', l: 'Details' }, { v: 'remove', l: 'Remove from library' }];
-    const v = await listPick(a.name, a.file ? opts : opts.filter(o => o.v !== 'duplicate'));
+    const v = await listPick(a.name, a.file && a.kind !== 'virtual' ? opts : opts.filter(o => o.v !== 'duplicate'));
     if (v === 'edit') await this.creator(a);
     else if (v === 'duplicate') {
       try { const d = await api('/api/amiibo/duplicate', { body: { id: a.id } }); toast(`${d.name} created${a.kind === 'virtual' ? ' (a new virtual amiibo with its own serial number)' : ''}`, I.check, 3500); } catch (e) { alertDlg('Not duplicated', e.message); }
@@ -3184,12 +3184,11 @@ const AmiiboUI = {
     const st = await this.load().catch(() => ({ list: [] })) || {};
     st.list = st.list || []; // an empty library arrives as null
     const es = S.settings.emulator || {};
-    p.append(h('h2', {}, 'Amiibo'), h('p', { class: 'note' }, 'When a game asks you to scan an amiibo, NEXUS shows this library and gives the game the one you choose. Import dumps of your own amiibo, or create a NEXUS virtual amiibo for use in NEXUS only. NEXUS includes no amiibo data.'));
+    p.append(h('h2', {}, 'Amiibo'), h('p', { class: 'note' }, 'When a game asks you to scan an amiibo, NEXUS shows this library and gives the game the one you choose. Import dumps of amiibo you own; each can belong to a user, and a game shows that user’s amiibo first. NEXUS includes no amiibo data and does not create amiibo. Miis are separate (Settings › Users › a user › Miis).'));
     p.append(changedMark(rowChoice('When a game scans for an amiibo', [{ v: '', l: 'Show the amiibo library' }, { v: 'off', l: 'Do nothing' }], es.amiiboPrompt || '', v => saveSettings({ emulator: { amiiboPrompt: v } })), 'emulator.amiiboPrompt'));
     p.append(rowButton('Import amiibo dump…', { sub: 'A .bin or .nfc dump of your own figure or card (NTAG215, 532/540/572 bytes). NEXUS copies it; the original is not changed.', onClick: async () => { if (await this.import(S.profile?.id)) rebuildPanel(); } }));
-    p.append(rowButton('Amiibo Creator\u2026', { icon: I.plus, sub: 'Create a NEXUS virtual amiibo: search by name, character or series, or type its ID; add your own name, notes and picture. Works only in NEXUS; it is not an authenticated amiibo.', onClick: async () => { if (await this.creator(null, S.profile?.id)) rebuildPanel(); } }));
     p.append(h('h3', {}, `Library (${st.list.length})`));
-    if (!st.list.length) p.append(h('p', { class: 'note' }, 'No amiibo yet. Create one with the Amiibo Creator, or import a dump of your own.'));
+    if (!st.list.length) p.append(h('p', { class: 'note' }, 'No amiibo yet. Import a dump of an amiibo you own.'));
     else {
       const f = this.filter;
       const q = h('input', { type: 'text', class: 'am-filter', 'data-nav': true, placeholder: 'Search the library: name, character, series, ID or notes', spellcheck: 'false' });
@@ -3237,12 +3236,17 @@ const AmiiboUI = {
       const st = await this.load().catch(() => ({ list: [] }));
       const pid = S.playing?.profileId || S.profile?.id;
       await suspendGame(); // show NEXUS over the game while choosing
-      const list = [...st.list].sort((a, b) => (b.owner === pid) - (a.owner === pid));
-      const items = [...list.map(a => ({ v: a.id, l: `${a.name}${a.kind === 'virtual' ? ' (virtual)' : ''}${a.owner && a.owner !== pid ? ' · ' + this.ownerName(a.owner) : ''}` })),
-        { v: '+import', l: 'Import an amiibo dump…' }, { v: '+virtual', l: 'Create a virtual amiibo…' }, { v: '', l: 'Not now' }];
+      // the playing user's amiibo and unassigned ones; other users' only when asked for
+      const usable = st.list.filter(a => a.file);
+      const mine = usable.filter(a => !a.owner || a.owner === pid).sort((a, b) => (b.owner === pid) - (a.owner === pid));
+      const others = usable.filter(a => a.owner && a.owner !== pid);
+      const label = a => `${a.name}${a.kind === 'virtual' ? ' (virtual, earlier NEXUS)' : ''}${a.owner && a.owner !== pid ? ' · ' + this.ownerName(a.owner) : ''}`;
+      const items = [...mine.map(a => ({ v: a.id, l: label(a) })),
+        ...(others.length ? [{ v: '+others', l: `Other users’ amiibo (${others.length})…` }] : []),
+        { v: '+import', l: 'Import an amiibo dump…' }, { v: '', l: 'Not now' }];
       let v = await listPick(`${d?.title || 'The game'} is looking for an amiibo`, items);
+      if (v === '+others') v = await listPick('Other users’ amiibo', [...others.map(a => ({ v: a.id, l: label(a) })), { v: '', l: 'Not now' }]);
       if (v === '+import') v = (await this.import(pid))?.id;
-      else if (v === '+virtual') v = (await this.createVirtual(pid))?.id;
       if (v) {
         try { await api('/api/amiibo/place', { body: { id: v } }); toast('Amiibo placed', I.check, 2000); }
         catch (e) { await alertDlg('The amiibo was not given to the game', e.message); }

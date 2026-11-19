@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"image/color"
 	"net/http"
@@ -202,16 +203,20 @@ func TestAmiiboInGame(t *testing.T) {
 	app.Emu.Stop(true)
 }
 
-// TestAmiiboCreator: details, edit (data unchanged), duplicate (virtual: new figure; dump: exact
-// copy; the original unchanged), the user's own picture, and removal of everything.
+// TestAmiiboCreator: since 0.8.1 no amiibo is created (no generator, not even by copying a
+// virtual one); entries made by earlier versions keep working: details, edit (data unchanged),
+// duplicate of a dump (exact copy; the original unchanged), picture, and removal of everything.
 func TestAmiiboCreator(t *testing.T) {
 	app, root := newTestApp(t, "")
 	p, _ := app.Profiles.Create("Kai", Avatar{Kind: "glyph"})
-	v, err := app.Amiibo.CreateVirtualWith("0100000000040002", AmiiboDetails{Name: "My Link", Character: "Link", Series: "The Legend of Zelda", GameSeries: "The Legend of Zelda", Type: "Figure", Notes: "for Tears of the Kingdom", Owner: p.ID})
+	if _, err := app.Amiibo.CreateVirtualWith("0100000000040002", AmiiboDetails{Name: "x"}); !errors.Is(err, errVirtualAmiiboRetired) {
+		t.Fatalf("an amiibo was generated: %v", err)
+	}
+	v, err := app.Amiibo.createVirtualLegacy("0100000000040002", AmiiboDetails{Name: "My Link", Character: "Link", Series: "The Legend of Zelda", GameSeries: "The Legend of Zelda", Type: "Figure", Notes: "for Tears of the Kingdom", Owner: p.ID})
 	if err != nil || v.Kind != "virtual" || v.Character != "Link" || v.Notes == "" || v.Owner != p.ID {
 		t.Fatalf("%+v %v", v, err)
 	}
-	if _, err := app.Amiibo.CreateVirtualWith("0100000000040002", AmiiboDetails{Name: strings.Repeat("x", 41)}); err == nil {
+	if _, err := app.Amiibo.createVirtualLegacy("0100000000040002", AmiiboDetails{Name: strings.Repeat("x", 41)}); err == nil {
 		t.Fatal("name too long accepted")
 	}
 	before, _ := os.ReadFile(app.Amiibo.Path(v))
@@ -222,9 +227,8 @@ func TestAmiiboCreator(t *testing.T) {
 	if after, _ := os.ReadFile(app.Amiibo.Path(v)); !bytes.Equal(before, after) {
 		t.Fatal("editing changed the amiibo data")
 	}
-	d, err := app.Amiibo.Duplicate(v.ID)
-	if err != nil || d.ID == v.ID || d.UID == v.UID || d.AmiiboID != v.AmiiboID || d.Name != "Hero (copy)" || d.Notes != "edited" {
-		t.Fatalf("duplicate %+v %v", d, err)
+	if _, err := app.Amiibo.Duplicate(v.ID); !errors.Is(err, errVirtualAmiiboRetired) {
+		t.Fatalf("copying a virtual amiibo generated a new one: %v", err)
 	}
 	src := filepath.Join(root, "dump.bin")
 	raw := rawAmiiboDump("0000000000000002", [7]byte{4, 3, 3, 3, 4, 4, 4})
