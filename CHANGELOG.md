@@ -12,7 +12,7 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
 - Ocarina of Time stuck loading: investigated (see docs/COMPATIBILITY.md); not reproduced, not yet fixed.
 - Knowledge base: CLAUDE.md, docs/DEVELOPMENT_NOTES.md, COMPATIBILITY.md, REGRESSION_HISTORY.md, research/LICHII.md, research/FRITCHII.md, benchmark method in PERFORMANCE.md.
 
-## 0.8.1 — in development (not released)
+## 0.8.1 — test build (not released)
 
 - **Deleting a save really deletes it.** Synchronisation used to reinstall the account's copy
   of a deleted save, so games still offered Continue. The deletion now reaches the account;
