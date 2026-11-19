@@ -38,6 +38,8 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
   offered: Ocarina of Time 30–240 with the built-in FPS Unlock (above 60 experimental), Mario
   Kart World and Hyrule Warriors' own modes; other games show why not (a Switch 1 game needs a
   frame-rate mod, which NEXUS never installs). Game default restores the original behaviour.
+- **Steam Deck Desktop Mode buttons:** L1/R1 switch tabs, Y opens options, L4 goes Home, no
+  double presses with a controller; a tip explains that X is Steam's keyboard there.
 - CI: an interface test that waited for ever on "Who's playing?" fixed; each test has a limit.
 
 ## 0.8.0 — in development (not released)

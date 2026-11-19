@@ -309,8 +309,41 @@ function setInputMode(mode) {
   renderHints();
 }
 
+// Steam Deck Desktop Mode: started outside Steam, NEXUS gets no controller, only the keys of
+// Steam's Desktop configuration (A Enter, B Escape, Y Space, X Steam's keyboard, Select Tab,
+// Start Escape, L1 Ctrl, R1 Alt, R4/R5 Page Up/Down, L4 Shift, D-pad/left stick arrows,
+// R2/L2 mouse clicks). Those keys are read as the buttons they stand for: Space is Y (options), a
+// lone Ctrl/Alt press is L1/R1 (tabs), a lone Shift is L4 (Home, when L4 is the Home button).
+// While a real controller is in use, these keys are ignored so nothing happens twice.
+const DeckDesktop = {
+  on() { return !!(S.platform?.steamDeck && !S.platform?.gamingMode); },
+  lone: null, told: false,
+  tell() {
+    if (this.told || (navigator.getGamepads && [...navigator.getGamepads()].some(Boolean))) return;
+    this.told = true;
+    toast('Steam Deck Desktop Mode: NEXUS gets Steam\u2019s desktop keys, so X opens Steam\u2019s keyboard. For every button, start NEXUS from Steam (Settings \u203a Steam).', I.pad, 6000);
+  },
+};
+document.addEventListener('keyup', e => {
+  if (!DeckDesktop.on() || isTextField(e.target)) return;
+  const lone = DeckDesktop.lone; DeckDesktop.lone = null;
+  if (lone !== e.key || performance.now() < Pad.activeUntil) return;
+  if (e.key === 'Control') Nav.tab(-1);
+  else if (e.key === 'Alt') { Nav.tab(1); e.preventDefault(); }
+  else if (e.key === 'Shift' && (S.settings.emulator?.homePaddles || ['l4']).includes('l4')) goHome({ button: true });
+}, true);
 document.addEventListener('keydown', e => {
   if (document.body.classList.contains('booting')) { Boot.skip(); e.preventDefault(); return; }
+  if (DeckDesktop.on()) {
+    DeckDesktop.lone = ['Control', 'Alt', 'Shift'].includes(e.key) && !e.repeat ? e.key : null;
+    if (e.key === 'Alt') e.preventDefault(); // no menu-bar focus
+    // the same press already arrived from a controller: do not act twice
+    if (performance.now() < Pad.activeUntil && ['Enter', 'Escape', ' ', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown'].includes(e.key) && !isTextField(e.target)) { e.preventDefault(); return; }
+    if (!isTextField(e.target)) {
+      DeckDesktop.tell();
+      if (e.key === ' ') { setInputMode('gamepad'); Nav.options(); e.preventDefault(); return; }
+    }
+  }
   setInputMode('keyboard');
   const t = e.target;
   const typing = isTextField(t);

@@ -5,6 +5,19 @@ Newest first.
 
 ## 0.8.1 (in development)
 
+### Steam Deck Desktop Mode: some controller buttons did nothing (report, 19 Nov)
+- **Cause:** started outside Steam in Desktop Mode, NEXUS receives no controller at all: Steam
+  holds the Deck's controller and turns it into the keys of its Desktop configuration (A Enter,
+  B Escape, Y Space, X Steam's keyboard, Select Tab, Start Escape, L1 Ctrl, R1 Alt, R4/R5 Page
+  Up/Down, L4 Shift, D-pad arrows, triggers mouse clicks). NEXUS read Enter/Escape/arrows/Page keys,
+  but a lone Ctrl or Alt (L1/R1) did nothing, Space (Y) acted as A, and X can only open Steam's
+  keyboard.
+- **Fix:** on a Steam Deck outside Gaming Mode, lone Ctrl/Alt switch tabs (Ctrl+key shortcuts
+  untouched), Space is Y (options), a lone Shift is L4 (Home, when L4 is the Home button), and
+  these keys are ignored while a real controller is in use (no double presses). A one-time tip says
+  that X belongs to Steam and that starting NEXUS from Steam gives every button.
+- **Test:** `tools/uitest/deck_desktop_keys.py`. Not yet tried on the Deck.
+
 ### A deleted save came back: the game still offered Continue (Steam Deck report, 19 Nov)
 - **Problem:** *Settings › Users › profile › Save Data › Delete* showed the save as deleted, but
   Final Fantasy Resonance still offered Continue.
