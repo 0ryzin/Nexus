@@ -51,7 +51,14 @@ async def main():
             if (url.endsWith('/shaders/export-zip')) o = {{ ...o, body: {{ dir: {out!r} }} }};
             if (url.endsWith('/shaders/import-zip-file')) o = {{ ...o, body: {{ path: window.__zip }} }};
             return real(url, o); }}; }})()""")
-        key = 't-0100aaaa00010000'  # Starfall Rally (its update file is a separate entry)
+        # Starfall Rally (its update file is a separate entry); found by title ID, whatever key the
+        # library gave it on this machine
+        base = "S.games.find(g => (g.titleId || '').toUpperCase() === '0100AAAA00010000' && g.kind !== 'update' && !g.key.startsWith('x-'))"
+        print("note: games", await pg.evaluate("JSON.stringify(S.games.map(g => [g.key, g.kind, g.title, g.titleId]))"))
+        print("note: keys", await pg.evaluate("api('/api/system-files').then(k => JSON.stringify(k).slice(0, 400)).catch(e => e.message)"))
+        await pg.wait_for_function(f"!!{base}", timeout=15000)
+        key = await pg.evaluate(f"{base}.key")
+        print("note: Starfall Rally is", key)
         tile = f"[...$$('#tiles .tile')].find(t => t._game?.key === {key!r})"
         # its Home tile's right-click; if earlier tests left Home showing other games, the same
         # game menu opened directly
