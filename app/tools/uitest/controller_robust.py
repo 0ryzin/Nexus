@@ -28,6 +28,22 @@ async def main():
         await pg.evaluate("window.__connectPad()")
         await pg.wait_for_timeout(400)
 
+        # 0. XInput assist (Windows): the browser never reported a D-pad press, NEXUS sends one:
+        #    the focus moves once; after the browser reports the D-pad, the assist is ignored
+        await pg.evaluate("goHome()"); await pg.wait_for_timeout(400)
+        await pg.evaluate("(() => { Nav.setFocus(document.querySelector('#tiles .tile')); return 1; })()")
+        f0 = await pg.evaluate(CUR)
+        await pg.evaluate("XAssist.event({right: true})"); await pg.wait_for_timeout(150)
+        await pg.evaluate("XAssist.event({right: false})"); await pg.wait_for_timeout(100)
+        f1 = await pg.evaluate(CUR)
+        check(f1 != f0 and await pg.evaluate("XAssist.on"), f"XInput assist moves the focus when the browser reports no D-pad ({f0} -> {f1})")
+        await pg.evaluate(f"window.__press({RIGHT}, 70)"); await pg.wait_for_timeout(200)
+        f2 = await pg.evaluate(CUR)
+        await pg.evaluate("XAssist.event({right: true})"); await pg.wait_for_timeout(150)
+        await pg.evaluate("XAssist.event({right: false})"); await pg.wait_for_timeout(100)
+        f3 = await pg.evaluate(CUR)
+        check(f2 != f1 and f3 == f2 and await pg.evaluate("XAssist.browserDpad && !XAssist.on"), f"once the browser reports the D-pad the assist does nothing ({f1} -> {f2} -> {f3})")
+
         # 1. one press throws: the next presses still navigate
         await pg.evaluate("(() => { window.__origMove = Nav.move; let once = true; Nav.move = function (d) { if (once) { once = false; throw new Error('test: one bad press'); } return window.__origMove.call(this, d); }; return 1; })()")
         await pg.evaluate(f"window.__press({DOWN}, 70)"); await pg.wait_for_timeout(200)

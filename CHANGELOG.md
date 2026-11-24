@@ -28,6 +28,10 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
   the menus reading the controller until restart; controllers that report the D-pad as a hat
   axis (no standard mapping) navigate; the log records each controller and its first presses.
   The D-pad report on Tom's PC is not yet reproduced.
+- **D-pad fallback on Windows:** NEXUS reads the D-pad of XInput (Xbox-type) controllers itself
+  while its window is in front and no game is shown. If WebView2 reports the controller but never
+  its D-pad, the menus use NEXUS's reading instead (logged once); as soon as WebView2 reports a
+  D-pad press, the fallback stops, so no press is acted on twice. Not yet tried on Tom's PC.
 - **Save conflicts show which copy is further ahead:** each device's play time and last play for
   that game, and "looks further ahead" when one copy has both more play time and the later save.
   The choice no longer starts on "Keep this device's": the first button is "Decide later", so a

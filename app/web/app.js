@@ -507,6 +507,7 @@ const Pad = {
       const b = i => !!(p.buttons[i] && (p.buttons[i].pressed || p.buttons[i].value > .6));
       const ax = p.axes[0] || 0, ay = p.axes[1] || 0;
       this.diag(p); this.rawPrev = this.rawPrev || {}; this.rawPrev[p.index] = this.diagPress(p, this.rawPrev[p.index]);
+      if (b(12) || b(13) || b(14) || b(15)) XAssist.browserSaw();
       const hat = this.hat(p) || {};
       const dirs = {
         up: b(12) || !!hat.up || ay < -.6, down: b(13) || !!hat.down || ay > .6, left: b(14) || !!hat.left || ax < -.6, right: b(15) || !!hat.right || ax > .6,
@@ -569,6 +570,38 @@ const Pad = {
   },
 };
 window.addEventListener('gamepaddisconnected', () => Pad.schedule(true));
+
+// XInput D-pad assist (Windows, xinputassist_windows.go): NEXUS sends the D-pad of XInput
+// controllers ("pad.dpad"). Used only while the browser has never reported a D-pad press: then a
+// press is acted on once the browser has had time to see it (80 ms) and did not. As soon as the
+// browser reports a D-pad press, the assist stops for good, so nothing is done twice.
+const XAssist = {
+  browserDpad: false, on: false, held: {}, timers: {},
+  browserSaw() {
+    if (this.browserDpad) return;
+    this.browserDpad = true;
+    if (this.on) { this.on = false; for (const d of Object.keys(this.timers)) this.stop(d); }
+  },
+  stop(d) { clearTimeout(this.timers[d]); clearInterval(this.timers[d]); delete this.timers[d]; },
+  event(m) {
+    if (this.browserDpad) return;
+    for (const d of ['up', 'down', 'left', 'right']) {
+      if (m[d] && !this.held[d]) {
+        this.held[d] = true;
+        this.timers[d] = setTimeout(() => {
+          if (this.browserDpad || !this.held[d] || document.body.classList.contains('booting')) return;
+          if (!this.on) {
+            this.on = true;
+            api('/api/app/log', { body: { level: 'info', message: 'ui: controller D-pad read through XInput (WebView2 did not report it)' } }).catch(() => { });
+          }
+          setInputMode('gamepad'); Pad.dir(d);
+          const rep = S.profile?.controls?.keyRepeatMs || 140;
+          this.timers[d] = setTimeout(() => { if (this.held[d]) { Pad.dir(d); this.timers[d] = setInterval(() => { if (this.held[d] && !this.browserDpad) Pad.dir(d); else this.stop(d); }, rep); } }, 300);
+        }, 80);
+      } else if (!m[d] && this.held[d]) { this.held[d] = false; this.stop(d); }
+    }
+  },
+};
 
 // ------------------------------------------------------------------ layers (dialogs, sheets, toasts)
 function openLayer(content, { onBack, onOptions, onTab, sheet = false, name = '', initial } = {}) {
@@ -4750,6 +4783,7 @@ function connectEvents() {
         break;
       case 'engine.ready': await refreshEngine(); if (S.screen === 'home') renderBanner(); if (S.screen === 'settings' && curCat === 'engine') rebuildPanel(); break;
       case 'library.changed': await loadGames(); if (['home', 'library'].includes(S.screen)) refreshViews(); break;
+      case 'pad.dpad': XAssist.event(m.data || {}); break;
       case 'emulator.state': {
         const st = m.data;
         S.emuLatest = st;
