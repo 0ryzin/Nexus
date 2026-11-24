@@ -58,6 +58,14 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
   Discord application ID (a public number; none is built in yet). Discord shows the
   application's registered name and only uploaded images or public URLs, so local game artwork
   cannot appear. Tested against a stand-in Discord, not the real app.
+- **GameBanana mods** (a game's Mods: Installed / Browse GameBanana / Import tabs): search the
+  game's mods on gamebanana.com, see a mod's files and install a ZIP file. Installs go through the
+  same checks as Import (whole archive checked first: nothing outside the mod, no links, nothing
+  for another game, nothing overwritten, the game's own files never changed); downloads only over
+  https from GameBanana (redirects too), GameBanana's MD5 checked, size limited, nothing run.
+  7z/RAR files: download, extract and Import. Where a mod came from is kept with it
+  (`.nexus-source.json`). Reference: SimpleModDownloader by PoloNX (GPL-3.0); NEXUS's own code.
+  Tested against a stand-in GameBanana, not the live site (no network here).
 - **`Customisations/` folder** in the NEXUS folder (Windows and Linux), kept on updates (an update
   only adds files it lacks). Nothing reads it yet; no Customisation Studio in 0.9.3.
 

@@ -146,6 +146,7 @@ type App struct {
 	Library          *Library
 	Emu              *Emulator
 	Discord          *Discord
+	GameBanana       *gameBanana
 	Avatars          *AvatarSet
 	Sys              *SystemFiles
 	Link             *DeviceLink // experimental Device Linking; nil unless the feature is on
@@ -193,6 +194,7 @@ func NewAppWithPaths(p *Paths) (*App, error) {
 	a.applyJoyConCompat() // before the engine is loaded: SDL reads its environment once
 	a.Emu = NewEmulator(a)
 	a.Discord = NewDiscord(a)
+	a.GameBanana = newGameBanana(a)
 	a.Compat = NewCompatStore(p.Settings)
 	a.Compat.SetEngine(func() string { return a.Emu.Builds.ActiveVersionLabel() })
 	a.Saves = NewSaveOrganizer(a)

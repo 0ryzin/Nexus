@@ -5171,12 +5171,26 @@ async function gameContentPanel(body, g, which, redraw) {
 // ---------- Manage Mods (mods.go, docs/MODS.md): one game's installed and built-in mods
 const MOD_CAT = { fps: 'Frame rate', performance: 'Performance', resolution: 'Resolution', visual: 'Visual', gameplay: 'Gameplay', other: 'Other' };
 const ModsUI = {
+  tab: 'installed',
   open(key) {
     const g = gameByKey(key); if (!g) return;
+    this.tab = 'installed'; this.gb = { q: '', page: 1, res: null };
     sheet(`Mods: ${g.title}`, (body, layer, rebuild) => { this.build(body, key, rebuild); });
+  },
+  // three tabs: Installed (and built in), Browse (GameBanana, gamebanana.go), Import (ZIP or folder)
+  tabs(body, redraw) {
+    const bar = h('div', { class: 'd-actions mods-tabs', 'data-row': 'strict' });
+    for (const [id, l] of [['installed', 'Installed'], ['browse', 'Browse GameBanana'], ['import', 'Import']]) {
+      const b = h('button', { 'data-nav': true, class: 'chip' + (this.tab === id ? ' sel primary' : '') }, l);
+      b.addEventListener('click', () => { if (this.tab !== id) { this.tab = id; redraw(); } });
+      bar.append(b);
+    }
+    body.append(bar);
   },
   async build(body, key, redraw) {
     const g = gameByKey(key);
+    this.tabs(body, redraw);
+    if (this.tab === 'browse') return this.browse(body, key, redraw);
     let d;
     try { d = await api(`/api/games/${encodeURIComponent(key)}/mods`); } catch (e) { body.append(h('p', { class: 'note warn' }, e.message)); return; }
     const kv = h('dl', { class: 'kv' },
@@ -5195,9 +5209,13 @@ const ModsUI = {
         toast(`Installed: ${r.added.join(', ')}`, I.check); redraw();
       } catch (e) { alertDlg('That mod was not installed', e.message); }
     };
-    body.append(h('h3', { class: 'set-h' }, 'Install'));
-    body.append(rowButton('Import a mod from a ZIP…', { icon: I.plus, disabled: !d.canChange, onClick: () => addMod('zip') }));
-    body.append(rowButton('Import a mod folder…', { icon: I.folder, disabled: !d.canChange, sub: 'A folder with romfs, exefs, romfs_ext or cheats inside, or .pchtxt / .ips patches. Mods for another game are refused; the game’s own files are never changed.', onClick: () => addMod('folder') }));
+    if (this.tab === 'import') {
+      body.append(h('h3', { class: 'set-h' }, 'Import'));
+      body.append(rowButton('Import a mod from a ZIP…', { icon: I.plus, disabled: !d.canChange, onClick: () => addMod('zip') }));
+      body.append(rowButton('Import a mod folder…', { icon: I.folder, disabled: !d.canChange, sub: 'A folder with romfs, exefs, romfs_ext or cheats inside, or .pchtxt / .ips patches. Mods for another game are refused; the game’s own files are never changed.', onClick: () => addMod('folder') }));
+      body.append(rowButton('Open the mods folder', { sub: d.modsDir, onClick: () => api('/api/app/open-folder', { body: { which: 'enginedata' } }).catch(() => { }) }));
+      return;
+    }
 
     body.append(h('h3', { class: 'set-h' }, `Installed mods${d.mods.length ? ` (${d.mods.filter(m => m.enabled).length} of ${d.mods.length} on)` : ''}`));
     if (!d.mods.length) body.append(h('p', { class: 'note' }, 'No mods installed for this game.'));
@@ -5208,7 +5226,41 @@ const ModsUI = {
       body.append(h('p', { class: 'note' }, 'Patches made for this game that come with the NEXUS engine. They only apply to the game build they were made for. Switch one off if you want the game’s own behaviour.'));
       for (const m of d.builtin) body.append(this.row(key, m, redraw, d));
     }
-    body.append(rowButton('Open the mods folder', { sub: d.modsDir, onClick: () => api('/api/app/open-folder', { body: { which: 'enginedata' } }).catch(() => { }) }));
+  },
+  // GameBanana: search this game's mods, a mod's files, install a ZIP (checked like an import)
+  async browse(body, key, redraw) {
+    const st = this.gb;
+    body.append(h('p', { class: 'note' }, 'Mods from gamebanana.com, made by its community. NEXUS installs ZIP files only, checks them like an import (nothing outside the mod, nothing for another game, nothing run) and never changes the game\u2019s own files. Only install mods from authors you trust.'));
+    const box = h('input', { type: 'text', value: st.q, placeholder: 'Search this game\u2019s mods', 'data-nav': true, spellcheck: 'false', id: 'gb-search' });
+    box.addEventListener('submit', () => { st.q = box.value.trim(); st.page = 1; st.res = null; redraw(); });
+    box.addEventListener('keydown', e => { if (e.key === 'Enter') { st.q = box.value.trim(); st.page = 1; st.res = null; redraw(); } });
+    body.append(box);
+    const list = h('div'); body.append(list);
+    if (!st.res || st.res.key !== key + '|' + st.q + '|' + st.page) {
+      list.append(h('p', { class: 'note' }, 'Looking on GameBanana\u2026'));
+      try { st.res = await api(`/api/games/${encodeURIComponent(key)}/gamebanana?q=${encodeURIComponent(st.q)}&page=${st.page}`); st.res.key = key + '|' + st.q + '|' + st.page; }
+      catch (e) { list.replaceChildren(h('p', { class: 'note warn' }, e.message)); return; }
+    }
+    const r = st.res;
+    list.replaceChildren(h('p', { class: 'note' }, `GameBanana game: ${r.gameName}${st.q ? ` \u00b7 \u201c${st.q}\u201d` : ''} \u00b7 page ${st.page}`));
+    if (!r.mods.length) list.append(h('p', { class: 'note' }, st.q ? 'No mods match that search.' : 'No mods for this game on GameBanana.'));
+    for (const m of r.mods) {
+      list.append(rowButton(m.name, { sub: [m.author && 'by ' + m.author, m.category, m.likes ? `${m.likes} likes` : '', m.updated ? 'updated ' + new Date(m.updated * 1000).toLocaleDateString() : ''].filter(Boolean).join(' \u00b7 '), onClick: () => this.gbMod(key, m.id, redraw) }));
+    }
+    const nav = h('div', { class: 'd-actions', 'data-row': 'strict' });
+    if (st.page > 1) { const b = h('button', { 'data-nav': true }, 'Previous page'); b.addEventListener('click', () => { st.page--; redraw(); }); nav.append(b); }
+    if (!r.complete && r.mods.length) { const b = h('button', { 'data-nav': true }, 'Next page'); b.addEventListener('click', () => { st.page++; redraw(); }); nav.append(b); }
+    if (nav.childElementCount) list.append(nav);
+  },
+  async gbMod(key, id, redraw) {
+    let p; try { p = await api(`/api/gamebanana/mod/${id}`); } catch (e) { alertDlg('GameBanana', e.message); return; }
+    const files = p.files.map(f => ({ label: `${f.name} (${fmtBytes(f.size)})${f.zip ? '' : ' \u2014 not a ZIP'}`, value: f.id, f }));
+    const text = [p.author ? `By ${p.author}.` : '', p.description ? p.description.slice(0, 600) : '', '', files.length ? 'Choose a file to install. Only ZIP files can be installed; for other archives, download from GameBanana, extract, then Import.' : 'This mod has no files to download.'].join('\n');
+    const v = await dialog({ title: p.name, text, buttons: [{ label: 'Cancel', value: null }, ...files.filter(x => x.f.zip).slice(0, 4).map(x => ({ label: 'Install ' + x.f.name, value: x.value }))], cancelValue: null });
+    if (!v) return;
+    toast('Downloading from GameBanana\u2026', I.download || I.plus);
+    try { const r = await api(`/api/games/${encodeURIComponent(key)}/gamebanana/install`, { body: { mod: id, file: v } }); toast(`Installed: ${r.added.join(', ')}`, I.check); this.tab = 'installed'; redraw(); }
+    catch (e) { alertDlg('That mod was not installed', e.message); }
   },
   // one mod: switch, status line, and its information on OK
   row(key, m, redraw, d) {

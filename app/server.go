@@ -2076,6 +2076,51 @@ func (s *Server) routes() {
 		}
 		writeJSON(w, v)
 	})
+	// GameBanana (gamebanana.go): search, a mod's files, install one file
+	m.HandleFunc("GET /api/games/{key}/gamebanana", func(w http.ResponseWriter, r *http.Request) {
+		g, ok := a.Library.Get(r.PathValue("key"))
+		if !ok {
+			writeErr(w, 404, errors.New("No such game."))
+			return
+		}
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		res, err := a.GameBanana.Search(g.Title, r.URL.Query().Get("q"), page)
+		if err != nil {
+			writeErr(w, 502, err)
+			return
+		}
+		writeJSON(w, res)
+	})
+	m.HandleFunc("GET /api/gamebanana/mod/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id := atoi64(r.PathValue("id"))
+		if id <= 0 {
+			writeErr(w, 400, errors.New("No such mod."))
+			return
+		}
+		res, err := a.GameBanana.Mod(id)
+		if err != nil {
+			writeErr(w, 502, err)
+			return
+		}
+		writeJSON(w, res)
+	})
+	m.HandleFunc("POST /api/games/{key}/gamebanana/install", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			Mod  int64 `json:"mod"`
+			File int64 `json:"file"`
+		}
+		if err := readBody(r, &b); err != nil || b.Mod <= 0 || b.File <= 0 {
+			writeErr(w, 400, errors.New("Choose a mod file."))
+			return
+		}
+		added, err := a.GameBanana.Install(r.PathValue("key"), b.Mod, b.File)
+		if err != nil {
+			writeErr(w, 409, err)
+			return
+		}
+		a.Events.Emit("library.changed", nil)
+		writeJSON(w, map[string]any{"added": added})
+	})
 	m.HandleFunc("POST /api/games/{key}/mods/toggle", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
 			Name string
