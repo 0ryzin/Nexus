@@ -4,7 +4,7 @@
       NEXUS.exe
       Engine/                 the matching NEXUS engine (nexus_engine.dll, engine.json,
         Libraries/            its DLLs incl. the app-local VC++ runtime, Licences/)
-      Games/  Resources/  Licences/  Source/
+      Games/  Customisations/  Resources/  Licences/  Source/
       README.md  NEXUS_ENGINE.md  RELEASE.json
 
 The engine zip is the artifact of the engine CI (tools/nexus/package_engine.py in the engine

@@ -135,6 +135,11 @@ var NexusSettings = []NSetting{
 	{ID: "controls.profile", Section: "controls", Label: "Controller profile (player 1)", Kind: "enum"},
 	{ID: "controls.mapping", Section: "controls", Label: "Keyboard, mouse and controller mapping", Kind: "info"},
 	{ID: "controls.sensitivity", Section: "controls", Label: "Stick sensitivity and dead zone", Kind: "info"},
+	// Joy-Con Compatibility (0.9.3, joyconcompat.go): only NEXUS's own Joy-Con handling; never
+	// touches software the user runs to connect or manage Joy-Cons
+	{ID: "controls.joycon_compat", Section: "controls", Label: "Joy-Con Compatibility", Kind: "enum",
+		Choices: []EmuChoice{{"enabled", "Enabled"}, {"disabled", "Disabled"}},
+		Help:    "Enabled: NEXUS and its engine connect to Joy-Cons themselves. Disabled: they leave Joy-Cons to the software you use to connect them (for example Steam on a Steam Deck, or a Joy-Con tool on Windows) and only use the controller that software provides, so a Joy-Con press does not arrive twice. That software is never stopped or changed. Takes full effect after NEXUS restarts."},
 	// System
 	{ID: "system.firmware", Section: "system", Label: "Firmware", Kind: "info"},
 	// emulated clocks (engine: System/fast_cpu_time, System/fast_gpu_time)
@@ -216,6 +221,7 @@ var engineBinds = map[string]engineBind{
 	"adv.filter":               {"Renderer/scaling_filter", map[string]string{"nearest": "0", "bilinear": "1", "bicubic": "2", "lanczos": "4", "scaleforce": "5", "fsr1": "6", "area": "7", "fsr3": "15"}},
 	"adv.reactive_flushing":    {"Renderer/use_reactive_flushing", nil},
 	"graphics.texture_quality": {"Renderer/astc_recompression", map[string]string{"high": "0", "low": "1", "medium": "2"}},
+	"controls.joycon_compat":   {"Controls/enable_joycon_driver", map[string]string{"enabled": "true", "disabled": "false"}},
 	"adv.astc":                 {"Renderer/accelerate_astc", map[string]string{"cpu": "0", "gpu": "1", "cpu_async": "2"}},
 	"adv.vram":                 {"Renderer/vram_usage_mode", map[string]string{"conservative": "0", "aggressive": "1"}},
 	"adv.nvdec":                {"Renderer/nvdec_emulation", map[string]string{"off": "0", "cpu": "1", "gpu": "2"}},

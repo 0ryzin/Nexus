@@ -538,7 +538,7 @@ func applyUpdate(args []string) int {
 		if updateKeep[strings.ToLower(n)] {
 			continue
 		}
-		if strings.EqualFold(n, "Games") { // the user's games folder: only add what it lacks
+		if strings.EqualFold(n, "Games") || strings.EqualFold(n, "Customisations") { // the user's own folders: only add what they lack
 			_ = filepath.Walk(filepath.Join(src, n), func(p string, info os.FileInfo, err error) error {
 				if err == nil && info.Mode().IsRegular() {
 					rel, _ := filepath.Rel(src, p)

@@ -28,19 +28,22 @@ type Paths struct {
 	Data       string // user data: profiles, saves, settings, artwork, logs (survives updates)
 	IsPortable bool
 	Games      string
-	System     string
-	Profiles   string
-	UserData   string // UserData: saves and their backups
-	Saves      string
-	Media      string // Media\Screenshots, Media\Recordings
-	Settings   string
-	Artwork    string
-	Wallpapers string
-	Resources  string
-	Logs       string
-	Licences   string
-	WebView    string
-	Trash      string
+	// Customisations: the user's own interface customisations (install folder, kept on update).
+	// Only the folder exists in 0.9.3; nothing reads it yet.
+	Customisations string
+	System         string
+	Profiles       string
+	UserData       string // UserData: saves and their backups
+	Saves          string
+	Media          string // Media\Screenshots, Media\Recordings
+	Settings       string
+	Artwork        string
+	Wallpapers     string
+	Resources      string
+	Logs           string
+	Licences       string
+	WebView        string
+	Trash          string
 }
 
 func resolveRoot() string {
@@ -89,6 +92,7 @@ func NewPaths(root string) *Paths { return NewPathsSplit(root, root, true) }
 func NewPathsSplit(root, data string, portable bool) *Paths {
 	p := &Paths{Root: root, Data: data, IsPortable: portable}
 	p.Games = filepath.Join(root, "Games")
+	p.Customisations = filepath.Join(root, "Customisations")
 	p.Resources = filepath.Join(root, "Resources")
 	p.Licences = filepath.Join(root, "Licences")
 	p.System = filepath.Join(data, "System")
@@ -120,7 +124,7 @@ func (p *Paths) Ensure() error {
 		}
 	}
 	// install-folder layout is best effort (it may be read-only, e.g. Program Files)
-	for _, d := range []string{p.Games, p.Licences,
+	for _, d := range []string{p.Games, p.Customisations, p.Licences,
 		filepath.Join(p.Resources, "Icons"), filepath.Join(p.Resources, "Sounds"),
 		filepath.Join(p.Resources, "Animations"), filepath.Join(p.Resources, "Themes"), filepath.Join(p.Resources, "ProfileIcons")} {
 		_ = os.MkdirAll(d, 0o755)
@@ -185,6 +189,7 @@ func NewAppWithPaths(p *Paths) (*App, error) {
 	}
 	a.Library = NewLibrary(a)
 	a.migrateTextureQuality()
+	a.applyJoyConCompat() // before the engine is loaded: SDL reads its environment once
 	a.Emu = NewEmulator(a)
 	a.Compat = NewCompatStore(p.Settings)
 	a.Compat.SetEngine(func() string { return a.Emu.Builds.ActiveVersionLabel() })

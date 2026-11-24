@@ -559,6 +559,7 @@ func (e *Emulator) Launch(g *Game, profileID string) error {
 
 // startEngine starts the session in the engine and follows it.
 func (e *Emulator) startEngine(host EngineHost, req EngineRequest, st RunState) error {
+	e.app.applyJoyConCompat()
 	if err := host.Start(req); err != nil {
 		return err
 	}

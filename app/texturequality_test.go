@@ -33,4 +33,8 @@ func TestTextureQuality(t *testing.T) {
 	if m.key != "Renderer/astc_recompression" || m.vals["high"] != "0" || m.vals["medium"] != "2" || m.vals["low"] != "1" {
 		t.Fatalf("engine mapping %+v", m)
 	}
+	// the session configuration really carries it (0.9.2 left it out: not in EmuOptions)
+	if got := engineProject(map[string]string{"graphics.texture_quality": "medium"}, true); got["Renderer/astc_recompression"] != "2" {
+		t.Fatalf("texture quality not written for the engine: %v", got)
+	}
 }

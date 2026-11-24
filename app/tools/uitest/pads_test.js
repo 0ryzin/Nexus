@@ -77,3 +77,12 @@ test('glyphs are SVG with a title, no emoji', () => {
   assert.ok(P.padGlyphSVG('xbox', 0).includes('>A</text>'));
 });
 console.log(`${n} passed`);
+
+// Joy-Con Compatibility (0.9.3): which gamepads count as Joy-Cons the browser reads itself
+assert.strictEqual(P.isDirectJoyCon('Joy-Con (L) (STANDARD GAMEPAD Vendor: 057e Product: 2006)'), true);
+assert.strictEqual(P.isDirectJoyCon('Joy-Con L+R (STANDARD GAMEPAD Vendor: 057e Product: 200e)'), true);
+assert.strictEqual(P.isDirectJoyCon('057e-2007-Joy-Con (R)'), true);
+assert.strictEqual(P.isDirectJoyCon('Nintendo Switch Combined Joy-Cons (Vendor: 057e Product: 2008)'), false);
+assert.strictEqual(P.isDirectJoyCon('Pro Controller (STANDARD GAMEPAD Vendor: 057e Product: 2009)'), false);
+assert.strictEqual(P.isDirectJoyCon('Xbox 360 Controller (XInput STANDARD GAMEPAD)'), false);
+console.log('joy-con compatibility ids: ok');

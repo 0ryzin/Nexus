@@ -119,4 +119,13 @@ function padGlyphSVG(family, index, model) {
   return wrap(ring + letter(label.length > 3 ? label.slice(0, 3) : label, label.length > 2 ? 7 : 9), label);
 }
 
-if (typeof module !== 'undefined') module.exports = { PAD_LABELS, parseGamepadId, identifyGamepads, padLabelFor, padGlyphSVG };
+// isDirectJoyCon: a Joy-Con the browser reads itself (a single Joy-Con, 057e:2006/2007, or the
+// pair Chromium combines, 057e:200e). With Joy-Con Compatibility disabled the menus ignore these
+// and use only what the user's Joy-Con software provides (joycond's combined Joy-Cons 057e:2008,
+// Steam's virtual controller, an XInput controller from a Joy-Con tool), so a press is not read twice.
+function isDirectJoyCon(id) {
+  const p = parseGamepadId(id);
+  return p.vendor === 0x057e && [0x2006, 0x2007, 0x200e].includes(p.product);
+}
+
+if (typeof module !== 'undefined') module.exports = { PAD_LABELS, parseGamepadId, identifyGamepads, padLabelFor, padGlyphSVG, isDirectJoyCon };

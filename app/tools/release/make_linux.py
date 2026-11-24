@@ -9,7 +9,7 @@ NEXUS folder:
     NEXUS/
       nexus                  NEXUS (Go, built with -tags webkitgtk)
       Engine/                nexus_engine.so, the libraries it needs (RUNPATH $ORIGIN), engine.json
-      Games/ Resources/ Licences/ Source/
+      Games/ Customisations/ Resources/ Licences/ Source/
       README.md  README-Linux.txt  NEXUS_ENGINE.md  RELEASE.json  nexus.desktop  72-nexus-switch2.rules
 
 The AppImage is made with linuxdeploy (and its GTK plugin): GTK 3, WebKitGTK and their helpers

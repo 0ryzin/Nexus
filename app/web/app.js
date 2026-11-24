@@ -479,7 +479,8 @@ const Pad = {
     return null;
   },
   pollOnce() {
-    const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
+    const joyConOff = S.settings?.engine?.['controls.joycon_compat'] === 'disabled';
+    const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(p => p && !(joyConOff && isDirectJoyCon(p.id))) : [];
     const ids = pads.map(p => p.index + ':' + p.id).join('|');
     if (ids !== this.connected.join('|')) {
       const before = this.connected.length, beforeKeys = new Set((S.padInfo || []).map(i => i.index + ':' + i.name));

@@ -39,6 +39,19 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
   to 0). A game that has its own lists keeps them; the archive's shaders are still added. The
   import report gives the game's real shader count before and after. **Undo the last import**
   (Import Shader Data) puts back the data from the backup made before the import.
+- **Texture quality now really applies (0.9.2 defect):** 0.9.2's setting was never written for
+  the engine (its engine key was missing from NEXUS's list of engine options, so it was dropped
+  silently); every game ran with the engine's default (BC3, which is Medium). Now High
+  (uncompressed) applies to games not played before 0.9.2, Medium to those that were, as 0.9.2
+  intended. High uses more graphics memory; Medium or Low can be chosen per game.
+- **Joy-Con Compatibility** (Settings › Emulation › Controls): Enabled (default, as before) or
+  Disabled. Disabled turns off only NEXUS's own Joy-Con handling: the engine's Joy-Con driver and
+  SDL's direct Joy-Con support, and the menus ignore Joy-Cons read directly, so Joy-Cons managed
+  by other software (Steam on the Deck, joycond, a Joy-Con tool on Windows) are not read twice.
+  That software is never stopped, changed or looked for. Takes full effect after NEXUS restarts.
+  Not tested with real Joy-Cons.
+- **`Customisations/` folder** in the NEXUS folder (Windows and Linux), kept on updates (an update
+  only adds files it lacks). Nothing reads it yet; no Customisation Studio in 0.9.3.
 
 ## 0.9.2 — test build (not released)
 

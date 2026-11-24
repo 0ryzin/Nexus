@@ -62,6 +62,14 @@ var EmuOptions = []EmuOption{
 		Help: "Improves accuracy in some games at a performance cost."},
 	{ID: "Renderer/accelerate_astc", Label: "ASTC texture decoding", Group: "Performance", Kind: "enum", PerGame: true,
 		Choices: []EmuChoice{{"1", "GPU"}, {"0", "CPU"}, {"2", "CPU (asynchronous)"}}},
+	// Texture quality (0.9.3: missing here in 0.9.2, so NEXUS's Texture quality setting was never
+	// written for the engine; settings.h SwitchableSetting<AstcRecompression>, enum
+	// Uncompressed, Bc1, Bc3)
+	{ID: "Renderer/astc_recompression", Label: "Texture quality (ASTC recompression)", Group: "Performance", Kind: "enum", PerGame: true,
+		Choices: []EmuChoice{{"0", "Uncompressed (High)"}, {"2", "BC3 (Medium)"}, {"1", "BC1 (Low)"}}},
+	// Joy-Con Compatibility (joyconcompat.go; settings.h Setting<bool> enable_joycon_driver,
+	// Category::Controls: not per game)
+	{ID: "Controls/enable_joycon_driver", Label: "Engine's own Joy-Con driver", Group: "Controls", Kind: "bool"},
 	{ID: "Renderer/vram_usage_mode", Label: "VRAM usage", Group: "Performance", Kind: "enum", PerGame: true,
 		Choices: []EmuChoice{{"0", "Conservative"}, {"1", "Aggressive"}}},
 	{ID: "Renderer/nvdec_emulation", Label: "Video decoding (NVDEC)", Group: "Performance", Kind: "enum", PerGame: true,

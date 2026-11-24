@@ -61,6 +61,14 @@ Newest first.
 - **Tests:** `TestImportKeepsThisDevicesUsedLists`, `TestRestoreShaderBackup`. Not yet seen on
   the user's PC.
 
+### Texture quality never reached the engine (0.9.2, found 24 Nov while adding Joy-Con Compatibility)
+- **Cause:** `engineProject` writes only engine keys listed in `EmuOptions`;
+  `Renderer/astc_recompression` was bound (`engineBinds`) but not listed, so it was dropped
+  without a word. 0.9.2's test checked the mapping only.
+- **Fix:** listed (and `Controls/enable_joycon_driver`); `TestTextureQuality` now checks the
+  projected session value. **Recognise it again:** a new `engineBinds` entry needs an
+  `EmuOptions` entry; test through `engineProject`, not the map.
+
 ## 0.9.2
 
 ### Custom game artwork never reached the Steam Deck (PC and Deck both on 0.8.1, 24 Nov)
