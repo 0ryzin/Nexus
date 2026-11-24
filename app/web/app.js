@@ -3671,8 +3671,8 @@ const AccountUI = {
     };
     const fmt = v => v == null ? '(deleted)' : Object.entries(flat(v)).filter(([k]) => NAMES[k]).map(([k, x]) => `${NAMES[k]}: ${show(x)}`).join('\n') || 'Details';
     const buttons = d.kind === 'user'
-      ? [{ label: 'Cancel', value: null }, { label: 'Keep both users', value: 'separate' }, { label: `Use ${d.otherDevice}’s`, value: 'other', primary: true }]
-      : [{ label: 'Cancel', value: null }, { label: 'Keep this device’s', value: 'this' }, { label: `Use ${d.otherDevice}’s`, value: 'other', primary: true }];
+      ? [{ label: 'Cancel', value: null }, { label: 'Keep both users', value: 'separate' }, { label: `Use ${d.otherDevice}’s`, value: 'other' }]
+      : [{ label: 'Cancel', value: null }, { label: 'Keep this device’s', value: 'this' }, { label: `Use ${d.otherDevice}’s`, value: 'other' }]; // no default: a stray press chooses nothing (0.9.3)
     const text = d.kind === 'user' ? `A different user with the same name already exists on this device. Keep both (the account’s user is added as “… 2”), or use ${d.otherDevice}’s details.` : `${c.title} was changed on this device and on ${d.otherDevice} since they last synchronised. Nothing was overwritten. Choose which version to keep on all devices.`;
     const keep = await dialog({ title: 'Choose a version', text, pre: d.kind === 'user' ? fmt(d.other) : d.otherDeleted ? `Deleted on ${d.otherDevice}; changed on this device.` : `What differs (this device \u2192 ${d.otherDevice}):\n${diff(d.this, d.other)}`, buttons });
     if (keep) this.run(() => api('/api/account/conflict', { body: { id: c.id, keep } }), 'Resolved');
