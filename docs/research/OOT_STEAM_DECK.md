@@ -124,3 +124,31 @@ video path. What exactly fails needs the Deck's engine log.
   12 and ~15.3 GB (a Deck) the message explains the above instead of warning, once per game. The
   DRAM row reads "12 GB (required, set automatically)" with the explanation. Switch 1 games keep
   their memory layout setting unchanged. Test: `TestSwitch2MemoryNote`.
+
+## Performance, 0.9.2 (24 Nov) — what changed and what was not done
+
+Baseline (user, Deck, 0.8.1): 8–20 fps by area; video, title screen and audio work.
+
+**Found in the engine:** the built-in *Max Resolution* patch (on by default) makes Ocarina take its
+"dynamic resolution disabled" path: the 3D always renders at full scale instead of following the
+game's own GPU-time controller (down to 480p). On a GPU-limited Deck this is the heaviest graphics
+setting in play. 0.9.2 puts it in *game settings › Frame Rate & Performance › Full resolution*:
+off = the game's own dynamic resolution. Not measured on a Deck; the performance strip's GPU
+reading shows whether the graphics are the limit (near 100%) — if they are not (CPU-limited
+areas), this changes nothing.
+
+Other levers now in reach, all off by default and the user's choice: Texture quality Low (only
+bandwidth/memory; Ocarina is already at Medium on the Deck), frame rate 30 (steadier pacing),
+frame generation (smoothness, not speed).
+
+**Taken from Lichii:** engine patch 0048 (#2313, cloth follows the game below 60 fps with FPS
+Unlock — correctness at the Deck's frame rates). 0046/0047: Lichii Optical Flow (#1633, #2386).
+
+**Not taken, and why:** Lichii has 352 commits since the engine's base (17 Nov → 24 Nov),
+including further FPS Unlock correctness fixes (#2179, #2314, #2317, #2318: they conflict with the
+base's patch tables and need the intermediate commits) and many texture-cache and GPU-thread
+changes. Moving the whole engine forward is the most likely real speed gain, but it would replace
+the build that now plays Ocarina correctly on the Deck, without a Deck to test on. Proposed as its
+own step: a test engine build on the new base, A/B-tested by the user with the performance strip.
+
+No claim of a speed-up is made: nothing above was measured on a Steam Deck.

@@ -7,16 +7,19 @@ package main
 //     the Steam Deck's Desktop Mode "Add to Steam" then show NEXUS by name with its icon,
 //     launching the AppImage (or the tar.gz's nexus) from where it is.
 //   - Steam library artwork: Steam has no way for a program to set the artwork of a non-Steam
-//     game it was added as. NEXUS finds its own shortcut in Steam's shortcuts.vdf (read only,
-//     never changed) and copies its artwork (Resources/Steam) into Steam's grid folder under that
-//     shortcut's id, the same place Steam's "Set custom artwork" writes. Images the user already
-//     set there are never replaced. Steam shows them after it restarts.
+//     game it was added as. NEXUS finds its own shortcut in Steam's shortcuts.vdf (read only)
+//     and copies its artwork (Resources/Steam) into Steam's grid folder under that shortcut's
+//     id, the same place Steam's "Set custom artwork" writes. At every start NEXUS brings images
+//     it put there up to date (a new version's artwork); images the user set are never
+//     replaced. Steam shows them after it restarts.
 //
 // Nothing is written to system folders, and Steam's own files (shortcuts.vdf, config) are only read.
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -185,15 +188,36 @@ func isNexusShortcut(sc vdfShortcut, launcher string) bool {
 		strings.HasPrefix(base, "nexus-") && strings.HasSuffix(base, ".appimage") || base == "nexus" && strings.Contains(strings.ToLower(exe), "nexus")
 }
 
-// InstallSteamArtwork copies NEXUS's artwork for each of its Steam shortcuts. Existing images
-// (the user's own choice) are kept. Returns how many shortcuts got artwork.
+// steamArtFiles: NEXUS's artwork (Resources/Steam) and the grid file name Steam reads for a
+// shortcut's app ID.
+var steamArtFiles = map[string]string{"capsule.png": "%dp.png", "wide.png": "%d.png", "hero.png": "%d_hero.png", "logo.png": "%d_logo.png", "icon.png": "%d_icon.png"}
+
+// steamArtByNexus: SHA-256 of every artwork image an earlier NEXUS shipped (0.8.0-0.8.1: the
+// wordmark artwork and the old icon). A grid image with one of these hashes, or one NEXUS
+// recorded writing, was put there by NEXUS and may be replaced by the current artwork; any other
+// image is the user's own choice and is never touched.
+var steamArtByNexus = map[string]bool{
+	"ac68301218ede830a4e15687c3c00c8c89fe1a249e5bef9887bdb04e3e30df6e": true, // capsule 0.8
+	"203a3f2540a85f1f22389eeb8eeb5927b325523ace2f0f10b2fbedb9eadcc256": true, // hero 0.8
+	"30dd276c608f63522a042982020d6edef6c5b02305e124a48ad74707c2eb966d": true, // icon 0.8
+	"16768e77945c3353219a236d4461a5c1ce5d657ef50a830bcd4ce934f7a56a97": true, // logo 0.8
+	"698d9603a9bba628531cbfaa1244ca02c73c0cd6647552f15ae82cebd01a19b6": true, // wide 0.8
+}
+
+func (a *App) steamArtRecordPath() string { return filepath.Join(a.Paths.System, "steam-artwork.json") }
+
+// InstallSteamArtwork puts NEXUS's current artwork on each of its own Steam shortcuts (found by
+// NEXUS's name or launcher, never another shortcut). An image that is missing, or that NEXUS put
+// there (an earlier version's artwork), is replaced; the user's own images are kept. Returns how
+// many shortcuts got new artwork. Steam shows new artwork after it restarts.
 func (a *App) InstallSteamArtwork() (int, error) {
 	st := a.SteamStatus()
 	if len(st.Shortcuts) == 0 {
 		return 0, errors.New("NEXUS is not in your Steam library yet. Add it first (Steam › Games › Add a Non-Steam Game, or right-click the AppImage › Add to Steam in Desktop Mode), then try again.")
 	}
 	src := filepath.Join(a.Paths.Root, "Resources", "Steam")
-	files := map[string]string{"capsule.png": "%dp.png", "wide.png": "%d.png", "hero.png": "%d_hero.png", "logo.png": "%d_logo.png", "icon.png": "%d_icon.png"}
+	written := map[string]bool{} // hashes NEXUS wrote (this and earlier runs)
+	_ = readJSONFile(a.steamArtRecordPath(), &written)
 	n := 0
 	for _, sc := range st.Shortcuts {
 		var grid string
@@ -209,22 +233,48 @@ func (a *App) InstallSteamArtwork() (int, error) {
 			return n, err
 		}
 		wrote := false
-		for from, pattern := range files {
-			dst := filepath.Join(grid, fmt.Sprintf(pattern, sc.AppID))
-			if fileExists(dst) || fileExists(strings.TrimSuffix(dst, ".png")+".jpg") {
-				continue // the user's own image
+		for from, pattern := range steamArtFiles {
+			want, err := os.ReadFile(filepath.Join(src, from))
+			if err != nil {
+				continue
 			}
-			if err := copyFileOverwrite(filepath.Join(src, from), dst); err != nil {
+			dst := filepath.Join(grid, fmt.Sprintf(pattern, sc.AppID))
+			if fileExists(strings.TrimSuffix(dst, ".png") + ".jpg") {
+				continue // the user's own image (Steam saves those as .jpg too)
+			}
+			if have, err := os.ReadFile(dst); err == nil {
+				h := sha256Hex(have)
+				if h == sha256Hex(want) {
+					continue // already the current artwork
+				}
+				if !steamArtByNexus[h] && !written[h] {
+					continue // the user's own image
+				}
+			}
+			if err := writeFileAtomic(dst, want); err != nil {
 				return n, err
 			}
+			written[sha256Hex(want)] = true
 			wrote = true
 		}
 		if wrote {
 			n++
-			a.Log.Printf("steam: artwork for shortcut %d (Steam user %s)", sc.AppID, sc.User)
+			a.Log.Printf("steam: NEXUS artwork for shortcut %d (Steam user %s); Steam shows it after it restarts", sc.AppID, sc.User)
 		}
 	}
+	_ = writeJSONAtomic(a.steamArtRecordPath(), written)
 	return n, nil
+}
+
+// refreshSteamArtwork runs at start on Linux: NEXUS's Steam entries get the current artwork
+// after an update (only images NEXUS put there, never the user's own; Steam's files untouched).
+func (a *App) refreshSteamArtwork() {
+	if runtime.GOOS != "linux" {
+		return
+	}
+	if n, err := a.InstallSteamArtwork(); err == nil && n > 0 {
+		a.Log.Printf("steam: artwork brought up to date for %d NEXUS entr%s", n, map[bool]string{true: "y", false: "ies"}[n == 1])
+	}
 }
 
 // ---------------------------------------------------------------- shortcuts.vdf (binary VDF)
@@ -308,4 +358,9 @@ func parseShortcuts(b []byte) []vdfShortcut {
 	}
 	walk(0, nil)
 	return out
+}
+
+func sha256Hex(b []byte) string {
+	s := sha256.Sum256(b)
+	return hex.EncodeToString(s[:])
 }

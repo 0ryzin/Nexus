@@ -3807,10 +3807,19 @@ function steamRows(p) {
           alertDlg('NEXUS was added to Steam', r.added.length ? `Added for ${r.added.length} Steam user${r.added.length > 1 ? 's' : ''}${r.art ? ', with its artwork' : ''}. Start Steam to see it.` : 'NEXUS was already in Steam.');
         } catch (e) { alertDlg('Add NEXUS to Steam', e.message); }
       } }));
+    // an entry made for an older NEXUS file (each version is a new AppImage name)
+    const stale = sc.filter(x => x.exe && x.exe.replace(/"/g, '') !== st.launcher);
+    if (stale.length) box.append(rowButton('Point the Steam entry at this version', {
+      icon: I.warn,
+      sub: `Your Steam entry starts ${stale[0].exe.replace(/"/g, '')}, not this NEXUS (${st.launcher}). NEXUS can change only that entry so it starts this version: it keeps its place, artwork, play time and controller layout in Steam, and no second entry is made. Steam must be closed first.`,
+      onClick: async () => {
+        if (!await confirmDlg('Point the Steam entry at this version?', 'NEXUS changes only its own entry in Steam\u2019s shortcuts file (the program it starts and its folder). Your other games and shortcuts are not changed, and a backup of the file is kept.\n\nSteam must be closed first (Desktop Mode: Steam \u203a Exit). Start Steam again afterwards.', 'Change it')) return;
+        try { const r = await api('/api/steam/repoint', { body: {} }); draw(r.status); toast(r.changed ? 'The Steam entry now starts this version. Start Steam again.' : 'Nothing needed changing', I.check, 5000); } catch (e) { alertDlg('Steam entry', e.message); }
+      } }));
     const art = sc.length && sc.every(x => x.artDone);
     box.append(rowButton(art ? 'Steam artwork: in place' : 'Add NEXUS artwork to Steam', {
       icon: I.image || I.plus,
-      sub: sc.length ? `NEXUS is in Steam ${sc.length === 1 ? 'once' : sc.length + ' times'}. Steam does not let a program set its own artwork; NEXUS copies its library images into Steam\u2019s custom artwork folder for that entry (your own images there are kept). Restart Steam (or the Steam Deck) to see them.`
+      sub: sc.length ? `NEXUS is in Steam ${sc.length === 1 ? 'once' : sc.length + ' times'}. Steam does not let a program set its own artwork; NEXUS copies its library images into Steam\u2019s custom artwork folder for that entry (your own images there are kept). Restart Steam (or the Steam Deck) to see them. After an update NEXUS replaces the images it put there with the new version\u2019s artwork by itself.`
         : 'Add NEXUS to Steam first (Steam \u203a Games \u203a Add a Non-Steam Game \u203a NEXUS, after adding it to the app menu above), then come back here.',
       onClick: async () => {
         if (!await confirmDlg('Add NEXUS artwork to Steam?', 'NEXUS copies five images (library tile, wide tile, header, logo, icon) into Steam\u2019s custom artwork folder for its own entry. Steam\u2019s other files and your other games are not changed, and images you set yourself are kept.', 'Add artwork')) return;

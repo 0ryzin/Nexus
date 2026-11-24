@@ -12,6 +12,25 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
 - Ocarina of Time stuck loading: investigated (see docs/COMPATIBILITY.md); not reproduced, not yet fixed.
 - Knowledge base: CLAUDE.md, docs/DEVELOPMENT_NOTES.md, COMPATIBILITY.md, REGRESSION_HISTORY.md, research/LICHII.md, research/FRITCHII.md, benchmark method in PERFORMANCE.md.
 
+## 0.9.2 — test build (not released)
+
+- **Game artwork sync fixed:** a game's custom pictures are now their own account item, merged
+  picture by picture (newer wins, older never replaces newer, replaced ones backed up). Before, a
+  waiting conflict about the game's other details held the PC's cover back from the Deck for good.
+- **Texture quality** (Graphics, global and per game): High (uncompressed), Medium (BC3), Low (BC1)
+  — Lichii's "ASTC Recompression Method". High by default; games already played keep Medium, what
+  they ran with. Switch 2 games on the Deck stay at Medium whatever is chosen (engine safety).
+- **Ocarina of Time:** *Full resolution* switch (the engine's Max Resolution patch; off = the game's
+  own dynamic resolution, for GPU-limited moments on the Deck). Cloth follows the game below 60 fps
+  (Lichii #2313).
+- **Frame generation:** the built-in method is now Lichii Optical Flow with Lichii's newer
+  coarse-to-fine matcher (#1633, #2386); it runs on any Vulkan GPU, the Steam Deck included.
+- **Steam Deck artwork:** new NEXUS artwork for Steam (library tile, wide tile, header, logo,
+  icon) with an original emblem; NEXUS replaces artwork it put there earlier at every start
+  (never the user's own), and can point its Steam entry at a new version's AppImage instead of
+  leaving a broken entry or making a second one.
+- Research: frame generation (Lichii, Eglantine), graphics quality, Android feasibility.
+
 ## 0.8.1 — test build (not released)
 
 - **Deleting a save really deletes it.** Synchronisation used to reinstall the account's copy

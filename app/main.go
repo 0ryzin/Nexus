@@ -39,6 +39,7 @@ func main() {
 	defer core.Close()
 	app, url := core.App, core.URL
 	app.Log.Printf("startup: core ready after %v (pid %d)", time.Since(startupBegan).Round(time.Millisecond), os.Getpid())
+	go app.refreshSteamArtwork() // Linux: NEXUS's own Steam entries get this version's artwork
 	runUI(app, url)
 	// make sure a running game isn't orphaned silently
 	if st := app.Emu.State(); st.Running {

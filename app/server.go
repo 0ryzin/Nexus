@@ -2635,6 +2635,15 @@ func (s *Server) routes() {
 		}
 		writeJSON(w, map[string]any{"added": res.Added, "already": res.Already, "appId": res.AppID, "art": res.Art, "status": a.SteamStatus()})
 	})
+	m.HandleFunc("POST /api/steam/repoint", func(w http.ResponseWriter, r *http.Request) {
+		n, err := a.RepointSteamEntry()
+		if err != nil {
+			writeErr(w, 409, err)
+			return
+		}
+		_, _ = a.InstallSteamArtwork()
+		writeJSON(w, map[string]any{"changed": n, "status": a.SteamStatus()})
+	})
 	m.HandleFunc("POST /api/steam/artwork", func(w http.ResponseWriter, r *http.Request) {
 		n, err := a.InstallSteamArtwork()
 		if err != nil {
