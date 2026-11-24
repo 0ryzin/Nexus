@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -12,6 +13,9 @@ import (
 // old AppImage) starts the new one with the same app ID; other entries are untouched; the old
 // version's artwork NEXUS put there is replaced by the new artwork, the user's own image is not.
 func TestRepointSteamEntryAndArtwork(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Steam entries are managed on Linux and the Steam Deck only")
+	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
