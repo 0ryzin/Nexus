@@ -1411,7 +1411,12 @@ func (ac *Account) Sync() (SyncSummary, error) {
 	cursor := ac.st.Cursor
 	ac.mu.Unlock()
 	ac.changed()
+	started := time.Now()
+	done := make(chan struct{})
+	go ac.app.syncWatchdog("account", started, done)
 	err := ac.syncOnce(cursor, &sum)
+	close(done)
+	ac.app.Log.Printf("account: synchronisation finished in %s: %d received, %d sent, %d conflict(s)%s", time.Since(started).Round(time.Millisecond), sum.Downloaded, sum.Uploaded, sum.Conflicts, map[bool]string{true: "", false: " — " + syncOutcome(err)}[err == nil])
 	ac.mu.Lock()
 	ac.busy = false
 	ac.st.Offline = errors.Is(err, errOffline)

@@ -39,6 +39,15 @@ async def main():
     # a clean start for this game's shader data (earlier tests may have left some)
     import shutil
     shutil.rmtree(os.path.join(sys.argv[2], "System", "Engine", "cache", "shader", "0100aaaa00010000"), ignore_errors=True)
+    # the test game is identified with the fixture's keys; on the CI machine they were not in
+    # NEXUS's own keys folder at this point (Starfall Rally then had no title ID), so put the
+    # fixture's copy there if it is missing
+    keys = os.path.join(sys.argv[2], "System", "Engine", "keys", "prod.keys")
+    fixture_keys = os.path.join(sys.argv[2], "Emulator", "Lichii", "user", "keys", "prod.keys")
+    if not os.path.exists(keys) and os.path.exists(fixture_keys):
+        os.makedirs(os.path.dirname(keys), exist_ok=True)
+        shutil.copyfile(fixture_keys, keys)
+        print("note: installed the fixture's prod.keys for this test")
     p, _ = H.start()
     src_hash = hashlib.sha256(open(FIX, "rb").read()).hexdigest()
     out = tempfile.mkdtemp()
