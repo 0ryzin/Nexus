@@ -398,7 +398,7 @@ func (ac *Account) Status() AccountStatus {
 	defer ac.mu.Unlock()
 	st := AccountStatus{Server: ac.serverLocked(), Custom: ac.st.Server != "", SignedIn: ac.st.SignedIn, Email: ac.st.Email, DisplayName: ac.st.DisplayName,
 		DeviceID: ac.st.DeviceID, DeviceName: firstNonEmpty(ac.st.DeviceName, defaultDeviceName()), Platform: devicePlatform(), Ended: ac.st.Ended,
-		SyncOn: ac.st.SyncOn, Pending: pending, LastSync: ac.st.LastSync, LastError: ac.st.LastError, Categories: ac.st.Categories,
+		SyncOn: ac.st.SyncOn, Pending: pending, LastSync: ac.st.LastSync, LastError: ac.st.LastError, Categories: copyBoolMap(ac.st.Categories),
 		Conflicts: append([]AccountConflict{}, ac.st.Conflicts...), History: append([]SyncEvent{}, ac.st.History...),
 		Devices: append([]accountDevice{}, ac.st.Devices...), OnboardSeen: ac.st.OnboardSeen, TokenStorage: secretStorageName,
 		HoldUploads: ac.st.HoldUploads, HoldFrom: ac.st.HoldFrom}
@@ -1946,4 +1946,17 @@ func (ac *Account) applyItemArt(k string, it remoteItem) {
 	if refs := libraryArtRefs(it.Data); len(refs) > 0 {
 		ac.app.applyArtRefs(saveRemote{ac: ac}, strings.TrimPrefix(k, "library/"), refs)
 	}
+}
+
+// copyBoolMap: Status hands out copies; the account's own map changes under its lock while a
+// status is being sent to the interface (a race seen in CI, 24 Nov)
+func copyBoolMap(m map[string]bool) map[string]bool {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]bool, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
 }
