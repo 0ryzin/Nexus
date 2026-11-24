@@ -75,7 +75,6 @@ func TestStatusFastWhileGitHubHangs(t *testing.T) {
 		f.ServeHTTP(w, r)
 	}))
 	defer srv.Close()
-	defer close(hang)
 	f.base = srv.URL
 	oldWeb, oldAPI := githubWeb, githubAPI
 	githubWeb, githubAPI = srv.URL, srv.URL
@@ -83,7 +82,9 @@ func TestStatusFastWhileGitHubHangs(t *testing.T) {
 	pc, _ := newTestApp(t, "")
 	signInGitHub(t, pc, f, "PC")
 	hanging.Store(true)
-	go pc.Account.Sync()
+	syncDone := make(chan struct{})
+	go func() { pc.Account.Sync(); close(syncDone) }()
+	defer func() { close(hang); <-syncDone }() // the synchronisation ends before the next test
 	time.Sleep(300 * time.Millisecond)
 	for i := 0; i < 3; i++ {
 		start := time.Now()
