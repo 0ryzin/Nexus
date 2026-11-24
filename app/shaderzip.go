@@ -59,6 +59,10 @@ type ShaderZipFile struct {
 	Action string `json:"action"` // added | installed | skipped
 	Reason string `json:"reason,omitempty"`
 	Added  int    `json:"added,omitempty"`
+	// Present: records this device already had (kept as they are); UsedKept: the archive's
+	// session usage lists not added because the game has its own
+	Present  int `json:"present,omitempty"`
+	UsedKept int `json:"usedKept,omitempty"`
 }
 
 type ShaderZipResult struct {
@@ -67,6 +71,30 @@ type ShaderZipResult struct {
 	Added    int             `json:"added"`
 	Usable   int             `json:"usable"` // files that were imported or installed
 	LogBytes int64           `json:"logBytes"`
+	// the game's shader data before and after: live shader records (programs and pipelines),
+	// counted from the file itself, so the report states real numbers
+	Before int `json:"before"`
+	After  int `json:"after"`
+}
+
+// countShaderRecords: live program and pipeline records in a game's log (0 when none).
+func countShaderRecords(path string) int {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	_, recs, _, err := parseV2Log(b)
+	if err != nil {
+		return 0
+	}
+	live, _, _ := liveRecords(b, recs)
+	n := 0
+	for k := range live {
+		if k.kind == v2KindProgram || k.kind == v2KindGraphics || k.kind == v2KindCompute {
+			n++
+		}
+	}
+	return n
 }
 
 // ImportShaderZip imports the shader caches a ZIP carries into game g.
@@ -80,6 +108,7 @@ func (e *Emulator) ImportShaderZip(zipPath string, g *Game) (ShaderZipResult, er
 		return res, fmt.Errorf("This file is not a ZIP archive NEXUS can read (%v).", err)
 	}
 	defer zr.Close()
+	res.Before = countShaderRecords(e.ShaderLogPath(g.TitleID))
 	seen := map[string]bool{}
 	// older-format caches last: one is installed only while the game has no current-format log,
 	// so a log elsewhere in the same archive must be imported first, whatever the archive order
@@ -142,11 +171,16 @@ func (e *Emulator) ImportShaderZip(zipPath string, g *Game) (ShaderZipResult, er
 				out.Reason = "damaged or another format version: " + err.Error()
 				break
 			}
-			added, _, _, err := appendPortable(e.ShaderLogPath(g.TitleID), data)
+			st, err := appendPortableStats(e.ShaderLogPath(g.TitleID), data)
 			if err != nil {
 				return res, fmt.Errorf("%s could not be added; the game's shader data was not changed: %v", name, err)
 			}
+			added := st.added
 			out.Action, out.Added = "added", added
+			out.Present, out.UsedKept = st.present, st.usedKept
+			if st.usedKept > 0 {
+				out.Reason = fmt.Sprintf("this device's own lists of the shaders its sessions used were kept; the archive's %d were not added (they would replace this device's and stop its shaders being built at start)", st.usedKept)
+			}
 			res.Added += added
 			res.Usable++
 		case shaderPackMagic:
@@ -211,7 +245,11 @@ func (e *Emulator) ImportShaderZip(zipPath string, g *Game) (ShaderZipResult, er
 	if fi, err := os.Stat(e.ShaderLogPath(g.TitleID)); err == nil {
 		res.LogBytes = fi.Size()
 	}
-	e.app.Log.Printf("shaders: ZIP import for %s: %d file(s) usable, %d record(s) added", g.TitleID, res.Usable, res.Added)
+	res.After = countShaderRecords(e.ShaderLogPath(g.TitleID))
+	e.app.Log.Printf("shaders: ZIP import for %s: %d file(s) usable, %d record(s) added; %d shader records before, %d after", g.TitleID, res.Usable, res.Added, res.Before, res.After)
+	if res.After < res.Before { // never expected (only appends); said plainly if it happens
+		e.app.Log.Printf("shaders: ZIP import for %s left fewer records than before; the backup made before the import can restore them", g.TitleID)
+	}
 	if len(res.Files) == 0 {
 		return res, errors.New("The ZIP archive is empty.")
 	}

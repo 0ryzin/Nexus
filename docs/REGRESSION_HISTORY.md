@@ -35,6 +35,32 @@ Newest first.
   is read. The log records each controller (id, mapping, buttons, axes) and its first 16 presses.
 - **Tests:** `tools/uitest/controller_robust.py`.
 
+### Save conflict: the default choice could keep the less advanced copy (0.9.3)
+- **Risk found while checking cloud safety:** the conflict dialog's primary (first-focused)
+  button was "Keep this device's"; on the PC one press of A kept the PC's Ocarina of Time save over
+  the Deck's further-ahead one in the account (the Deck would then have asked in turn; nothing was
+  deleted, the replaced copy is backed up). The dialog showed only save times.
+- **Fix:** "Decide later" is focused first; each device's play time and last play are shown
+  (`SaveSyncConflict.LocalPlay/RemotePlay`, from this device's statistics and the other device's
+  synchronised ones), with `Ahead` only when play time and save time agree. Link conflicts: no
+  default either.
+- **Test:** `TestSaveConflictShowsWhichIsAhead` (PC and Deck both change the save; the Deck has
+  10 h, the PC 1 h: the PC's copy untouched, the Deck's marked ahead, choosing it backs up the PC's).
+
+### Shader import: about 5,000 shaders to 0 after importing a 15,000-shader cache (0.9.3)
+- **Cause (from the engine's code; the user's engine log not seen):** imports appended the
+  source's `Used` records (one per play session: the pipelines it used). The engine keeps the 16
+  newest sessions (`UsedPipelinesMaxAge`) and tombstones the rest at the next start, and builds at
+  start the pipelines of the newest two sessions. Another device's newer sessions displaced and
+  then deleted this device's own lists, so its pipelines were no longer built at start
+  ("0 ready from the shader cache").
+- **Fix:** `appendPortableStats` adds `Used` records only to a log that has none (the archive's
+  programs and pipelines are still added); counts before and after from the file
+  (`countShaderRecords`); `RestoreShaderBackup` puts back the pre-import backup (current data
+  backed up first), "Undo the last import" in Import Shader Data.
+- **Tests:** `TestImportKeepsThisDevicesUsedLists`, `TestRestoreShaderBackup`. Not yet seen on
+  the user's PC.
+
 ## 0.9.2
 
 ### Custom game artwork never reached the Steam Deck (PC and Deck both on 0.8.1, 24 Nov)

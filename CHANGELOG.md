@@ -28,6 +28,17 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
   the menus reading the controller until restart; controllers that report the D-pad as a hat
   axis (no standard mapping) navigate; the log records each controller and its first presses.
   The D-pad report on Tom's PC is not yet reproduced.
+- **Save conflicts show which copy is further ahead:** each device's play time and last play for
+  that game, and "looks further ahead" when one copy has both more play time and the later save.
+  The choice no longer starts on "Keep this device's": the first button is "Decide later", so a
+  stray press cannot keep an older save over a more advanced one. (Nothing was ever overwritten
+  without a choice; the one not kept is backed up first.)
+- **Shader import no longer empties a game's start-up shaders:** importing another device's cache
+  also added its lists of the shaders each session used; the engine keeps the 16 newest sessions
+  and deleted this device's own lists, so its pipelines stopped being built at start (about 5,000
+  to 0). A game that has its own lists keeps them; the archive's shaders are still added. The
+  import report gives the game's real shader count before and after. **Undo the last import**
+  (Import Shader Data) puts back the data from the backup made before the import.
 
 ## 0.9.2 — test build (not released)
 

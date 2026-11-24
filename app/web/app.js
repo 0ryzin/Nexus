@@ -2079,7 +2079,9 @@ function shaderJobResult(j) {
   const skipped = r.files.filter(x => x.action === 'skipped').length;
   const head = r.usable ? (r.added ? `${n(r.added)} shader entries were added to ${j.title}; they are built before you play.` : `Everything usable in this ZIP was already here for ${j.title}, or it was installed for the engine to convert.`)
     : `Nothing in this ZIP could be used for ${j.title}. Nothing was changed.`;
-  alertDlg('Import Shader Data', `${head}\n${r.files.length} file(s) in the archive: ${r.usable} used, ${skipped} not used${r.files.length - r.usable - skipped ? ', the export description checked' : ''}.${backup}\n\n` + lines.slice(0, 12).join('\n') + (lines.length > 12 ? `\n… and ${lines.length - 12} more file(s)` : ''));
+  // real numbers, counted from the game's shader file before and after (shaderzip.go)
+  const counts = `\n${j.title}'s shader data: ${n(r.before)} shaders and pipelines before, ${n(r.after)} now.`;
+  alertDlg('Import Shader Data', `${head}${counts}\n${r.files.length} file(s) in the archive: ${r.usable} used, ${skipped} not used${r.files.length - r.usable - skipped ? ', the export description checked' : ''}.${backup}\n\n` + lines.slice(0, 12).join('\n') + (lines.length > 12 ? `\n… and ${lines.length - 12} more file(s)` : ''));
 }
 async function shaderExportZip(g) {
   const r = await shaderJobRun(() => api(`/api/games/${encodeURIComponent(g.key)}/shaders/export-zip`, { body: {} }));
@@ -2087,7 +2089,13 @@ async function shaderExportZip(g) {
 }
 async function shaderImportMenu(g) {
   const v = await dialog({ title: `Import Shader Data for ${g.title}`, text: 'From a ZIP file: a ZIP made by Export Shader Data on another NEXUS, or one with original shader-cache files from the NEXUS Engine or the emulators it is based on. NEXUS reads it where it is, checks every file and converts what its engine can use; the ZIP is not changed.\n\nFrom another device: your other NEXUS device on the same network sends its shader data for this game directly (it needs Device Linking).',
-    buttons: [{ label: 'Cancel', value: null }, { label: 'From another device', value: 'device' }, { label: 'From a ZIP file', value: 'zip', primary: true }], cancelValue: null });
+    buttons: [{ label: 'Cancel', value: null }, { label: 'Undo the last import', value: 'restore' }, { label: 'From another device', value: 'device' }, { label: 'From a ZIP file', value: 'zip', primary: true }], cancelValue: null });
+  if (v === 'restore') {
+    if (!await confirmDlg(`Undo the last import for ${g.title}?`, 'NEXUS puts back the game\u2019s shader data from the backup made just before the last import. The current shader data is backed up first.', 'Undo the import')) return;
+    try { const r = await api(`/api/games/${encodeURIComponent(g.key)}/shaders/restore-backup`, { body: {} }); alertDlg('Shader data restored', `${g.title}: ${Number(r.records || 0).toLocaleString()} shaders and pipelines restored from ${r.backup}. They are built again the next time you play.`); }
+    catch (e) { alertDlg('Undo the last import', e.message); }
+    return;
+  }
   if (v === 'zip') {
     const r = await shaderJobRun(() => api(`/api/games/${encodeURIComponent(g.key)}/shaders/import-zip-file`, { body: {} }));
     if (r === 'noPicker') shaderImport(g); // no native picker: choose and upload the file
@@ -3485,9 +3493,15 @@ const AccountUI = {
           } }));
           continue;
         }
-        box.append(rowButton(`${c.title} \u2014 ${c.userName}`, { icon: I.warn, sub: `Changed on this device (saved ${here}) and on ${c.remote.deviceName} (saved ${there}). Neither was overwritten.`, onClick: async () => {
-          const v = await dialog({ title: `${c.title}: which save?`, text: `This device: last saved ${here}.\n${c.remote.deviceName}: last saved ${there}.\n\nThe save you do not keep is backed up first (Save Data \u203a Backups) on this device; GitHub also keeps every earlier version.`,
-            buttons: [{ label: 'Decide later', value: '' }, { label: `Use ${c.remote.deviceName}\u2019s`, value: 'remote' }, { label: 'Keep this device\u2019s', value: 'local', primary: true }], cancelValue: '' });
+        // which copy is further ahead: play time and last play on each device (savesync.go
+        // addPlayTimes). Nothing is chosen by default: the first button is "Decide later", so a
+        // stray press never replaces a save that may be further ahead (0.9.3).
+        const play = x => x ? `${fmtDur(x.seconds)} played there, last ${x.lastPlayed ? new Date(x.lastPlayed * 1000).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '?'}` : 'play time not known';
+        const dev = c.remote.deviceName || 'the other device';
+        const ahead = c.ahead === 'remote' ? `${dev}\u2019s save looks further ahead (more play time and saved later).` : c.ahead === 'local' ? 'This device\u2019s save looks further ahead (more play time and saved later).' : 'Neither save is clearly further ahead: check the play times.';
+        box.append(rowButton(`${c.title} \u2014 ${c.userName}`, { icon: I.warn, sub: `Changed on this device (saved ${here}) and on ${dev} (saved ${there}). Neither was overwritten. ${ahead}`, onClick: async () => {
+          const v = await dialog({ title: `${c.title}: which save?`, text: `This device: saved ${here}; ${play(c.localPlay).replace(' there', ' here')}.\n${dev}: saved ${there}; ${play(c.remotePlay)}.\n\n${ahead}\n\nThe save you do not keep is backed up first (Save Data \u203a Backups) on this device; GitHub also keeps every earlier version.`,
+            buttons: [{ label: 'Decide later', value: '' }, { label: `Use ${dev}\u2019s`, value: 'remote' }, { label: 'Keep this device\u2019s', value: 'local' }], cancelValue: '' });
           if (!v) return;
           try { draw(await api('/api/saves/sync/resolve', { body: { key: c.key, keep: v } })); toast('Save synchronised', I.check); } catch (e) { alertDlg('Game saves', e.message); }
         } }));
@@ -4275,7 +4289,7 @@ async function renderSync(p) {
     p.append(h('h3', {}, 'Save conflicts'));
     for (const c of st.conflicts) {
       p.append(rowButton(`${profileById(c.account)?.name || c.account}: ${c.path.replace(/^saves\//, '')}`, { sub: `Changed here and on ${c.device} · ${fmtAgo(c.detected)}`, onClick: async () => {
-        const v = await dialog({ title: 'Which version do you keep?', text: `This save was changed on this device and on ${c.device}. Both versions are kept until you choose.\n\nThe other version is stored in ${c.theirs}`, buttons: [{ label: 'Later', value: null }, { label: `Use ${c.device}’s`, value: 'theirs' }, { label: 'Keep this device’s', value: 'mine', primary: true }] });
+        const v = await dialog({ title: 'Which version do you keep?', text: `This save was changed on this device and on ${c.device}. Both versions are kept until you choose.\n\nThe other version is stored in ${c.theirs}`, buttons: [{ label: 'Later', value: null }, { label: `Use ${c.device}’s`, value: 'theirs' }, { label: 'Keep this device’s', value: 'mine' }] });
         if (v) { try { await api('/api/link/resolve', { body: { id: c.id, keep: v } }); toast('Done', I.check); } catch (e) { alertDlg('Could not resolve', e.message); } rebuildPanel(); }
       } }));
     }

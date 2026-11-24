@@ -92,21 +92,38 @@ func (e *Emulator) ensureSharedShaderDir() string {
 // tombstone, are left alone, and nothing already in dst is rewritten. A game running in another
 // NEXUS keeps appending safely around it.
 func appendPortable(dst string, src []byte) (added, present, removed int, err error) {
+	st, err := appendPortableStats(dst, src)
+	return st.added, st.present, st.removed, err
+}
+
+type appendStats struct {
+	added, present, removed int
+	// usedKept: the source's lists of the pipelines its sessions used, not added because dst
+	// has its own. The engine keeps the 16 newest sessions and deletes older ones at the next
+	// start: another device's newer sessions pushed out every list of this device's own, and
+	// its pipelines stopped being built at start (0.9.3: "about 5,000 shaders to 0" after
+	// importing a 15,000-shader cache). Used lists are only added to a game that has none.
+	usedKept int
+}
+
+func appendPortableStats(dst string, src []byte) (st appendStats, err error) {
+	added, present, removed := 0, 0, 0
+	defer func() { st.added, st.present, st.removed = added, present, removed }()
 	_, srecs, _, err := parseV2Log(src)
 	if err != nil {
-		return 0, 0, 0, err
+		return st, err
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return 0, 0, 0, err
+		return st, err
 	}
 	unlock, err := lockWait(dst+".lock", 5*time.Second)
 	if err != nil {
-		return 0, 0, 0, err
+		return st, err
 	}
 	defer unlock()
 	local, err := os.ReadFile(dst)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return 0, 0, 0, err
+		return st, err
 	}
 	var have map[rk]v2Record
 	var gone map[rk]bool
@@ -117,10 +134,10 @@ func appendPortable(dst string, src []byte) (added, present, removed int, err er
 	} else {
 		ver, lrecs, _, perr := parseV2Log(local)
 		if perr != nil {
-			return 0, 0, 0, fmt.Errorf("the shader cache %s cannot be read (%v); nothing was changed", dst, perr)
+			return st, fmt.Errorf("the shader cache %s cannot be read (%v); nothing was changed", dst, perr)
 		}
 		if ver != v2FormatVersion {
-			return 0, 0, 0, fmt.Errorf("the shader cache %s uses format %d; nothing was changed", dst, ver)
+			return st, fmt.Errorf("the shader cache %s uses format %d; nothing was changed", dst, ver)
 		}
 		have, _, gone = liveRecords(local, lrecs)
 		if pad := (8 - len(local)%8) % 8; pad > 0 {
@@ -128,6 +145,13 @@ func appendPortable(dst string, src []byte) (added, present, removed int, err er
 		}
 	}
 	live, order, _ := liveRecords(src, srecs)
+	hasUsed := false
+	for k := range have {
+		if k.kind == v2KindUsed {
+			hasUsed = true
+			break
+		}
+	}
 	out := prefix
 	for _, k := range order {
 		r, ok := live[k]
@@ -139,37 +163,43 @@ func appendPortable(dst string, src []byte) (added, present, removed int, err er
 			removed++
 		case have != nil && func() bool { _, ok := have[k]; return ok }():
 			present++
+		case r.kind == v2KindUsed && hasUsed:
+			st.usedKept++
 		default:
 			out = append(out, src[r.off:r.end]...)
 			added++
 		}
 	}
 	if added == 0 {
-		return 0, present, removed, nil
+		return st, nil
 	}
 	if local == nil {
 		tmp := dst + ".nexus-new"
 		if err := os.WriteFile(tmp, out, 0o666); err != nil {
 			os.Remove(tmp)
-			return 0, present, removed, err
+			added = 0
+			return st, err
 		}
 		if err := os.Rename(tmp, dst); err != nil {
 			os.Remove(tmp)
-			return 0, present, removed, err
+			added = 0
+			return st, err
 		}
-		return added, present, removed, nil
+		return st, nil
 	}
 	f, err := os.OpenFile(dst, os.O_WRONLY|os.O_APPEND, 0)
 	if err != nil {
-		return 0, present, removed, err
+		added = 0
+		return st, err
 	}
 	n, werr := f.Write(out)
 	cerr := f.Close()
 	if werr != nil || cerr != nil || n != len(out) {
 		_ = os.Truncate(dst, int64(len(local))) // like the engine: cut off what was half written
-		return 0, present, removed, errors.Join(werr, cerr, io.ErrShortWrite)
+		added = 0
+		return st, errors.Join(werr, cerr, io.ErrShortWrite)
 	}
-	return added, present, removed, nil
+	return st, nil
 }
 
 // lockWait takes a file lock, trying for up to wait.

@@ -97,6 +97,18 @@ type SaveSyncConflict struct {
 	LocalModified int64    `json:"localModified"`
 	Remote        SaveMeta `json:"remote"`
 	Found         int64    `json:"found"`
+	// Play time of this user in this game on each device, from the statistics both devices
+	// synchronise, so the choice shows which copy is further ahead (0.9.3). Filled in by Status.
+	LocalPlay  *conflictPlay `json:"localPlay,omitempty"`
+	RemotePlay *conflictPlay `json:"remotePlay,omitempty"`
+	// Ahead: "local" or "remote" when one copy has both more play time and the later save;
+	// empty when they disagree or are unknown (then nothing is suggested).
+	Ahead string `json:"ahead,omitempty"`
+}
+
+type conflictPlay struct {
+	Seconds    int64 `json:"seconds"`
+	LastPlayed int64 `json:"lastPlayed"`
 }
 
 type saveSyncState struct {
@@ -186,7 +198,66 @@ func (s *SaveSync) Status() SaveSyncStatus {
 		st.Conflicts = append(st.Conflicts, c)
 	}
 	sort.Slice(st.Conflicts, func(i, j int) bool { return st.Conflicts[i].Key < st.Conflicts[j].Key })
+	if len(st.Conflicts) > 0 {
+		s.mu.Unlock()
+		s.addPlayTimes(st.Conflicts)
+		s.mu.Lock()
+	}
 	return st
+}
+
+// addPlayTimes fills in each device's play time for the conflicting saves: this device's own
+// statistics, and the other device's as last synchronised (stats-devices/account-<device>.json).
+func (s *SaveSync) addPlayTimes(cs []SaveSyncConflict) {
+	a := s.app
+	ac := a.Account
+	ac.mu.Lock()
+	pm := map[string]string{}
+	for k, v := range ac.st.ProfileMap {
+		pm[k] = v
+	}
+	ac.mu.Unlock()
+	for i := range cs {
+		c := &cs[i]
+		user, tid, _, ok := parseSaveKey(c.Key)
+		if !ok {
+			continue
+		}
+		local := user
+		if m, ok := pm[user]; ok {
+			local = m
+		}
+		gk := "t-" + strings.ToLower(tid)
+		if g := a.Profiles.LocalStats(local).Games[gk]; g != nil {
+			c.LocalPlay = &conflictPlay{g.Seconds, g.LastPlayed}
+		}
+		if dev := c.Remote.DeviceID; dev != "" && !strings.ContainsAny(dev, `/\.`) {
+			var snap struct {
+				Stats ProfileStats `json:"stats"`
+			}
+			if readJSON(filepath.Join(a.Profiles.profileDir(local), "stats-devices", "account-"+dev+".json"), &snap) == nil {
+				if g := snap.Stats.Games[gk]; g != nil {
+					c.RemotePlay = &conflictPlay{g.Seconds, g.LastPlayed}
+				}
+			}
+		}
+		c.Ahead = aheadOf(c)
+	}
+}
+
+// aheadOf: the copy that has both more play time and the later save, else none.
+func aheadOf(c *SaveSyncConflict) string {
+	if c.Remote.Deleted || c.LocalPlay == nil || c.RemotePlay == nil {
+		return ""
+	}
+	l, r := c.LocalPlay.Seconds, c.RemotePlay.Seconds
+	switch {
+	case r > l && c.Remote.Modified >= c.LocalModified:
+		return "remote"
+	case l > r && c.LocalModified >= c.Remote.Modified:
+		return "local"
+	}
+	return ""
 }
 
 func savesCategoryOn(c map[string]bool) bool {

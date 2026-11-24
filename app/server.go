@@ -737,6 +737,19 @@ func (s *Server) routes() {
 	})
 	// Import Shaders from a ZIP of original cache files (shaderzip.go): converted where the
 	// engine can use the format, reported otherwise; the ZIP is read, never kept as a cache
+	m.HandleFunc("POST /api/games/{key}/shaders/restore-backup", func(w http.ResponseWriter, r *http.Request) {
+		g, ok := a.Library.Get(r.PathValue("key"))
+		if !ok {
+			writeErr(w, 404, errors.New("No such game."))
+			return
+		}
+		bak, n, err := a.Emu.RestoreShaderBackup(&g)
+		if err != nil {
+			writeErr(w, 409, err)
+			return
+		}
+		writeJSON(w, map[string]any{"backup": bak, "records": n})
+	})
 	m.HandleFunc("POST /api/games/{key}/shaders/import-zip", func(w http.ResponseWriter, r *http.Request) {
 		g, ok := a.Library.Get(r.PathValue("key"))
 		if !ok {

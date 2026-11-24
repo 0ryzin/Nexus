@@ -167,6 +167,51 @@ func (e *Emulator) backupShaderLog(titleID string) (string, error) {
 	return dst, nil
 }
 
+// RestoreShaderBackup puts back the game's shader data from the newest backup made before an
+// import (0.9.3: an import could leave a game with none of its shaders built at start). The data
+// it replaces is backed up first ("<log>.before-restore-<time>.bak").
+func (e *Emulator) RestoreShaderBackup(g *Game) (restored string, records int, err error) {
+	if err := e.shaderFilesBusy(); err != nil {
+		return "", 0, err
+	}
+	src := e.ShaderLogPath(g.TitleID)
+	baks, _ := filepath.Glob(src + ".before-import-*.bak")
+	if len(baks) == 0 {
+		return "", 0, errors.New("There is no backup from before an import for this game.")
+	}
+	sort.Strings(baks)
+	bak := baks[len(baks)-1]
+	b, err := os.ReadFile(bak)
+	if err != nil {
+		return "", 0, err
+	}
+	if _, _, _, err := parseV2Log(b); err != nil {
+		return "", 0, fmt.Errorf("the backup %s cannot be read (%v); nothing was changed", filepath.Base(bak), err)
+	}
+	unlock, err := lockWait(src+".lock", 5*time.Second)
+	if err != nil {
+		return "", 0, err
+	}
+	defer unlock()
+	if fileExists(src) {
+		if err := copyFileOverwrite(src, src+".before-restore-"+time.Now().Format("20060102-150405")+".bak"); err != nil {
+			return "", 0, fmt.Errorf("the current shader data could not be backed up, so nothing was restored: %w", err)
+		}
+	}
+	tmp := src + ".nexus-restore"
+	if err := os.WriteFile(tmp, b, 0o666); err != nil {
+		os.Remove(tmp)
+		return "", 0, err
+	}
+	if err := os.Rename(tmp, src); err != nil {
+		os.Remove(tmp)
+		return "", 0, err
+	}
+	n := countShaderRecords(src)
+	e.app.Log.Printf("shaders: restored %s from %s (%d shader records)", g.TitleID, filepath.Base(bak), n)
+	return filepath.Base(bak), n, nil
+}
+
 // ExportShaderZip writes the game's export ZIP into dir and returns its path.
 func (e *Emulator) ExportShaderZip(g *Game, dir string) (ShaderExportOK, error) {
 	var ok ShaderExportOK
