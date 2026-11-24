@@ -75,6 +75,17 @@ type GlobalSettings struct {
 	// Engine holds global emulation settings as NEXUS values (see enginesettings.go).
 	Engine  map[string]string `json:"engine"`
 	Updates UpdateSettings    `json:"updates"`
+	Discord DiscordSettings   `json:"discord"`
+}
+
+// DiscordSettings: Discord Rich Presence (discord.go). Off unless the user turns it on.
+type DiscordSettings struct {
+	Enabled bool `json:"enabled"`
+	// ShowIdle: while no game runs, show "In NEXUS" (otherwise nothing is shown then)
+	ShowIdle bool `json:"showIdle"`
+	// AppID: the Discord application whose name Discord shows ("NEXUS"); empty uses the one
+	// this build carries, if any
+	AppID string `json:"appId,omitempty"`
 }
 
 // UpdateSettings: automatic NEXUS updates (updater.go).

@@ -3807,6 +3807,7 @@ const Panels = {
     p.append(changedMark(rowToggle('Interface sounds', S.settings.sound?.enabled, v => saveSettings({ sound: { enabled: v } }).then(rebuildPanel)), 'sound.enabled'));
     p.append(changedMark(rowRange('Sound volume', { min: 0, max: 100, step: 10, value: Math.round((S.settings.sound?.volume ?? .7) * 100), fmt: v => v + '%', onChange: (v, commit) => { S.settings.sound.volume = v / 100; if (commit) { saveSettings({ sound: { volume: v / 100 } }); Sound.play('select'); } } }), 'sound.volume'));
     p.append(h('p', { class: 'note' }, 'Game sound has its own volume, in Playing games and while playing.'));
+    discordRows(p);
     p.append(h('h3', {}, 'Restore defaults'));
     p.append(h('p', { class: 'note' }, 'One setting: its restore button appears next to it once it is changed (controller: Options on the setting).'));
     p.append(rowButton('Restore all keybinds…', { sub: 'Keyboard shortcuts and controller buttons only.', onClick: () => resetAllKeybinds() }));
@@ -3814,6 +3815,23 @@ const Panels = {
   },
   startup(p) { this.general(p); },
 };
+// Discord Rich Presence (discord.go): off by default; one switch turns it off entirely
+function discordRows(p) {
+  const d = S.settings.discord || {};
+  p.append(h('h3', {}, 'Discord'));
+  p.append(changedMark(rowToggle('Show what you play on Discord', !!d.enabled, v => saveSettings({ discord: { enabled: v } }).then(rebuildPanel),
+    'While a game runs, Discord shows \u201cPlaying NEXUS\u201d with the game\u2019s title and time played. Off: NEXUS shows nothing on Discord. Discord still sees games you start outside NEXUS by itself.'), 'discord.enabled'));
+  if (!d.enabled) return;
+  p.append(changedMark(rowToggle('Also while no game runs', !!d.showIdle, v => saveSettings({ discord: { showIdle: v } }).then(rebuildPanel), 'Shows \u201cIn NEXUS\u201d while you are on Home. Off: nothing is shown until a game starts.'), 'discord.showIdle'));
+  p.append(rowButton('Discord application ID', { value: d.appId || (S.app?.discordBuiltIn ? 'Built in' : 'Not set'), sub: 'The Discord application whose name Discord shows. NEXUS needs one to appear on Discord. Discord cannot show your games\u2019 own pictures: it only shows images uploaded to the application or public web addresses.', onClick: async () => {
+    const v = await dialog({ title: 'Discord application ID', text: 'From discord.com/developers/applications: the Application ID of an application named NEXUS. It is a public number, not a password. Leave empty to use the one built into NEXUS, if any.', input: { value: d.appId || '', placeholder: '1234567890123456789', max: 24 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Save', value: true, primary: true }] });
+    if (v === null || v === undefined) return;
+    const id = String(v).trim();
+    if (id && !/^\d{15,22}$/.test(id)) { alertDlg('Discord application ID', 'An application ID is a number of 15 to 22 digits.'); return; }
+    await saveSettings({ discord: { appId: id } }); rebuildPanel();
+  } }));
+}
+
 // Linux, once: Steam's "Add a Non-Steam Game" lists the app menu, where a downloaded AppImage or
 // tar.gz is not, and a NEXUS added to Steam another way has no artwork. NEXUS offers each step
 // once (asking first; nothing is changed without "Add"); Settings › General › Steam keeps both.

@@ -2772,7 +2772,7 @@ func (s *Server) state() map[string]any {
 		formats = append(formats, map[string]string{"ext": f, "label": SupportedFormats[f]})
 	}
 	return map[string]any{
-		"app":          map[string]any{"name": AppName, "model": ConsoleModel, "version": AppVersion, "os": runtime.GOOS, "native": a.UI.Native(), "root": a.Paths.Root, "data": a.Paths.Data, "portable": a.Paths.IsPortable, "migrated": a.migrated},
+		"app":          map[string]any{"name": AppName, "model": ConsoleModel, "version": AppVersion, "os": runtime.GOOS, "native": a.UI.Native(), "root": a.Paths.Root, "data": a.Paths.Data, "portable": a.Paths.IsPortable, "migrated": a.migrated, "discordBuiltIn": discordAppID != ""},
 		"settings":     a.Settings.Get(),
 		"profiles":     a.Profiles.List(),
 		"emulator":     a.Emu.Status(),

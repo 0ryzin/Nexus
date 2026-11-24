@@ -50,6 +50,14 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
   by other software (Steam on the Deck, joycond, a Joy-Con tool on Windows) are not read twice.
   That software is never stopped, changed or looked for. Takes full effect after NEXUS restarts.
   Not tested with real Joy-Cons.
+- **Discord Rich Presence** (Settings › General › Discord), off by default: while a game runs,
+  "Playing NEXUS" with the game's real title and time played; optionally "In NEXUS" on Home.
+  Turning it off clears it at once; it is cleared when a game ends, so games started outside
+  NEXUS are still detected by Discord as before. Talks only to the Discord app on this computer
+  (Windows named pipe; Linux socket, including Flatpak and Snap Discord on a Steam Deck). Needs a
+  Discord application ID (a public number; none is built in yet). Discord shows the
+  application's registered name and only uploaded images or public URLs, so local game artwork
+  cannot appear. Tested against a stand-in Discord, not the real app.
 - **`Customisations/` folder** in the NEXUS folder (Windows and Linux), kept on updates (an update
   only adds files it lacks). Nothing reads it yet; no Customisation Studio in 0.9.3.
 

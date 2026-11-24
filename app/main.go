@@ -178,6 +178,7 @@ func StartCore(o CoreOptions) (*Core, error) {
 		}
 	}
 	go app.Account.Run() // background synchronisation; idle unless signed in with sync on
+	go app.Discord.Run() // Discord Rich Presence; nothing is sent unless it is turned on
 	go func() {          // keys and firmware kept per computer user, whichever copy of NEXUS runs
 		to, from, other := app.Emu.SyncSystemVault()
 		if to+from > 0 || other != "" {

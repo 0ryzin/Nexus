@@ -145,6 +145,7 @@ type App struct {
 	Profiles         *ProfileStore
 	Library          *Library
 	Emu              *Emulator
+	Discord          *Discord
 	Avatars          *AvatarSet
 	Sys              *SystemFiles
 	Link             *DeviceLink // experimental Device Linking; nil unless the feature is on
@@ -191,6 +192,7 @@ func NewAppWithPaths(p *Paths) (*App, error) {
 	a.migrateTextureQuality()
 	a.applyJoyConCompat() // before the engine is loaded: SDL reads its environment once
 	a.Emu = NewEmulator(a)
+	a.Discord = NewDiscord(a)
 	a.Compat = NewCompatStore(p.Settings)
 	a.Compat.SetEngine(func() string { return a.Emu.Builds.ActiveVersionLabel() })
 	a.Saves = NewSaveOrganizer(a)
@@ -224,6 +226,9 @@ func (a *App) openLog() {
 }
 
 func (a *App) Close() {
+	if a.Discord != nil {
+		a.Discord.Stop()
+	}
 	if a.Library != nil && a.Library.online != nil {
 		a.Library.online.Close()
 	}
