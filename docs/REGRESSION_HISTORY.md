@@ -3,7 +3,27 @@
 Each entry: problem · diagnosis · cause · files · fix · test · how to recognise it again.
 Newest first.
 
-## 0.8.1 (in development)
+## 0.9.2 (in development)
+
+### Custom game artwork never reached the Steam Deck (PC and Deck both on 0.8.1, 24 Nov)
+- **Cause (reproduced in a test):** a game's pictures travelled inside its library item (title,
+  hidden, art preference, fit, controls). When both devices had changed that item (the Deck had
+  its own per-game details for Ocarina of Time), synchronisation parked it as a conflict waiting
+  for the user's choice, and a parked item received no further updates: the PC's cover reference
+  never arrived, however often either device synchronised. Pictures sent from the Deck were held
+  back the same way.
+- **Fix:** each game's pictures are their own account item (`library/<TID>.art`), merged picture
+  by picture: the newer one wins (time it was chosen, carried with it), an older picture never
+  replaces a newer one, replaced pictures are kept as backups, and such an item never becomes a
+  conflict. A conflict about the game's other details no longer holds pictures back either.
+  Unchanged pictures are not sent or downloaded again (SHA-256).
+- **Files:** `account.go`, `artsync.go`.
+- **Tests:** `TestArtworkRealOrder` (the user's order: both linked, then a cover chosen on the PC
+  through the interface, Deck has its own details: failed before the fix), `TestArtworkNewerKept`
+  (a newer Deck cover stays and reaches the PC), `TestArtworkPCToDeckAndBack`. Not yet seen on
+  the user's two devices.
+
+## 0.8.1
 
 ### Steam Deck Desktop Mode: some controller buttons did nothing (report, 19 Nov)
 - **Cause:** started outside Steam in Desktop Mode, NEXUS receives no controller at all: Steam

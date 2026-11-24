@@ -19,6 +19,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,6 +39,9 @@ type artRef struct {
 	Size   int64  `json:"size"`
 	Gist   string `json:"gist"`
 	Raw    string `json:"raw"`
+	// Set: when the picture was chosen on the device that sent it (Unix seconds; 0 from 0.8.x).
+	// An older picture never replaces a newer one.
+	Set int64 `json:"set,omitempty"`
 }
 
 type artSyncState struct {
@@ -109,7 +113,11 @@ func (a *App) uploadCustomArt(remote saveRemote) error {
 			if err != nil {
 				return err
 			}
-			st.Known[id] = artRef{SHA256: h, Ext: strings.ToLower(filepath.Ext(p)), Size: int64(len(data)), Gist: gist, Raw: raw}
+			set := int64(0)
+			if fi, err := os.Stat(p); err == nil {
+				set = fi.ModTime().Unix()
+			}
+			st.Known[id] = artRef{SHA256: h, Ext: strings.ToLower(filepath.Ext(p)), Size: int64(len(data)), Gist: gist, Raw: raw, Set: set}
 			changed = true
 			a.Log.Printf("account: artwork %s sent (%d KB)", id, len(data)>>10)
 		}
@@ -168,6 +176,11 @@ func (a *App) applyArtRefs(remote saveRemote, tid string, refs map[string]artRef
 					continue // the same picture is here
 				}
 			}
+			// a picture chosen here after the received one was chosen stays (it will be sent)
+			if fi, err := os.Stat(p); err == nil && ref.Set != 0 && fi.ModTime().Unix() > ref.Set {
+				a.Log.Printf("account: artwork %s/%s: this device's picture is newer; kept", tid, kind)
+				continue
+			}
 		}
 		raw, err := remote.download(ref.Raw, maxArtSync*2)
 		if err != nil {
@@ -180,7 +193,7 @@ func (a *App) applyArtRefs(remote saveRemote, tid string, refs map[string]artRef
 			a.Log.Printf("account: artwork %s/%s: the received picture does not match its checksum; ignored", tid, kind)
 			continue
 		}
-		if err := a.installSyncedArt(key, kind, data, ext); err != nil {
+		if err := a.installSyncedArt(key, kind, data, ext, ref.Set); err != nil {
 			a.Log.Printf("account: artwork %s/%s: %v", tid, kind, err)
 			continue
 		}
@@ -195,7 +208,11 @@ func (a *App) applyArtRefs(remote saveRemote, tid string, refs map[string]artRef
 
 // installSyncedArt writes a received picture as the game's custom picture of that kind; the
 // picture it replaces is kept in the game's profile folder (backup-<kind>-<time>.<ext>).
-func (a *App) installSyncedArt(key, kind string, data []byte, ext string) error {
+func (a *App) installSyncedArt(key, kind string, data []byte, ext string, setAt ...int64) error {
+	set := int64(0)
+	if len(setAt) > 0 {
+		set = setAt[0]
+	}
 	gp := a.Library.GP
 	if err := os.MkdirAll(gp.Dir(key), 0o755); err != nil {
 		return err
@@ -208,6 +225,10 @@ func (a *App) installSyncedArt(key, kind string, data []byte, ext string) error 
 	name := base + ext
 	if err := writeFileAtomic(gp.File(key, name), data); err != nil {
 		return err
+	}
+	if set != 0 {
+		t := time.Unix(set, 0)
+		_ = os.Chtimes(gp.File(key, name), t, t)
 	}
 	if _, err := gp.Update(key, func(p *GameProfile) {
 		switch kind {
@@ -228,4 +249,13 @@ func (a *App) installSyncedArt(key, kind string, data []byte, ext string) error 
 		a.Library.redecorate(key)
 	}
 	return nil
+}
+
+// libraryArtRefs: the picture references a library item names (nil when none or unreadable).
+func libraryArtRefs(data []byte) map[string]artRef {
+	var x syncLibrary
+	if json.Unmarshal(data, &x) != nil {
+		return nil
+	}
+	return x.Art
 }

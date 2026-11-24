@@ -993,11 +993,15 @@ func (ac *Account) localItems(cats map[string]bool, pmap map[string]string) map[
 			gp := a.Library.GP.Get(key)
 			if cats["library"] {
 				l := syncLibrary{Title: gp.Title, Hidden: gp.Hidden, ArtPreference: gp.ArtPreference, ArtFit: gp.ArtFit, Controls: gp.Controls}
-				if ac.isGitHub() {
-					l.Art = a.artRefsFor(e.Name())
-				}
-				if l.Title != "" || l.Hidden || l.ArtPreference != "" || l.ArtFit != "" || l.Controls != nil || len(l.Art) > 0 {
+				if l.Title != "" || l.Hidden || l.ArtPreference != "" || l.ArtFit != "" || l.Controls != nil {
 					out["library/"+e.Name()] = canon(l)
+				}
+				// 0.9.2: the game's pictures are an item of their own ("library/<TID>.art"),
+				// merged picture by picture (newer wins), never a conflict
+				if ac.isGitHub() {
+					if refs := a.artRefsFor(e.Name()); len(refs) > 0 {
+						out["library/"+e.Name()+artItemSuffix] = canon(refs)
+					}
 				}
 			}
 			if cats["emulation"] {
@@ -1054,6 +1058,9 @@ func untouchedDefault(key string, data []byte) bool {
 	}
 	return false
 }
+
+// artItemSuffix marks a game's picture item (library/<TID>.art).
+const artItemSuffix = ".art"
 
 func keyCategory(key string) string {
 	c, _, _ := strings.Cut(key, "/")
@@ -1175,6 +1182,14 @@ func (ac *Account) applyItem(key string, data []byte, deleted bool, from string)
 		a.Profiles.dropStatsCache(user)
 		return err
 	case "library":
+		if tid, ok := strings.CutSuffix(name, artItemSuffix); ok {
+			var refs map[string]artRef
+			if deleted || json.Unmarshal(data, &refs) != nil || !ac.isGitHub() {
+				return nil // pictures are never deleted by synchronisation
+			}
+			a.applyArtRefs(saveRemote{ac: ac}, tid, refs)
+			return nil
+		}
 		var x syncLibrary
 		if !deleted {
 			if err := json.Unmarshal(data, &x); err != nil {
@@ -1615,7 +1630,14 @@ func (ac *Account) syncOnce(cursor int64, sum *SyncSummary) error {
 
 	for _, k := range keys {
 		it := remote[k]
-		if !cats[keyCategory(k)] || ac.conflicted(k) {
+		if !cats[keyCategory(k)] {
+			continue
+		}
+		if ac.conflicted(k) {
+			// a game's pictures are not part of the choice: they carry their own time and
+			// arrive even while the rest of the item waits for the user (0.8.1: a waiting
+			// conflict held a PC cover back from the Deck for good)
+			ac.applyItemArt(k, it)
 			continue
 		}
 		b := base[k]
@@ -1623,6 +1645,18 @@ func (ac *Account) syncOnce(cursor int64, sum *SyncSummary) error {
 			continue
 		}
 		lb, haveLocal := local[k]
+		if strings.HasSuffix(k, artItemSuffix) {
+			// newer pictures are installed; this device's newer ones are sent on this same run
+			// (based on the version just seen), so the two devices end with the newest of each
+			if err := ac.applyItem(k, it.Data, it.Deleted, it.DeviceName); err != nil {
+				ac.app.Log.Printf("account: %s: %v", k, err)
+			}
+			now := ac.localItems(map[string]bool{"library": true}, ac.profileMap())[k]
+			ac.setBase(k, syncBase{it.Version, hashBytes(it.Data)})
+			local[k] = now
+			sum.Downloaded++
+			continue
+		}
 		localChanged := haveLocal && hashBytes(lb) != b.Hash || !haveLocal && b.Hash != "" && keyCategory(k) == "amiibo"
 		if b.Version == 0 && haveLocal && untouchedDefault(k, lb) {
 			localChanged = false
@@ -1648,6 +1682,7 @@ func (ac *Account) syncOnce(cursor int64, sum *SyncSummary) error {
 		default:
 			ac.addConflict(AccountConflict{Key: k, Kind: "change", Title: itemTitle(k, firstBytes(lb, it.Data)), Local: lb, Remote: it.Data, RemoteVer: it.Version, RemoteDel: it.Deleted, RemoteFrom: it.DeviceName})
 			sum.Conflicts++
+			ac.applyItemArt(k, it)
 		}
 	}
 
@@ -1670,6 +1705,11 @@ func (ac *Account) syncOnce(cursor int64, sum *SyncSummary) error {
 		res, cur, err := be.put(k, base[k].Version, !ok, data)
 		if err != nil {
 			return err
+		}
+		if cur != nil && strings.HasSuffix(k, artItemSuffix) {
+			ac.applyItem(k, cur.Data, cur.Deleted, cur.DeviceName) // merged at the next run
+			ac.setBase(k, syncBase{cur.Version, hashBytes(cur.Data)})
+			continue
 		}
 		if cur != nil {
 			ac.addConflict(AccountConflict{Key: k, Kind: "change", Title: itemTitle(k, firstBytes(data, cur.Data)), Local: data, Remote: cur.Data, RemoteVer: cur.Version, RemoteDel: cur.Deleted, RemoteFrom: cur.DeviceName})
@@ -1893,5 +1933,16 @@ func (ac *Account) UserRemoved(localID string, fromAccount bool) {
 	if fromAccount {
 		ac.app.Log.Printf("account: user %s will be removed from the account", acc)
 		ac.Kick()
+	}
+}
+
+// applyItemArt installs the pictures a received library item names, outside any conflict about
+// the item's other details (newer pictures only; replaced ones are kept as backups).
+func (ac *Account) applyItemArt(k string, it remoteItem) {
+	if keyCategory(k) != "library" || it.Deleted || !ac.isGitHub() {
+		return
+	}
+	if refs := libraryArtRefs(it.Data); len(refs) > 0 {
+		ac.app.applyArtRefs(saveRemote{ac: ac}, strings.TrimPrefix(k, "library/"), refs)
 	}
 }
