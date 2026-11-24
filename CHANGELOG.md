@@ -26,7 +26,7 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
 - **Frame generation:** the built-in method is now Lichii Optical Flow with Lichii's newer
   coarse-to-fine matcher (#1633, #2386); it runs on any Vulkan GPU, the Steam Deck included.
 - **Steam Deck artwork:** new NEXUS artwork for Steam (library tile, wide tile, header, logo,
-  icon) with an original emblem; NEXUS replaces artwork it put there earlier at every start
+  icon) with NEXUS's Joy-Con emblem and wordmark on the dark-and-red background; NEXUS replaces artwork it put there earlier at every start
   (never the user's own), and can point its Steam entry at a new version's AppImage instead of
   leaving a broken entry or making a second one.
 - Research: frame generation (Lichii, Eglantine), graphics quality, Android feasibility.
