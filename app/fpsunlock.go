@@ -45,7 +45,12 @@ type FPSView struct {
 	Choices     []FPSChoice `json:"choices"`
 	Current     string      `json:"current"`
 	Warning     string      `json:"warning,omitempty"`
+	// Ocarina of Time only: the engine's built-in "Max Resolution" patch (full-scale 3D instead of
+	// the game's own dynamic resolution); nil for other games
+	FullResolution *bool `json:"fullResolution,omitempty"`
 }
+
+const fpsMaxResolutionMod = "Max Resolution (built-in)"
 
 func titleIs(g *Game, id string) bool {
 	return g != nil && strings.EqualFold(baseTitleOf(strings.ToUpper(g.TitleID)), id)
@@ -68,6 +73,12 @@ func (a *App) FPSView(key string) (FPSView, error) {
 		for i := range mods.Builtin {
 			if mods.Builtin[i].Name == fpsUnlockMod {
 				unlock = &mods.Builtin[i]
+			}
+		}
+		for i := range mods.Builtin {
+			if mods.Builtin[i].Name == fpsMaxResolutionMod {
+				on := mods.Builtin[i].Enabled
+				v.FullResolution = &on
 			}
 		}
 		if unlock == nil || !unlock.Enabled {

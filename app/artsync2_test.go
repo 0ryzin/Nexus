@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"time"
 	"testing"
+	"time"
 )
 
 // TestArtworkRealOrder: the order it happened for the user. Both devices were signed in and

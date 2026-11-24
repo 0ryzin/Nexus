@@ -184,6 +184,7 @@ func NewAppWithPaths(p *Paths) (*App, error) {
 		a.Log.Printf("profiles: %v", err)
 	}
 	a.Library = NewLibrary(a)
+	a.migrateTextureQuality()
 	a.Emu = NewEmulator(a)
 	a.Compat = NewCompatStore(p.Settings)
 	a.Compat.SetEngine(func() string { return a.Emu.Builds.ActiveVersionLabel() })

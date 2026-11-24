@@ -151,7 +151,7 @@ func DefaultSettings() GlobalSettings {
 	s.Library.OnlineArtwork = true
 	s.Library.NlibURL = "https://api.nlib.cc"
 	s.Library.ArtProviders = []string{}
-	s.Engine = map[string]string{"graphics.gpu": gpuAuto, "adv.av1_movies": "true"}
+	s.Engine = map[string]string{"graphics.gpu": gpuAuto, "adv.av1_movies": "true", "graphics.texture_quality": "high"}
 	s.Updates = UpdateSettings{AutoCheck: true, Repo: defaultReleaseRepo}
 	s.Emulator = EmulatorSettings{Fullscreen: true, QuitCombo: true, ManageSaves: true, WhoPlays: "several", HomeKey: "Shift+H", HomeButton: true, HomePaddles: []string{"l4"},
 		FullscreenKey: "F11", ScreenshotKey: "Alt+F12", CaptureButton: true, FadeIn: true, PrepareShaders: true, HomeAction: "background", Overrides: map[string]string{}}
@@ -244,6 +244,9 @@ func LoadSettings(p *Paths) (*SettingsStore, error) {
 	}
 	if _, ok := st.s.Engine["graphics.gpu"]; !ok { // 0.5.0: the fastest graphics card by default
 		st.s.Engine["graphics.gpu"], changed = gpuAuto, true
+	}
+	if _, ok := st.s.Engine["graphics.texture_quality"]; !ok { // 0.9.2: High by default (texturequality.go)
+		st.s.Engine["graphics.texture_quality"], changed = "high", true
 	}
 	if _, ok := st.s.Engine["adv.av1_movies"]; !ok { // 0.8.1: Switch 2 AV1 movies on by default
 		st.s.Engine["adv.av1_movies"], changed = "true", true

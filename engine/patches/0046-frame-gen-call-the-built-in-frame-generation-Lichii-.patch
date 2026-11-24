@@ -1,0 +1,829 @@
+From e768f93b3bd204d97615a344e7d69454933298f9 Mon Sep 17 00:00:00 2001
+From: Zortos <zortosdev@proton.me>
+Date: Fri, 20 Nov 2026 20:12:39 +0100
+Subject: [PATCH 46/47] frame gen: call the built-in frame generation "Lichii
+ Optical Flow", not FSR 3 (#1633)
+
+* frame gen: call the built-in frame generation "Lichii Optical Flow", not FSR 3
+
+* tools/nx2: point the frame generation shader harness at the renamed files
+
+---------
+
+Co-authored-by: capy-ai[bot] <230910855+capy-ai[bot]@users.noreply.github.com>
+---
+ CMakeLists.txt                                |  2 +-
+ docs/user/Graphics.md                         |  8 +--
+ src/common/settings.h                         |  2 +-
+ src/common/settings_enums.h                   |  2 +-
+ src/lichii/main_window.cpp                    |  8 +--
+ src/qt_common/config/shared_translation.cpp   | 30 +++++------
+ src/qt_common/config/shared_translation.h     |  3 +-
+ src/tests/video_core/frame_gen_choice.cpp     |  8 +--
+ src/video_core/CMakeLists.txt                 |  4 +-
+ src/video_core/frame_gen_choice.h             |  4 +-
+ src/video_core/host_shaders/CMakeLists.txt    |  4 +-
+ ...tion.comp => frame_gen_interpolation.comp} | 18 +++----
+ ..._flow.comp => frame_gen_optical_flow.comp} |  4 +-
+ .../renderer_vulkan/present/frame_gen.cpp     | 40 +++++++--------
+ .../renderer_vulkan/present/frame_gen.h       |  4 +-
+ ...ame_gen.cpp => optical_flow_frame_gen.cpp} | 50 +++++++++----------
+ ...3_frame_gen.h => optical_flow_frame_gen.h} | 12 ++---
+ ...der-tests.md => frame-gen-shader-tests.md} |  8 +--
+ ...opy_probe.cpp => frame_gen_copy_probe.cpp} |  6 +--
+ tools/nx2/test_buffer_host_visibility.py      |  2 +-
+ ...3_shaders.py => test_frame_gen_shaders.py} | 14 +++---
+ 21 files changed, 119 insertions(+), 114 deletions(-)
+ rename src/video_core/host_shaders/{fsr3_frame_interpolation.comp => frame_gen_interpolation.comp} (84%)
+ rename src/video_core/host_shaders/{fsr3_optical_flow.comp => frame_gen_optical_flow.comp} (89%)
+ rename src/video_core/renderer_vulkan/present/{fsr3_frame_gen.cpp => optical_flow_frame_gen.cpp} (84%)
+ rename src/video_core/renderer_vulkan/present/{fsr3_frame_gen.h => optical_flow_frame_gen.h} (89%)
+ rename tools/nx2/{fsr3-shader-tests.md => frame-gen-shader-tests.md} (91%)
+ rename tools/nx2/{fsr3_copy_probe.cpp => frame_gen_copy_probe.cpp} (81%)
+ rename tools/nx2/{test_fsr3_shaders.py => test_frame_gen_shaders.py} (98%)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index d8f520da0..45180e4cb 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -118,7 +118,7 @@ endif()
+ 
+ 
+ # Lossless Scaling frame generation. Only Android.
+-option(ENABLE_LSFG "Enable frame generation (LSFG and FSR 3 Fluid Motion)" ON)
++option(ENABLE_LSFG "Enable frame generation (LSFG and Lichii Optical Flow)" ON)
+ 
+ option(ENABLE_RESHADE "Enable ReShade FX post-processing effects" ON)
+ 
+diff --git a/docs/user/Graphics.md b/docs/user/Graphics.md
+index 9a7a801e6..0e7db7f5a 100644
+--- a/docs/user/Graphics.md
++++ b/docs/user/Graphics.md
+@@ -30,10 +30,10 @@ the peak.
+ 
+ While HDR is active, anti-aliasing, post-processing and FSR/SGSR/FSR 3 upscaling are off, and
+ the window is scaled bilinearly. Upscalers that replace a game's own network (DLSS, FSR 3.1 in
+-Ocarina of Time) run inside the game's frame and keep working. Frame generation (FSR 3 and LSFG)
+-keeps working: it interpolates the HDR10 or scRGB frame as presented. It needs the GPU to write
+-that format from a compute shader; where it can't, the status bar shows FG UNAVAILABLE and the log
+-says why.
++Ocarina of Time) run inside the game's frame and keep working. Frame generation (Lichii Optical
++Flow and LSFG) keeps working: it interpolates the HDR10 or scRGB frame as presented. It needs the
++GPU to write that format from a compute shader; where it can't, the status bar shows FG UNAVAILABLE
++and the log says why.
+ 
+ On Windows, Auto follows changes during play: toggling Windows HDR, moving the window to
+ another monitor, changing the SDR content brightness or running the Windows HDR Calibration app
+diff --git a/src/common/settings.h b/src/common/settings.h
+index 09a6335cd..f5339bb4f 100644
+--- a/src/common/settings.h
++++ b/src/common/settings.h
+@@ -492,7 +492,7 @@ struct Values {
+                                       Specialization::Default, true, false};
+ 
+     SwitchableSetting<FrameGenType> frame_gen_type{linkage,
+-                                                   FrameGenType::Fsr3,
++                                                   FrameGenType::OpticalFlow,
+                                                    "frame_gen_type",
+                                                    Category::Renderer,
+                                                    Specialization::Default,
+diff --git a/src/common/settings_enums.h b/src/common/settings_enums.h
+index 6a80423e1..6ff9b5955 100644
+--- a/src/common/settings_enums.h
++++ b/src/common/settings_enums.h
+@@ -170,7 +170,7 @@ ENUM(MeshShaderMode, Automatic, Native, Compute);
+ ENUM(GpuLogLevel, Off, Errors, Standard, Verbose, All)
+ ENUM(GameListMode, TreeView, GridView, CarouselView);
+ ENUM(SpeedMode, Standard, Turbo, Slow);
+-ENUM(FrameGenType, Lsfg, Fsr3, NvidiaDlssG);
++ENUM(FrameGenType, Lsfg, OpticalFlow, NvidiaDlssG);
+ 
+ template <typename Type>
+ inline std::string_view CanonicalizeEnum(Type id) {
+diff --git a/src/lichii/main_window.cpp b/src/lichii/main_window.cpp
+index 5f3ca35f5..dbf0f3a89 100644
+--- a/src/lichii/main_window.cpp
++++ b/src/lichii/main_window.cpp
+@@ -5934,12 +5934,12 @@ void MainWindow::UpdateFrameGenButton() {
+ 
+     const Settings::FrameGenType selected_type = Settings::values.frame_gen_type.GetValue();
+     // Once a game runs, NVIDIA DLSS Frame Generation that isn't this session's generator gives
+-    // way to FSR3.
++    // way to Lichii Optical Flow.
+     const bool dlssg_fallback = selected_type == Settings::FrameGenType::NvidiaDlssG &&
+                                 emulation_running &&
+                                 frame_gen_state == VideoCore::FrameGenState::Running;
+     const Settings::FrameGenType shown_type =
+-        dlssg_fallback ? Settings::FrameGenType::Fsr3 : selected_type;
++        dlssg_fallback ? Settings::FrameGenType::OpticalFlow : selected_type;
+     const QString& type_text =
+         ConfigurationShared::frame_gen_type_texts_map.find(shown_type)->second;
+     const QString type = shown_type == Settings::FrameGenType::NvidiaDlssG
+@@ -5976,7 +5976,7 @@ void MainWindow::UpdateFrameGenButton() {
+         break;
+     case VideoCore::FrameGenState::UnsupportedGpu:
+         unavailable = tr("This GPU lacks Vulkan features LSFG needs (Vulkan memory model and null "
+-                         "descriptors). The Optical Flow type may still work.");
++                         "descriptors). Lichii Optical Flow Frame Generation may still work.");
+         break;
+     case VideoCore::FrameGenState::UnsupportedSurface:
+         unavailable = tr("This GPU can't write to the window's swapchain format from a shader, so "
+@@ -6000,7 +6000,7 @@ void MainWindow::UpdateFrameGenButton() {
+ 
+     const QString fallback =
+         dlssg_fallback ? tr(" NVIDIA DLSS Frame Generation can't run for this game or setup, so "
+-                            "FSR3 runs instead; the log says why.")
++                            "Lichii Optical Flow Frame Generation runs instead; the log says why.")
+                        : QString();
+     if (frame_gen_generating) {
+         frame_gen_status_button->setText(mode);
+diff --git a/src/qt_common/config/shared_translation.cpp b/src/qt_common/config/shared_translation.cpp
+index 748afb9fc..859673d83 100644
+--- a/src/qt_common/config/shared_translation.cpp
++++ b/src/qt_common/config/shared_translation.cpp
+@@ -318,14 +318,15 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
+     INSERT(Settings, frame_gen, tr("Enable Frame Generation"),
+            tr("Paused while HDR output is active."));
+     INSERT(Settings, frame_gen_type, tr("Frame Generation Type"),
+-           tr("Optical Flow Interpolation is built in and runs on any GPU.\nNVIDIA DLSS Frame "
+-              "Generation (Windows only) needs a GeForce RTX 40 series or newer GPU (3x and 4x need "
+-              "an RTX 50 series), Hardware-accelerated GPU scheduling on in Windows' graphics "
+-              "settings, \"Use NVIDIA DLSS\" on and NVIDIA's files from the NVIDIA DLSS panel. "
+-              "It takes the game's depth and motion vectors from the DLSS evaluation, so it runs "
+-              "in The Legend of Zelda: Ocarina of Time only, docked, with DLSS as its upscaler. "
+-              "Other games, and scRGB HDR output, use Optical Flow Interpolation instead.\nVSync "
+-              "is off while it runs. Choosing it takes effect when a game starts."));
++           tr("Lichii Optical Flow Frame Generation is built in and runs on any GPU.\nNVIDIA "
++              "DLSS Frame Generation (Windows only) needs a GeForce RTX 40 series or newer GPU (3x "
++              "and 4x need an RTX 50 series), Hardware-accelerated GPU scheduling on in Windows' "
++              "graphics settings, \"Use NVIDIA DLSS\" on and NVIDIA's files from the NVIDIA DLSS "
++              "panel. It takes the game's depth and motion vectors from the DLSS evaluation, so it "
++              "runs in The Legend of Zelda: Ocarina of Time only, docked, with DLSS as its "
++              "upscaler. Other games, and scRGB HDR output, use Lichii Optical Flow Frame "
++              "Generation instead.\nVSync is off while it runs. Choosing it takes effect when a "
++              "game starts."));
+     INSERT(Settings, frame_gen_multiplier, tr("Frame Generation Multiplier"), QString());
+     INSERT(Settings, frame_gen_target_rate, tr("Target Frame Rate"), QString());
+     INSERT(Settings, frame_gen_flow_scale_auto, tr("Auto Flow Scale"), QString());
+@@ -691,12 +692,13 @@ std::unique_ptr<ComboboxTranslationMap> ComboboxEnumeration(QObject* parent) {
+              PAIR(ResolutionSetup, Res7X, tr("7X (5040p/7560p)")),
+              PAIR(ResolutionSetup, Res8X, tr("8X (5760p/8640p)")),
+          }});
+-    translations->insert({Settings::EnumMetadata<Settings::FrameGenType>::Index(),
+-                          {
+-                              PAIR(FrameGenType, Lsfg, tr("Lossless Scaling (LSFG)")),
+-                              PAIR(FrameGenType, Fsr3, tr("Optical Flow Interpolation (built-in)")),
+-                              PAIR(FrameGenType, NvidiaDlssG, tr("NVIDIA DLSS Frame Generation")),
+-                          }});
++    translations->insert(
++        {Settings::EnumMetadata<Settings::FrameGenType>::Index(),
++         {
++             PAIR(FrameGenType, Lsfg, tr("Lossless Scaling (LSFG)")),
++             PAIR(FrameGenType, OpticalFlow, tr("Lichii Optical Flow Frame Generation")),
++             PAIR(FrameGenType, NvidiaDlssG, tr("NVIDIA DLSS Frame Generation")),
++         }});
+     translations->insert({Settings::EnumMetadata<Settings::ScalingFilter>::Index(),
+                           {
+                               PAIR(ScalingFilter, NearestNeighbor, tr("Nearest Neighbor")),
+diff --git a/src/qt_common/config/shared_translation.h b/src/qt_common/config/shared_translation.h
+index 6208fe911..60d23cfda 100644
+--- a/src/qt_common/config/shared_translation.h
++++ b/src/qt_common/config/shared_translation.h
+@@ -79,7 +79,8 @@ static const std::map<Settings::NvidiaDlssPreset, QString> nvidia_dlss_preset_te
+ 
+ static const std::map<Settings::FrameGenType, QString> frame_gen_type_texts_map = {
+     {Settings::FrameGenType::Lsfg, QStringLiteral(QT_TRANSLATE_NOOP("MainWindow", "LSFG"))},
+-    {Settings::FrameGenType::Fsr3, QStringLiteral(QT_TRANSLATE_NOOP("MainWindow", "Optical Flow"))},
++    {Settings::FrameGenType::OpticalFlow,
++     QStringLiteral(QT_TRANSLATE_NOOP("MainWindow", "Optical Flow"))},
+     {Settings::FrameGenType::NvidiaDlssG,
+      QStringLiteral(QT_TRANSLATE_NOOP("MainWindow", "NVIDIA DLSS Frame Generation"))},
+ };
+diff --git a/src/tests/video_core/frame_gen_choice.cpp b/src/tests/video_core/frame_gen_choice.cpp
+index 0ef4d79f6..c87ba489d 100644
+--- a/src/tests/video_core/frame_gen_choice.cpp
++++ b/src/tests/video_core/frame_gen_choice.cpp
+@@ -22,7 +22,8 @@ constexpr DlssgSession OCARINA{
+ 
+ } // Anonymous namespace
+ 
+-TEST_CASE("DLSS Frame Generation runs only for a game with inputs, else FSR3", "[video_core]") {
++TEST_CASE("DLSS Frame Generation runs only for a game with inputs, else optical flow",
++          "[video_core]") {
+     REQUIRE(BlockedDlssg(OCARINA) == DlssgBlock::None);
+     REQUIRE(ActiveFrameGenType(FrameGenType::NvidiaDlssG, DlssgBlock::None) ==
+             FrameGenType::NvidiaDlssG);
+@@ -46,8 +47,9 @@ TEST_CASE("DLSS Frame Generation runs only for a game with inputs, else FSR3", "
+ 
+     for (const DlssgBlock block : {DlssgBlock::NoStreamline, DlssgBlock::DlssOff,
+                                    DlssgBlock::NoGameInputs, DlssgBlock::NotLoaded}) {
+-        REQUIRE(ActiveFrameGenType(FrameGenType::NvidiaDlssG, block) == FrameGenType::Fsr3);
++        REQUIRE(ActiveFrameGenType(FrameGenType::NvidiaDlssG, block) == FrameGenType::OpticalFlow);
+     }
+     REQUIRE(ActiveFrameGenType(FrameGenType::Lsfg, DlssgBlock::NotLoaded) == FrameGenType::Lsfg);
+-    REQUIRE(ActiveFrameGenType(FrameGenType::Fsr3, DlssgBlock::None) == FrameGenType::Fsr3);
++    REQUIRE(ActiveFrameGenType(FrameGenType::OpticalFlow, DlssgBlock::None) ==
++            FrameGenType::OpticalFlow);
+ }
+diff --git a/src/video_core/CMakeLists.txt b/src/video_core/CMakeLists.txt
+index d0f4ca57d..76b50cf42 100644
+--- a/src/video_core/CMakeLists.txt
++++ b/src/video_core/CMakeLists.txt
+@@ -415,8 +415,8 @@ if (ENABLE_LSFG)
+         frame_gen/lsfg_translate.h
+         renderer_vulkan/present/frame_gen.cpp
+         renderer_vulkan/present/frame_gen.h
+-        renderer_vulkan/present/fsr3_frame_gen.cpp
+-        renderer_vulkan/present/fsr3_frame_gen.h
++        renderer_vulkan/present/optical_flow_frame_gen.cpp
++        renderer_vulkan/present/optical_flow_frame_gen.h
+         renderer_vulkan/present/frame_gen_pacer.cpp
+         renderer_vulkan/present/frame_gen_pacer.h
+         renderer_vulkan/present/lsfg_alpha.cpp
+diff --git a/src/video_core/frame_gen_choice.h b/src/video_core/frame_gen_choice.h
+index 08be748d5..43b95eac2 100644
+--- a/src/video_core/frame_gen_choice.h
++++ b/src/video_core/frame_gen_choice.h
+@@ -47,11 +47,11 @@ struct DlssgSession {
+ }
+ 
+ /// The frame generation that runs: the chosen type, except that NVIDIA DLSS Frame Generation
+-/// gives way to the built-in optical flow interpolation (FSR3) while it is blocked.
++/// gives way to Lichii Optical Flow Frame Generation while it is blocked.
+ [[nodiscard]] constexpr Settings::FrameGenType ActiveFrameGenType(Settings::FrameGenType chosen,
+                                                                   DlssgBlock block) {
+     if (chosen == Settings::FrameGenType::NvidiaDlssG && block != DlssgBlock::None) {
+-        return Settings::FrameGenType::Fsr3;
++        return Settings::FrameGenType::OpticalFlow;
+     }
+     return chosen;
+ }
+diff --git a/src/video_core/host_shaders/CMakeLists.txt b/src/video_core/host_shaders/CMakeLists.txt
+index 6b8bd821d..01e76078b 100644
+--- a/src/video_core/host_shaders/CMakeLists.txt
++++ b/src/video_core/host_shaders/CMakeLists.txt
+@@ -99,8 +99,8 @@ set(SHADER_FILES
+     ${CMAKE_CURRENT_SOURCE_DIR}/sgsr1_shader.vert
+     ${CMAKE_CURRENT_SOURCE_DIR}/sgsr1_shader_mobile.frag
+     ${CMAKE_CURRENT_SOURCE_DIR}/sgsr1_shader_mobile_edge_direction.frag
+-    ${CMAKE_CURRENT_SOURCE_DIR}/fsr3_optical_flow.comp
+-    ${CMAKE_CURRENT_SOURCE_DIR}/fsr3_frame_interpolation.comp
++    ${CMAKE_CURRENT_SOURCE_DIR}/frame_gen_optical_flow.comp
++    ${CMAKE_CURRENT_SOURCE_DIR}/frame_gen_interpolation.comp
+     ${CMAKE_CURRENT_SOURCE_DIR}/dlss_network_probe.comp
+     ${CMAKE_CURRENT_SOURCE_DIR}/ocarina_camera_motion.comp
+     ${CMAKE_CURRENT_SOURCE_DIR}/ocarina_actor_motion.vert
+diff --git a/src/video_core/host_shaders/fsr3_frame_interpolation.comp b/src/video_core/host_shaders/frame_gen_interpolation.comp
+similarity index 84%
+rename from src/video_core/host_shaders/fsr3_frame_interpolation.comp
+rename to src/video_core/host_shaders/frame_gen_interpolation.comp
+index e5dc73ce2..9033233ea 100644
+--- a/src/video_core/host_shaders/fsr3_frame_interpolation.comp
++++ b/src/video_core/host_shaders/frame_gen_interpolation.comp
+@@ -14,9 +14,9 @@ layout(push_constant) uniform PushConstants {
+     float flow_scale;
+ };
+ 
+-// ΓöÇΓöÇ Optimized 3├ù3 motion vector median using textureGather ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+-// textureGather fetches a 2├ù2 quad per call, so we only need 4 calls
+-// to cover a 3├ù3 neighbourhood (vs 9 individual texture() calls).
++// ── Optimized 3×3 motion vector median using textureGather ──────────
++// textureGather fetches a 2×2 quad per call, so we only need 4 calls
++// to cover a 3×3 neighbourhood (vs 9 individual texture() calls).
+ // We extract the median of X and Y components independently.
+ void insertionSort5(inout float a[5]) {
+     for (int i = 1; i < 5; i++) {
+@@ -33,8 +33,8 @@ void insertionSort5(inout float a[5]) {
+ vec2 sampleMotionMedian(vec2 uv) {
+     vec2 texel = 1.0 / vec2(textureSize(MotionVectors, 0));
+ 
+-    // textureGather returns 2├ù2 quads: (x-0.5, y-0.5) to (x+0.5, y+0.5)
+-    // We use 4 gathers offset to cover the 3├ù3 region
++    // textureGather returns 2×2 quads: (x-0.5, y-0.5) to (x+0.5, y+0.5)
++    // We use 4 gathers offset to cover the 3×3 region
+     // Gather component 0 = R (motion X), component 1 = G (motion Y)
+     vec4 gx0 = textureGather(MotionVectors, uv + vec2(-0.5, -0.5) * texel, 0); // TL quad
+     vec4 gx1 = textureGather(MotionVectors, uv + vec2( 0.5, -0.5) * texel, 0); // TR quad
+@@ -46,9 +46,9 @@ vec2 sampleMotionMedian(vec2 uv) {
+     vec4 gy2 = textureGather(MotionVectors, uv + vec2(-0.5,  0.5) * texel, 1);
+     vec4 gy3 = textureGather(MotionVectors, uv + vec2( 0.5,  0.5) * texel, 1);
+ 
+-    // Extract 9 unique samples from overlapping 2├ù2 quads
++    // Extract 9 unique samples from overlapping 2×2 quads
+     // gatherN.w=TL, .z=TR, .x=BL, .y=BR of each quad
+-    // 3├ù3 grid: row0=[gx0.w, gx0.z/gx1.w, gx1.z]
++    // 3×3 grid: row0=[gx0.w, gx0.z/gx1.w, gx1.z]
+     //           row1=[gx0.x/gx2.w, center, gx1.y/gx3.z]
+     //           row2=[gx2.x, gx2.y/gx3.x, gx3.y]
+     float xs[9] = float[](gx0.w, gx1.w, gx1.z, gx0.x, texture(MotionVectors, uv).x, gx1.y, gx2.x, gx3.x, gx3.y);
+@@ -92,11 +92,11 @@ void main() {
+     vec3 color_diff = abs(forward_color.rgb - backward_color.rgb);
+     float occlusion = clamp(dot(color_diff, vec3(0.333)) * 2.0, 0.0, 1.0);
+ 
+-    // Smooth bilateral interpolation ΓÇö bias toward centre on occlusion
++    // Smooth bilateral interpolation — bias toward centre on occlusion
+     float alpha = mix(blend_factor, 0.5, occlusion * 0.4);
+     vec4 interpolated = mix(forward_color, backward_color, alpha);
+ 
+-    // ΓöÇΓöÇ Anti-flicker: blend with un-warped centre pixel ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // ── Anti-flicker: blend with un-warped centre pixel ─────────────
+     float motion_magnitude = length(motion * render_size);
+     float direct_weight = exp(-motion_magnitude * 0.5);
+     vec4 center_color = mix(texture(PreviousFrame, uv), texture(CurrentFrame, uv), blend_factor);
+diff --git a/src/video_core/host_shaders/fsr3_optical_flow.comp b/src/video_core/host_shaders/frame_gen_optical_flow.comp
+similarity index 89%
+rename from src/video_core/host_shaders/fsr3_optical_flow.comp
+rename to src/video_core/host_shaders/frame_gen_optical_flow.comp
+index b0e04600c..b77e18362 100644
+--- a/src/video_core/host_shaders/fsr3_optical_flow.comp
++++ b/src/video_core/host_shaders/frame_gen_optical_flow.comp
+@@ -13,7 +13,7 @@ layout(push_constant) uniform PushConstants {
+     float block_size;
+ };
+ 
+-// ΓöÇΓöÇ Shared memory tile cache ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++// ── Shared memory tile cache ────────────────────────────────────────────
+ const uint TILE = 16u;
+ const uint BORDER = 2u;
+ const uint PADDED = TILE + 2u * BORDER; // 20
+@@ -101,7 +101,7 @@ void main() {
+         }
+     }
+ 
+-    // ΓöÇΓöÇ Dampen very small motions to prevent micro-jitter ΓöÇΓöÇ
++    // ── Dampen very small motions to prevent micro-jitter ──
+     // Motions below ~0.5 pixels are likely noise, not real movement
+     float motion_len = length(best_motion);
+     if (motion_len < 0.5) {
+diff --git a/src/video_core/renderer_vulkan/present/frame_gen.cpp b/src/video_core/renderer_vulkan/present/frame_gen.cpp
+index 673aba0b0..60c46ea62 100644
+--- a/src/video_core/renderer_vulkan/present/frame_gen.cpp
++++ b/src/video_core/renderer_vulkan/present/frame_gen.cpp
+@@ -33,7 +33,7 @@ constexpr u32 LSFG_RECURRENCE_FRAMES = 2;
+ constexpr auto ACTIVITY_LOG_INTERVAL = std::chrono::seconds(10);
+ 
+ [[nodiscard]] std::string ModeText(Settings::FrameGenType active) {
+-    const char* type = active == Settings::FrameGenType::Fsr3 ? "FSR3" : "LSFG";
++    const char* type = active == Settings::FrameGenType::OpticalFlow ? "optical flow" : "LSFG";
+     const u32 target_rate = Settings::values.frame_gen_target_rate.GetValue();
+     if (target_rate != 0) {
+         return fmt::format("{} up to {}x towards {} FPS", type, Settings::MAX_FRAME_GEN_MULTIPLIER,
+@@ -273,10 +273,10 @@ void FrameGen::Process(const Device& device, Frame* frame, VkFormat format,
+         } else if (nvidia_frame_gen) {
+             SetState(VideoCore::FrameGenState::NvidiaFrameGen, format);
+         }
+-        if (chain || fsr3_chain) {
++        if (chain || optical_flow_chain) {
+             scheduler.Finish();
+             chain.reset();
+-            fsr3_chain.reset();
++            optical_flow_chain.reset();
+         }
+         warm_streak = 0;
+         if (unavailable && Settings::values.frame_gen.GetValue()) {
+@@ -299,9 +299,9 @@ void FrameGen::Process(const Device& device, Frame* frame, VkFormat format,
+ 
+     const VkExtent2D extent{.width = frame->width, .height = frame->height};
+     const f32 flow_scale = ConfiguredFlowScale(peak_guest_extent, extent);
+-    if ((!chain && !fsr3_chain) || built_type != type || built_extent.width != extent.width ||
+-        built_extent.height != extent.height || built_format != format ||
+-        built_flow_scale != flow_scale) {
++    if ((!chain && !optical_flow_chain) || built_type != type ||
++        built_extent.width != extent.width || built_extent.height != extent.height ||
++        built_format != format || built_flow_scale != flow_scale) {
+         Rebuild(device, extent, format, flow_scale, type);
+     }
+ 
+@@ -315,11 +315,11 @@ void FrameGen::Process(const Device& device, Frame* frame, VkFormat format,
+     generated_frames.fetch_add(GeneratedFrameCount(), std::memory_order_relaxed);
+     LogActivity();
+ 
+-    const bool use_fsr3 = type == Settings::FrameGenType::Fsr3;
++    const bool use_optical_flow = type == Settings::FrameGenType::OpticalFlow;
+ 
+-    if (use_fsr3 && fsr3_chain) {
++    if (use_optical_flow && optical_flow_chain) {
+         scheduler.RequestOutsideRenderPassOperationContext();
+-        fsr3_chain->Process(device, scheduler, *frame->image, *frame->storage_view, count);
++        optical_flow_chain->Process(device, scheduler, *frame->image, *frame->storage_view, count);
+     } else if (chain) {
+         scheduler.RequestOutsideRenderPassOperationContext();
+         scheduler.Record([this, source = *frame->image, extent, count,
+@@ -349,8 +349,8 @@ void FrameGen::SetState(VideoCore::FrameGenState new_state, VkFormat format) {
+         if (Settings::values.frame_gen_type.GetValue() == Settings::FrameGenType::NvidiaDlssG) {
+             LOG_INFO(Render_Vulkan,
+                      "Frame generation: NVIDIA DLSS-G unavailable ({}), using {}, presenting {}",
+-                     DlssgBlockedText(DlssgBlocked()), ModeText(Settings::FrameGenType::Fsr3),
+-                     string_VkFormat(format));
++                     DlssgBlockedText(DlssgBlocked()),
++                     ModeText(Settings::FrameGenType::OpticalFlow), string_VkFormat(format));
+             break;
+         }
+         LOG_INFO(Render_Vulkan, "Frame generation on: {}, presenting {}",
+@@ -374,12 +374,12 @@ void FrameGen::SetState(VideoCore::FrameGenState new_state, VkFormat format) {
+     case VideoCore::FrameGenState::MissingLosslessDll:
+         LOG_WARNING(Render_Vulkan,
+                     "Frame generation is on but not running: LSFG needs Lossless.dll in the "
+-                    "lossless folder of the user directory. FSR3 needs nothing");
++                    "lossless folder of the user directory. Optical flow needs nothing");
+         break;
+     case VideoCore::FrameGenState::UnsupportedGpu:
+         LOG_WARNING(Render_Vulkan,
+                     "Frame generation is on but not running: this GPU lacks Vulkan features LSFG "
+-                    "needs. FSR3 may still work");
++                    "needs. Optical flow may still work");
+         break;
+     default:
+         break;
+@@ -439,15 +439,15 @@ size_t FrameGen::GeneratedFrameCount() const {
+ }
+ 
+ void FrameGen::GenerateInto(const Device& device, Frame* destination, size_t generation) {
+-    const bool use_fsr3 = built_type == Settings::FrameGenType::Fsr3;
++    const bool use_optical_flow = built_type == Settings::FrameGenType::OpticalFlow;
+ 
+-    if (use_fsr3 && fsr3_chain) {
++    if (use_optical_flow && optical_flow_chain) {
+         const f32 blend = static_cast<f32>(generation + 1) / static_cast<f32>(last_generations + 1);
+         const f32 flow_scale = ConfiguredFlowScale(peak_guest_extent, built_extent);
+ 
+         scheduler.RequestOutsideRenderPassOperationContext();
+-        fsr3_chain->Generate(device, scheduler, *destination->image, *destination->storage_view,
+-                             blend, flow_scale);
++        optical_flow_chain->Generate(device, scheduler, *destination->image,
++                                     *destination->storage_view, blend, flow_scale);
+     } else if (chain) {
+         chain->SetTarget(device, last_generations, generation, destination->index,
+                          *destination->storage_view);
+@@ -468,13 +468,13 @@ void FrameGen::Rebuild(const Device& device, VkExtent2D extent, VkFormat format,
+                        Settings::FrameGenType type) {
+     scheduler.Finish();
+     chain.reset();
+-    fsr3_chain.reset();
++    optical_flow_chain.reset();
+ 
+     built_flow_scale = flow_scale;
+     built_type = type;
+ 
+-    if (built_type == Settings::FrameGenType::Fsr3) {
+-        fsr3_chain.emplace(device, memory_allocator, extent, format);
++    if (built_type == Settings::FrameGenType::OpticalFlow) {
++        optical_flow_chain.emplace(device, memory_allocator, extent, format);
+     } else {
+         chain.emplace(device, memory_allocator, *shaders, extent, format, built_flow_scale);
+     }
+diff --git a/src/video_core/renderer_vulkan/present/frame_gen.h b/src/video_core/renderer_vulkan/present/frame_gen.h
+index 07d95abdd..5ced102ff 100644
+--- a/src/video_core/renderer_vulkan/present/frame_gen.h
++++ b/src/video_core/renderer_vulkan/present/frame_gen.h
+@@ -13,7 +13,7 @@
+ #include "video_core/renderer_vulkan/present/frame_gen_pacer.h"
+ #include "video_core/renderer_vulkan/present/lsfg_chain.h"
+ #include "video_core/renderer_vulkan/present/lsfg_shaders.h"
+-#include "video_core/renderer_vulkan/present/fsr3_frame_gen.h"
++#include "video_core/renderer_vulkan/present/optical_flow_frame_gen.h"
+ #include "video_core/vulkan_common/vulkan_memory_allocator.h"
+ 
+ namespace Vulkan {
+@@ -62,7 +62,7 @@ private:
+ 
+     std::optional<LsfgShaders> shaders;
+     std::optional<LsfgChain> chain;
+-    std::optional<Fsr3FrameGen> fsr3_chain;
++    std::optional<OpticalFlowFrameGen> optical_flow_chain;
+     FrameGenPacer pacer;
+     FrameGenPlan plan{};
+     VkExtent2D peak_guest_extent{};
+diff --git a/src/video_core/renderer_vulkan/present/fsr3_frame_gen.cpp b/src/video_core/renderer_vulkan/present/optical_flow_frame_gen.cpp
+similarity index 84%
+rename from src/video_core/renderer_vulkan/present/fsr3_frame_gen.cpp
+rename to src/video_core/renderer_vulkan/present/optical_flow_frame_gen.cpp
+index 84fe85c27..466b6ef53 100644
+--- a/src/video_core/renderer_vulkan/present/fsr3_frame_gen.cpp
++++ b/src/video_core/renderer_vulkan/present/optical_flow_frame_gen.cpp
+@@ -3,20 +3,20 @@
+ 
+ #include <algorithm>
+ 
+-#include "video_core/renderer_vulkan/present/fsr3_frame_gen.h"
++#include "video_core/renderer_vulkan/present/optical_flow_frame_gen.h"
+ #include "video_core/renderer_vulkan/present/util.h"
+ #include "video_core/renderer_vulkan/vk_scheduler.h"
+ #include "video_core/renderer_vulkan/vk_shader_util.h"
+ #include "video_core/vulkan_common/vulkan_device.h"
+ 
+-#include "video_core/host_shaders/fsr3_frame_interpolation_comp_spv.h"
+-#include "video_core/host_shaders/fsr3_optical_flow_comp_spv.h"
++#include "video_core/host_shaders/frame_gen_interpolation_comp_spv.h"
++#include "video_core/host_shaders/frame_gen_optical_flow_comp_spv.h"
+ 
+ namespace Vulkan {
+ 
+ namespace {
+ 
+-// ΓöÇΓöÇ Precise pipeline barriers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++// ── Precise pipeline barriers ──────────────────────────────────────────
+ 
+ VkImageMemoryBarrier MakeBarrier(VkImage image, VkAccessFlags src_access,
+                                  VkAccessFlags dst_access, VkImageLayout old_layout,
+@@ -49,7 +49,7 @@ void DiscardForComputeWrite(vk::CommandBuffer cmdbuf, VkImage image) {
+                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, {}, {}, barrier);
+ }
+ 
+-// ΓöÇΓöÇ Batched dual-copy ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++// ── Batched dual-copy ──────────────────────────────────────────────────
+ // Copy one source image into TWO destinations with only 3 barrier calls
+ // instead of 6 (avoiding redundant source transitions).
+ void CopyImageToTwo(vk::CommandBuffer cmdbuf, VkImage source,
+@@ -62,7 +62,7 @@ void CopyImageToTwo(vk::CommandBuffer cmdbuf, VkImage source,
+         .extent = {extent.width, extent.height, 1},
+     };
+ 
+-    // 1. Transition source ΓåÆ TRANSFER_SRC, both dests ΓåÆ TRANSFER_DST (batched)
++    // 1. Transition source → TRANSFER_SRC, both dests → TRANSFER_DST (batched)
+     const std::array before{
+         MakeBarrier(source, VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                                 VK_ACCESS_TRANSFER_WRITE_BIT,
+@@ -78,7 +78,7 @@ void CopyImageToTwo(vk::CommandBuffer cmdbuf, VkImage source,
+                                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                            VK_PIPELINE_STAGE_TRANSFER_BIT, 0, {}, {}, before);
+ 
+-    // 2. Copy source ΓåÆ dest_a, then source ΓåÆ dest_b (source stays TRANSFER_SRC)
++    // 2. Copy source → dest_a, then source → dest_b (source stays TRANSFER_SRC)
+     cmdbuf.CopyImage(source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dest_a,
+                      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, region);
+     cmdbuf.CopyImage(source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dest_b,
+@@ -159,8 +159,8 @@ struct InterpPushConstants {
+     float flow_scale;
+ };
+ 
+-Fsr3FrameGen::Fsr3FrameGen(const Device& device, MemoryAllocator& memory_allocator,
+-                           VkExtent2D extent, VkFormat format)
++OpticalFlowFrameGen::OpticalFlowFrameGen(const Device& device, MemoryAllocator& memory_allocator,
++                                         VkExtent2D extent, VkFormat format)
+     : m_allocator{memory_allocator}, m_extent{extent},
+       m_flow_extent{(std::max)(1u, extent.width / 2), (std::max)(1u, extent.height / 2)},
+       m_format{format} {
+@@ -170,9 +170,9 @@ Fsr3FrameGen::Fsr3FrameGen(const Device& device, MemoryAllocator& memory_allocat
+     m_initialized = true;
+ }
+ 
+-Fsr3FrameGen::~Fsr3FrameGen() = default;
++OpticalFlowFrameGen::~OpticalFlowFrameGen() = default;
+ 
+-void Fsr3FrameGen::CreateResources(const Device& device) {
++void OpticalFlowFrameGen::CreateResources(const Device& device) {
+     m_linear_sampler = CreateBilinearSampler(device);
+ 
+     m_history_image = CreateWrappedImage(m_allocator, m_extent, m_format);
+@@ -211,13 +211,13 @@ void Fsr3FrameGen::CreateResources(const Device& device) {
+     });
+ }
+ 
+-void Fsr3FrameGen::CreateShaders(const Device& device) {
+-    m_flow_shader = BuildShader(device, FSR3_OPTICAL_FLOW_COMP_SPV);
+-    m_interp_shader = BuildShader(device, FSR3_FRAME_INTERPOLATION_COMP_SPV);
++void OpticalFlowFrameGen::CreateShaders(const Device& device) {
++    m_flow_shader = BuildShader(device, FRAME_GEN_OPTICAL_FLOW_COMP_SPV);
++    m_interp_shader = BuildShader(device, FRAME_GEN_INTERPOLATION_COMP_SPV);
+ }
+ 
+-void Fsr3FrameGen::CreatePipelines(const Device& device) {
+-    // ΓöÇΓöÇ Optical Flow Pipeline ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++void OpticalFlowFrameGen::CreatePipelines(const Device& device) {
++    // ── Optical Flow Pipeline ──────────────────────────────────────────
+     const std::array flow_bindings{
+         VkDescriptorSetLayoutBinding{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+         VkDescriptorSetLayoutBinding{1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+@@ -255,7 +255,7 @@ void Fsr3FrameGen::CreatePipelines(const Device& device) {
+         .layout = *m_flow_pipe_layout,
+     });
+ 
+-    // ΓöÇΓöÇ Frame Interpolation Pipeline ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // ── Frame Interpolation Pipeline ───────────────────────────────────
+     const std::array interp_bindings{
+         VkDescriptorSetLayoutBinding{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+         VkDescriptorSetLayoutBinding{1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+@@ -298,8 +298,8 @@ void Fsr3FrameGen::CreatePipelines(const Device& device) {
+     m_flow_desc_sets = CreateWrappedDescriptorSets(m_desc_pool, {*m_flow_desc_layout});
+ }
+ 
+-void Fsr3FrameGen::Process(const Device& device, Scheduler& scheduler, VkImage current_frame,
+-                           VkImageView, u64 frame_count) {
++void OpticalFlowFrameGen::Process(const Device& device, Scheduler& scheduler, VkImage current_frame,
++                                  VkImageView, u64 frame_count) {
+     if (frame_count == 0) {
+         m_has_history = false;
+         m_flow_valid = false;
+@@ -315,13 +315,13 @@ void Fsr3FrameGen::Process(const Device& device, Scheduler& scheduler, VkImage c
+         return;
+     }
+ 
+-    // ΓöÇΓöÇ Duplicate-frame detection ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // ── Duplicate-frame detection ──────────────────────────────────────
+     if (frame_count == m_last_frame_count) {
+         return;
+     }
+     m_last_frame_count = frame_count;
+ 
+-    // ΓöÇΓöÇ Descriptor caching ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // ── Descriptor caching ─────────────────────────────────────────────
+     if (!m_flow_descriptors_initialized) {
+         std::vector<VkDescriptorImageInfo> image_infos;
+         image_infos.reserve(4);
+@@ -381,14 +381,14 @@ void Fsr3FrameGen::Process(const Device& device, Scheduler& scheduler, VkImage c
+     m_flow_valid = true;
+ }
+ 
+-void Fsr3FrameGen::Generate(const Device& device, Scheduler& scheduler, VkImage destination,
+-                            VkImageView destination_storage_view, float blend_factor,
+-                            float flow_scale) {
++void OpticalFlowFrameGen::Generate(const Device& device, Scheduler& scheduler, VkImage destination,
++                                   VkImageView destination_storage_view, float blend_factor,
++                                   float flow_scale) {
+     if (!m_has_history || !m_flow_valid) {
+         return;
+     }
+ 
+-    // ΓöÇΓöÇ Descriptor caching for interpolation ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // ── Descriptor caching for interpolation ───────────────────────────
+     if (!m_interp_pool) {
+         m_interp_pool.emplace(device, scheduler);
+         m_interp_allocator = m_interp_pool->Allocator(device, scheduler, *m_interp_desc_layout,
+diff --git a/src/video_core/renderer_vulkan/present/fsr3_frame_gen.h b/src/video_core/renderer_vulkan/present/optical_flow_frame_gen.h
+similarity index 89%
+rename from src/video_core/renderer_vulkan/present/fsr3_frame_gen.h
+rename to src/video_core/renderer_vulkan/present/optical_flow_frame_gen.h
+index dd0c787ad..4da1c0de1 100644
+--- a/src/video_core/renderer_vulkan/present/fsr3_frame_gen.h
++++ b/src/video_core/renderer_vulkan/present/optical_flow_frame_gen.h
+@@ -17,22 +17,22 @@ namespace Vulkan {
+ class Device;
+ class Scheduler;
+ 
+-/// AMD FidelityFX Super Resolution 3 (FSR 3) Frame Generation pipeline.
++/// Lichii Optical Flow Frame Generation pipeline.
+ /// Uses compute-based optical flow and bilateral frame interpolation
+ /// to synthesize intermediate frames without requiring engine motion vectors.
+ ///
+ /// Optimizations:
+-///  - Quarter-resolution optical flow (16├ù fewer compute invocations)
++///  - Quarter-resolution optical flow (16× fewer compute invocations)
+ ///  - Shared-memory tile caching in both shaders
+ ///  - Early-out for static pixels (skip diamond search)
+ ///  - Duplicate-frame detection (skip optical flow entirely)
+ ///  - Precise pipeline barriers instead of full-pipeline TransitionImageLayout
+ ///  - Descriptor-write caching (only update when image views change)
+-class Fsr3FrameGen {
++class OpticalFlowFrameGen {
+ public:
+-    explicit Fsr3FrameGen(const Device& device, MemoryAllocator& memory_allocator,
+-                          VkExtent2D extent, VkFormat format);
+-    ~Fsr3FrameGen();
++    explicit OpticalFlowFrameGen(const Device& device, MemoryAllocator& memory_allocator,
++                                 VkExtent2D extent, VkFormat format);
++    ~OpticalFlowFrameGen();
+ 
+     void Process(const Device& device, Scheduler& scheduler, VkImage current_frame,
+                  VkImageView current_view, u64 frame_count);
+diff --git a/tools/nx2/fsr3-shader-tests.md b/tools/nx2/frame-gen-shader-tests.md
+similarity index 91%
+rename from tools/nx2/fsr3-shader-tests.md
+rename to tools/nx2/frame-gen-shader-tests.md
+index 7bc9cc086..b794b37a4 100644
+--- a/tools/nx2/fsr3-shader-tests.md
++++ b/tools/nx2/frame-gen-shader-tests.md
+@@ -1,4 +1,4 @@
+-# FSR3 temporal regression checks
++# Lichii Optical Flow Frame Generation regression checks
+ 
+ This port adapts Frizti/Lichii `a605fac744b2e20202165d4b8c100d735cd39987`
+ from the pinned `oot-gather-fix` tip `765659af4ccb7201d1145c57f3b45ce84653cea0`.
+@@ -34,16 +34,16 @@ The Vulkan integration needs more than those arithmetic changes:
+ Install `glslang-tools`, `spirv-tools`, `mesa-vulkan-drivers`,
+ `vulkan-validationlayers`, and Python packages `vulkan==1.3.275.1`, `numpy`,
+ and `pillow`. Configure the project with `CMAKE_EXPORT_COMPILE_COMMANDS=ON`.
+-Generate its two `fsr3_*_comp_spv.h` headers before running the C++ probe.
++Generate its two `frame_gen_*_comp_spv.h` headers before running the C++ probe.
+ 
+ ```sh
+-python tools/nx2/test_fsr3_shaders.py --out /tmp/fsr3-tests --build build
++python tools/nx2/test_frame_gen_shaders.py --out /tmp/frame-gen-tests --build build
+ ```
+ 
+ The test compiles and dispatches the real production shaders. With `--build`,
+ it also compiles the actual C++ copy/layout helpers through a small exported
+ probe, using the configured translation unit's includes and defines. The probe
+-does not instantiate the emulator's scheduler or the complete `Fsr3FrameGen`
++does not instantiate the emulator's scheduler or the complete `OpticalFlowFrameGen`
+ class; descriptor retirement and reset orchestration are reviewed at their
+ production call sites, not claimed as end-to-end emulator coverage.
+ 
+diff --git a/tools/nx2/fsr3_copy_probe.cpp b/tools/nx2/frame_gen_copy_probe.cpp
+similarity index 81%
+rename from tools/nx2/fsr3_copy_probe.cpp
+rename to tools/nx2/frame_gen_copy_probe.cpp
+index c2f34a14c..84e8dd82c 100644
+--- a/tools/nx2/fsr3_copy_probe.cpp
++++ b/tools/nx2/frame_gen_copy_probe.cpp
+@@ -1,8 +1,8 @@
+ // SPDX-License-Identifier: GPL-3.0-or-later
+ 
+-#include "video_core/renderer_vulkan/present/fsr3_frame_gen.cpp"
++#include "video_core/renderer_vulkan/present/optical_flow_frame_gen.cpp"
+ 
+-extern "C" __attribute__((visibility("default"))) void Fsr3CopyProbe(
++extern "C" __attribute__((visibility("default"))) void FrameGenCopyProbe(
+     VkCommandBuffer command, PFN_vkCmdPipelineBarrier barrier, PFN_vkCmdCopyImage copy,
+     VkImage source, VkImage history, VkImage current, uint32_t width, uint32_t height,
+     bool initialize) {
+@@ -18,7 +18,7 @@ extern "C" __attribute__((visibility("default"))) void Fsr3CopyProbe(
+     }
+ }
+ 
+-extern "C" __attribute__((visibility("default"))) void Fsr3DiscardProbe(
++extern "C" __attribute__((visibility("default"))) void FrameGenDiscardProbe(
+     VkCommandBuffer command, PFN_vkCmdPipelineBarrier barrier, VkImage image) {
+     Vulkan::vk::DeviceDispatch dispatch{};
+     dispatch.vkCmdPipelineBarrier = barrier;
+diff --git a/tools/nx2/test_buffer_host_visibility.py b/tools/nx2/test_buffer_host_visibility.py
+index b196ca473..d3a9e5864 100644
+--- a/tools/nx2/test_buffer_host_visibility.py
++++ b/tools/nx2/test_buffer_host_visibility.py
+@@ -13,7 +13,7 @@ from pathlib import Path
+ import shlex
+ import subprocess
+ 
+-from test_fsr3_shaders import VulkanTest
++from test_frame_gen_shaders import VulkanTest
+ from vulkan import *
+ 
+ 
+diff --git a/tools/nx2/test_fsr3_shaders.py b/tools/nx2/test_frame_gen_shaders.py
+similarity index 98%
+rename from tools/nx2/test_fsr3_shaders.py
+rename to tools/nx2/test_frame_gen_shaders.py
+index 19c64323b..e413af4f5 100644
+--- a/tools/nx2/test_fsr3_shaders.py
++++ b/tools/nx2/test_frame_gen_shaders.py
+@@ -1,11 +1,11 @@
+ #!/usr/bin/env python3
+ # SPDX-License-Identifier: GPL-3.0-or-later
+-"""Run the production FSR3 shaders on Vulkan, including lavapipe.
++"""Run the production Lichii Optical Flow Frame Generation shaders on Vulkan, including lavapipe.
+ 
+ Requires glslangValidator, spirv-val, the Vulkan validation layer, and Python
+ packages vulkan==1.3.275.1, numpy and pillow. Run with --out <evidence directory>.
+ Add --build <configured CMake directory> to test production image-copy commands.
+-The build must have compile_commands.json and the two generated FSR3 shader headers.
++The build must have compile_commands.json and the two generated frame generation shader headers.
+ """
+ 
+ import argparse
+@@ -216,7 +216,7 @@ class VulkanTest:
+ 
+ def build_copy_probe(build, out, sanitize):
+     commands = json.loads((build / "compile_commands.json").read_text())
+-    entry = next(c for c in commands if c["file"].endswith("present/fsr3_frame_gen.cpp"))
++    entry = next(c for c in commands if c["file"].endswith("present/optical_flow_frame_gen.cpp"))
+     command = shlex.split(entry["command"])
+     index = command.index("-o")
+     del command[index:index + 2]
+@@ -226,7 +226,7 @@ def build_copy_probe(build, out, sanitize):
+     library = out.resolve() / "copy-probe.so"
+     command += ["-fPIC", "-fvisibility=hidden", "-fvisibility-inlines-hidden",
+                 "-ffunction-sections", "-fdata-sections", "-shared",
+-                "-Wl,--gc-sections,--no-undefined", str(Path(__file__).with_name("fsr3_copy_probe.cpp").resolve()),
++                "-Wl,--gc-sections,--no-undefined", str(Path(__file__).with_name("frame_gen_copy_probe.cpp").resolve()),
+                 "-o", str(library)]
+     if sanitize:
+         command += ["-fsanitize=address,undefined", "-shared-libsan", "-fno-sanitize-recover=all"]
+@@ -235,14 +235,14 @@ def build_copy_probe(build, out, sanitize):
+ 
+ 
+ def check_copies(vk, probe):
+-    copy = probe.Fsr3CopyProbe
++    copy = probe.FrameGenCopyProbe
+     copy.argtypes = [ctypes.c_void_p] * 6 + [ctypes.c_uint32, ctypes.c_uint32, ctypes.c_bool]
+     native = ctypes.CDLL("libvulkan.so.1")
+ 
+     def address(handle):
+         return int(ffi.cast("uintptr_t", handle))
+ 
+-    discard = probe.Fsr3DiscardProbe
++    discard = probe.FrameGenDiscardProbe
+     discard.argtypes = [ctypes.c_void_p] * 3
+     vk.discard = lambda cmd, image: discard(
+         address(cmd), ctypes.cast(native.vkCmdPipelineBarrier, ctypes.c_void_p), address(image))
+@@ -274,7 +274,7 @@ def check_copies(vk, probe):
+ def run(out, build, shaders, sanitize):
+     out.mkdir(parents=True, exist_ok=True)
+     compiled = []
+-    for name in ("fsr3_optical_flow", "fsr3_frame_interpolation"):
++    for name in ("frame_gen_optical_flow", "frame_gen_interpolation"):
+         binary = out / (name + ".spv")
+         subprocess.run(["glslangValidator", "-V", str(shaders / (name + ".comp")), "-o", str(binary)], check=True)
+         subprocess.run(["spirv-val", str(binary)], check=True)
+-- 
+2.43.0
+

@@ -1,0 +1,1066 @@
+From 8eb10742be1b8381d39f94363f3662d19b8a3bef Mon Sep 17 00:00:00 2001
+From: Zortos <zortosdev@proton.me>
+Date: Sun, 22 Nov 2026 08:58:32 +0100
+Subject: [PATCH 47/47] frame gen: coarse-to-fine block matching for Lichii
+ Optical Flow (#2386)
+
+* frame gen: coarse-to-fine block matching for Lichii Optical Flow
+
+Port sheepbun/lichii-bunx2 0125458acc (luma pyramid, coarse full search,
+refinement around coarser motion, sub-pixel fit, static-pixel and sample
+validity checks) with 5x5 blocks. Where the warped samples disagree, show
+the nearer real frame instead of blending them, and drop the unwarped
+blend that drew both positions of moving outlines.
+
+* frame gen: warp static-looking pixels an object crossed, keep the real frame where both warps are rejected
+
+* frame gen: drop the crossing and both-rejected changes to the interpolation
+
+The crossing branch replaced a thin static overlay with warped background
+during a pan, and with the check that prevents that it no longer paid off.
+Showing the nearer real frame where both warps are rejected measured worse
+on sprite walks than blending them.
+
+* frame gen: compare flow blocks without their mean
+
+Fades and menu transitions change the brightness of the whole scene, and
+the absolute block cost then picked arbitrary offsets up to the pyramid's
+192 px range, which warped the generated frames. Zero-mean blocks match
+through the brightness change.
+---
+ src/video_core/host_shaders/CMakeLists.txt    |   3 +-
+ .../host_shaders/frame_gen_flow_search.comp   | 142 ++++++
+ .../host_shaders/frame_gen_interpolation.comp |  64 ++-
+ .../frame_gen_luma_downsample.comp            |  34 ++
+ .../host_shaders/frame_gen_optical_flow.comp  | 112 -----
+ .../present/optical_flow_frame_gen.cpp        | 408 +++++++++++-------
+ .../present/optical_flow_frame_gen.h          |  53 ++-
+ 7 files changed, 504 insertions(+), 312 deletions(-)
+ create mode 100644 src/video_core/host_shaders/frame_gen_flow_search.comp
+ create mode 100644 src/video_core/host_shaders/frame_gen_luma_downsample.comp
+ delete mode 100644 src/video_core/host_shaders/frame_gen_optical_flow.comp
+
+diff --git a/src/video_core/host_shaders/CMakeLists.txt b/src/video_core/host_shaders/CMakeLists.txt
+index 01e76078b..8b81ad9ea 100644
+--- a/src/video_core/host_shaders/CMakeLists.txt
++++ b/src/video_core/host_shaders/CMakeLists.txt
+@@ -99,7 +99,8 @@ set(SHADER_FILES
+     ${CMAKE_CURRENT_SOURCE_DIR}/sgsr1_shader.vert
+     ${CMAKE_CURRENT_SOURCE_DIR}/sgsr1_shader_mobile.frag
+     ${CMAKE_CURRENT_SOURCE_DIR}/sgsr1_shader_mobile_edge_direction.frag
+-    ${CMAKE_CURRENT_SOURCE_DIR}/frame_gen_optical_flow.comp
++    ${CMAKE_CURRENT_SOURCE_DIR}/frame_gen_luma_downsample.comp
++    ${CMAKE_CURRENT_SOURCE_DIR}/frame_gen_flow_search.comp
+     ${CMAKE_CURRENT_SOURCE_DIR}/frame_gen_interpolation.comp
+     ${CMAKE_CURRENT_SOURCE_DIR}/dlss_network_probe.comp
+     ${CMAKE_CURRENT_SOURCE_DIR}/ocarina_camera_motion.comp
+diff --git a/src/video_core/host_shaders/frame_gen_flow_search.comp b/src/video_core/host_shaders/frame_gen_flow_search.comp
+new file mode 100644
+index 000000000..f9e3dd915
+--- /dev/null
++++ b/src/video_core/host_shaders/frame_gen_flow_search.comp
+@@ -0,0 +1,142 @@
++// SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
++// SPDX-License-Identifier: GPL-3.0-or-later
++
++#version 460 core
++
++// One level of coarse-to-fine block matching for frame generation. Finds, per pixel of this
++// pyramid level, the offset d where PreviousLuma(p + d) best matches CurrentLuma(p), in this
++// level's pixels. The coarsest level searches every offset within the radius; finer levels search
++// around the doubled offsets of the coarser level's pixel and its neighbours, and around zero.
++
++layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
++
++layout(binding = 0) uniform sampler2D CurrentLuma;
++layout(binding = 1) uniform sampler2D PreviousLuma;
++layout(binding = 2) uniform sampler2D CoarseMotion;
++layout(binding = 3, rg16f) uniform writeonly image2D OutMotion;
++
++layout(push_constant) uniform PushConstants {
++    ivec2 size;
++    int radius;
++    int has_coarse;
++    int subpixel;
++};
++
++// In the full search, ties go to the smaller motion; this keeps flat areas and static overlays
++// still.
++const float MOTION_COST = 0.002;
++// In the refinement, prefer the motion the coarser level predicted for this pixel, so flat areas
++// (sky) follow their surroundings instead of matching noise.
++const float PREDICTOR_COST = 0.01;
++// Per-tap difference cap, so a few mismatched taps (a static HUD edge in the block) cannot
++// outweigh the rest of the block.
++const float TAP_LIMIT = 0.1;
++
++// 5x5 blocks: 3x3 ones match the wrong offset on pixel art and other fine, repeating detail. Each
++// block is compared without its mean, so fades and menus darkening the scene don't make the search
++// pick arbitrary offsets.
++float current_block[25];
++float current_mean;
++
++float Cost(ivec2 p, ivec2 d, ivec2 last) {
++    float previous_block[25];
++    float previous_mean = 0.0;
++    int i = 0;
++    for (int y = -2; y <= 2; ++y) {
++        for (int x = -2; x <= 2; ++x) {
++            const ivec2 coord = clamp(p + d + ivec2(x, y), ivec2(0), last);
++            previous_block[i] = texelFetch(PreviousLuma, coord, 0).r;
++            previous_mean += previous_block[i++];
++        }
++    }
++    previous_mean /= 25.0;
++    float sum = 0.0;
++    for (i = 0; i < 25; ++i) {
++        sum += min(abs((current_block[i] - current_mean) - (previous_block[i] - previous_mean)),
++                   TAP_LIMIT);
++    }
++    return sum;
++}
++
++void main() {
++    const ivec2 p = ivec2(gl_GlobalInvocationID.xy);
++    if (any(greaterThanEqual(p, size))) {
++        return;
++    }
++    const ivec2 last = size - 1;
++    int i = 0;
++    for (int y = -2; y <= 2; ++y) {
++        for (int x = -2; x <= 2; ++x) {
++            const ivec2 coord = clamp(p + ivec2(x, y), ivec2(0), last);
++            current_block[i++] = texelFetch(CurrentLuma, coord, 0).r;
++        }
++    }
++
++    current_mean = 0.0;
++    for (int j = 0; j < 25; ++j) {
++        current_mean += current_block[j];
++    }
++    current_mean /= 25.0;
++
++    ivec2 best = ivec2(0);
++    float best_cost = Cost(p, best, last);
++    if (has_coarse == 0) {
++        for (int y = -radius; y <= radius; ++y) {
++            for (int x = -radius; x <= radius; ++x) {
++                const ivec2 d = ivec2(x, y);
++                const float cost = Cost(p, d, last) + MOTION_COST * length(vec2(d));
++                if (cost < best_cost) {
++                    best_cost = cost;
++                    best = d;
++                }
++            }
++        }
++    } else {
++        const ivec2 coarse_last = textureSize(CoarseMotion, 0) - 1;
++        const ivec2 coarse = p / 2;
++        const vec2 own_motion = texelFetch(CoarseMotion, clamp(coarse, ivec2(0), coarse_last), 0).rg;
++        const ivec2 own = ivec2(round(own_motion * 2.0));
++        best_cost += PREDICTOR_COST * length(vec2(own));
++        const ivec2 neighbours[6] = ivec2[](ivec2(0, 0), ivec2(-1, 0), ivec2(1, 0), ivec2(0, -1),
++                                            ivec2(0, 1), ivec2(0, 0));
++        for (int n = 0; n < 6; ++n) {
++            ivec2 predictor = ivec2(0);
++            if (n < 5) {
++                const ivec2 at = clamp(coarse + neighbours[n], ivec2(0), coarse_last);
++                predictor = ivec2(round(texelFetch(CoarseMotion, at, 0).rg * 2.0));
++                if (n > 0 && predictor == own) {
++                    continue;
++                }
++            }
++            for (int y = -radius; y <= radius; ++y) {
++                for (int x = -radius; x <= radius; ++x) {
++                    const ivec2 d = predictor + ivec2(x, y);
++                    const float cost = Cost(p, d, last) + PREDICTOR_COST * length(vec2(d - own));
++                    if (cost < best_cost) {
++                        best_cost = cost;
++                        best = d;
++                    }
++                }
++            }
++        }
++    }
++
++    vec2 motion = vec2(best);
++    if (subpixel != 0) {
++        // Parabola through the costs either side of the best offset, per axis.
++        const float left = Cost(p, best - ivec2(1, 0), last);
++        const float right = Cost(p, best + ivec2(1, 0), last);
++        const float up = Cost(p, best - ivec2(0, 1), last);
++        const float down = Cost(p, best + ivec2(0, 1), last);
++        const float centre = Cost(p, best, last);
++        const float dx = left + right - 2.0 * centre;
++        const float dy = up + down - 2.0 * centre;
++        if (dx > 1e-5) {
++            motion.x += clamp(0.5 * (left - right) / dx, -0.5, 0.5);
++        }
++        if (dy > 1e-5) {
++            motion.y += clamp(0.5 * (up - down) / dy, -0.5, 0.5);
++        }
++    }
++    imageStore(OutMotion, p, vec4(motion, 0.0, 0.0));
++}
+diff --git a/src/video_core/host_shaders/frame_gen_interpolation.comp b/src/video_core/host_shaders/frame_gen_interpolation.comp
+index 9033233ea..73271ca54 100644
+--- a/src/video_core/host_shaders/frame_gen_interpolation.comp
++++ b/src/video_core/host_shaders/frame_gen_interpolation.comp
+@@ -14,6 +14,13 @@ layout(push_constant) uniform PushConstants {
+     float flow_scale;
+ };
+ 
++// Mean absolute RGB difference under which a pixel counts as unchanged between the frames.
++const float STATIC_THRESHOLD = 0.012;
++
++float ColorDistance(vec4 a, vec4 b) {
++    return dot(abs(a.rgb - b.rgb), vec3(1.0 / 3.0));
++}
++
+ // ── Optimized 3×3 motion vector median using textureGather ──────────
+ // textureGather fetches a 2×2 quad per call, so we only need 4 calls
+ // to cover a 3×3 neighbourhood (vs 9 individual texture() calls).
+@@ -81,26 +88,47 @@ void main() {
+     // Median-filtered motion vector (reduces outlier jitter)
+     vec2 motion = sampleMotionMedian(uv) / vec2(textureSize(MotionVectors, 0));
+ 
+-    // Forward and backward warped coordinates
+-    vec2 forward_uv  = clamp(uv + motion * blend_factor,         0.0, 1.0);
+-    vec2 backward_uv = clamp(uv - motion * (1.0 - blend_factor), 0.0, 1.0);
+-
+-    vec4 forward_color  = texture(PreviousFrame, forward_uv);
+-    vec4 backward_color = texture(CurrentFrame,  backward_uv);
+-
+-    // Colour-difference occlusion
+-    vec3 color_diff = abs(forward_color.rgb - backward_color.rgb);
+-    float occlusion = clamp(dot(color_diff, vec3(0.333)) * 2.0, 0.0, 1.0);
++    // Pixels that didn't change (the HUD, or what the camera follows) stay in place instead of
++    // warping with the motion around them.
++    const vec4 previous_here = texture(PreviousFrame, uv);
++    const vec4 current_here = texture(CurrentFrame, uv);
++    if (ColorDistance(previous_here, current_here) < STATIC_THRESHOLD) {
++        imageStore(OutGeneratedFrame, pixel_coord, mix(previous_here, current_here, blend_factor));
++        return;
++    }
+ 
+-    // Smooth bilateral interpolation — bias toward centre on occlusion
+-    float alpha = mix(blend_factor, 0.5, occlusion * 0.4);
+-    vec4 interpolated = mix(forward_color, backward_color, alpha);
++    const vec2 forward_unclamped = uv + motion * blend_factor;
++    const vec2 backward_unclamped = uv - motion * (1.0 - blend_factor);
++    const vec2 forward_uv = clamp(forward_unclamped, 0.0, 1.0);
++    const vec2 backward_uv = clamp(backward_unclamped, 0.0, 1.0);
++    const vec4 forward_color = texture(PreviousFrame, forward_uv);
++    const vec4 backward_color = texture(CurrentFrame, backward_uv);
++
++    // A sample is unusable off screen (content entering or leaving exists in one frame only) or,
++    // for a moving pixel, on static content seen through the motion. Use the other one then.
++    bool forward_valid = forward_unclamped == forward_uv;
++    bool backward_valid = backward_unclamped == backward_uv;
++    if (length(motion * render_size) > 1.0) {
++        forward_valid = forward_valid &&
++                        ColorDistance(forward_color, texture(CurrentFrame, forward_uv)) >=
++                            STATIC_THRESHOLD;
++        backward_valid = backward_valid &&
++                         ColorDistance(texture(PreviousFrame, backward_uv), backward_color) >=
++                             STATIC_THRESHOLD;
++    }
+ 
+-    // ── Anti-flicker: blend with un-warped centre pixel ─────────────
+-    float motion_magnitude = length(motion * render_size);
+-    float direct_weight = exp(-motion_magnitude * 0.5);
+-    vec4 center_color = mix(texture(PreviousFrame, uv), texture(CurrentFrame, uv), blend_factor);
+-    interpolated = mix(interpolated, center_color, direct_weight * 0.3);
++    vec4 interpolated;
++    if (forward_valid != backward_valid) {
++        interpolated = forward_valid ? forward_color : backward_color;
++    } else {
++        // Where the two warped samples disagree, the motion doesn't describe this pixel (an
++        // animation frame changed, or something was uncovered). Blending them ghosts both
++        // versions, so show the nearer real frame there instead.
++        interpolated = mix(forward_color, backward_color, blend_factor);
++        const vec4 nearest = blend_factor < 0.5 ? previous_here : current_here;
++        interpolated = mix(interpolated, nearest,
++                           smoothstep(0.04, 0.12, ColorDistance(forward_color, backward_color)));
++    }
+ 
+     imageStore(OutGeneratedFrame, pixel_coord, interpolated);
+ }
+diff --git a/src/video_core/host_shaders/frame_gen_luma_downsample.comp b/src/video_core/host_shaders/frame_gen_luma_downsample.comp
+new file mode 100644
+index 000000000..13507bd36
+--- /dev/null
++++ b/src/video_core/host_shaders/frame_gen_luma_downsample.comp
+@@ -0,0 +1,34 @@
++// SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
++// SPDX-License-Identifier: GPL-3.0-or-later
++
++#version 460 core
++
++// One level of the frame generation luma pyramid: a 2x2 box filter of the level above (or of the
++// colour frame for the first level).
++
++layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
++
++layout(binding = 0) uniform sampler2D Source;
++layout(binding = 1, r16f) uniform writeonly image2D Destination;
++
++layout(push_constant) uniform PushConstants {
++    ivec2 destination_size;
++    int is_color;
++};
++
++float Luma(ivec2 coord, ivec2 last) {
++    const vec4 texel = texelFetch(Source, clamp(coord, ivec2(0), last), 0);
++    return is_color != 0 ? dot(texel.rgb, vec3(0.299, 0.587, 0.114)) : texel.r;
++}
++
++void main() {
++    const ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
++    if (any(greaterThanEqual(coord, destination_size))) {
++        return;
++    }
++    const ivec2 last = textureSize(Source, 0) - 1;
++    const ivec2 source = coord * 2;
++    const float sum = Luma(source, last) + Luma(source + ivec2(1, 0), last) +
++                      Luma(source + ivec2(0, 1), last) + Luma(source + ivec2(1, 1), last);
++    imageStore(Destination, coord, vec4(sum * 0.25));
++}
+diff --git a/src/video_core/host_shaders/frame_gen_optical_flow.comp b/src/video_core/host_shaders/frame_gen_optical_flow.comp
+deleted file mode 100644
+index b77e18362..000000000
+--- a/src/video_core/host_shaders/frame_gen_optical_flow.comp
++++ /dev/null
+@@ -1,112 +0,0 @@
+-#version 460 core
+-
+-layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+-
+-layout(binding = 0) uniform sampler2D CurrentFrame;
+-layout(binding = 1) uniform sampler2D PreviousFrame;
+-layout(binding = 2, rg16f) uniform writeonly image2D OutMotionVectors;
+-
+-layout(push_constant) uniform PushConstants {
+-    vec2 inv_render_size;
+-    vec2 render_size;
+-    float search_radius;
+-    float block_size;
+-};
+-
+-// ── Shared memory tile cache ────────────────────────────────────────────
+-const uint TILE = 16u;
+-const uint BORDER = 2u;
+-const uint PADDED = TILE + 2u * BORDER; // 20
+-shared float s_curr_luma[PADDED * PADDED];
+-
+-float rgb2luma(vec3 c) {
+-    return dot(c, vec3(0.299, 0.587, 0.114));
+-}
+-
+-void loadTile(ivec2 tile_origin) {
+-    uint thread_id = gl_LocalInvocationID.y * TILE + gl_LocalInvocationID.x;
+-    for (uint i = thread_id; i < PADDED * PADDED; i += TILE * TILE) {
+-        uint lx = i % PADDED;
+-        uint ly = i / PADDED;
+-        ivec2 coord = tile_origin + ivec2(lx, ly) - ivec2(BORDER);
+-        vec2 uv = (vec2(coord) + 0.5) * inv_render_size;
+-        s_curr_luma[i] = rgb2luma(texture(CurrentFrame, uv).rgb);
+-    }
+-    barrier();
+-}
+-
+-float getCachedLuma(ivec2 local_coord) {
+-    ivec2 padded = local_coord + ivec2(BORDER);
+-    return s_curr_luma[padded.y * PADDED + padded.x];
+-}
+-
+-void main() {
+-    ivec2 pixel_coord = ivec2(gl_GlobalInvocationID.xy);
+-
+-    ivec2 tile_origin = ivec2(gl_WorkGroupID.xy) * ivec2(TILE);
+-    loadTile(tile_origin);
+-
+-    if (pixel_coord.x >= int(render_size.x) || pixel_coord.y >= int(render_size.y)) {
+-        return;
+-    }
+-
+-    vec2 uv = (vec2(pixel_coord) + 0.5) * inv_render_size;
+-    ivec2 local = ivec2(gl_LocalInvocationID.xy);
+-    float curr_luma = getCachedLuma(local);
+-
+-    float center_diff = abs(curr_luma - rgb2luma(texture(PreviousFrame, uv).rgb));
+-
+-    // Early-out only for truly identical pixels (very tight threshold)
+-    if (center_diff < 0.002) {
+-        imageStore(OutMotionVectors, pixel_coord, vec4(0.0, 0.0, 0.0, 0.0));
+-        return;
+-    }
+-
+-    vec2 best_motion = vec2(0.0);
+-    float min_diff = center_diff;
+-
+-    // Large diamond (radius 2)
+-    const vec2 diamond_large[4] = vec2[](
+-        vec2(0.0, -2.0),
+-        vec2(-2.0, 0.0), vec2(2.0, 0.0),
+-        vec2(0.0, 2.0)
+-    );
+-
+-    for (int i = 0; i < 4; ++i) {
+-        vec2 offset_uv = uv + diamond_large[i] * inv_render_size;
+-        float luma = rgb2luma(texture(PreviousFrame, offset_uv).rgb);
+-        float d = abs(curr_luma - luma) + 0.04 * length(diamond_large[i]);
+-        if (d < min_diff) {
+-            min_diff = d;
+-            best_motion = diamond_large[i];
+-        }
+-    }
+-
+-    // Small refinement diamond (radius 1)
+-    const vec2 diamond_small[4] = vec2[](
+-        vec2(0.0, -1.0),
+-        vec2(-1.0, 0.0), vec2(1.0, 0.0),
+-        vec2(0.0, 1.0)
+-    );
+-
+-    vec2 center = best_motion;
+-    for (int i = 0; i < 4; ++i) {
+-        vec2 cand = center + diamond_small[i];
+-        vec2 offset_uv = uv + cand * inv_render_size;
+-        float luma = rgb2luma(texture(PreviousFrame, offset_uv).rgb);
+-        float d = abs(curr_luma - luma) + 0.04 * length(cand);
+-        if (d < min_diff) {
+-            min_diff = d;
+-            best_motion = cand;
+-        }
+-    }
+-
+-    // ── Dampen very small motions to prevent micro-jitter ──
+-    // Motions below ~0.5 pixels are likely noise, not real movement
+-    float motion_len = length(best_motion);
+-    if (motion_len < 0.5) {
+-        best_motion *= motion_len * 2.0; // smooth fade to zero
+-    }
+-
+-    imageStore(OutMotionVectors, pixel_coord, vec4(best_motion, 0.0, 0.0));
+-}
+diff --git a/src/video_core/renderer_vulkan/present/optical_flow_frame_gen.cpp b/src/video_core/renderer_vulkan/present/optical_flow_frame_gen.cpp
+index 466b6ef53..e9c7a5fcc 100644
+--- a/src/video_core/renderer_vulkan/present/optical_flow_frame_gen.cpp
++++ b/src/video_core/renderer_vulkan/present/optical_flow_frame_gen.cpp
+@@ -2,6 +2,7 @@
+ // SPDX-License-Identifier: GPL-3.0-or-later
+ 
+ #include <algorithm>
++#include <vector>
+ 
+ #include "video_core/renderer_vulkan/present/optical_flow_frame_gen.h"
+ #include "video_core/renderer_vulkan/present/util.h"
+@@ -10,7 +11,8 @@
+ #include "video_core/vulkan_common/vulkan_device.h"
+ 
+ #include "video_core/host_shaders/frame_gen_interpolation_comp_spv.h"
+-#include "video_core/host_shaders/frame_gen_optical_flow_comp_spv.h"
++#include "video_core/host_shaders/frame_gen_flow_search_comp_spv.h"
++#include "video_core/host_shaders/frame_gen_luma_downsample_comp_spv.h"
+ 
+ namespace Vulkan {
+ 
+@@ -34,14 +36,6 @@ VkImageMemoryBarrier MakeBarrier(VkImage image, VkAccessFlags src_access,
+     };
+ }
+ 
+-void BarrierComputeWriteToRead(vk::CommandBuffer cmdbuf, VkImage image) {
+-    const auto barrier = MakeBarrier(image, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+-                                     VK_IMAGE_LAYOUT_GENERAL,
+-                                     VK_IMAGE_LAYOUT_GENERAL);
+-    cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+-                           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, {}, {}, barrier);
+-}
+-
+ void DiscardForComputeWrite(vk::CommandBuffer cmdbuf, VkImage image) {
+     const auto barrier = MakeBarrier(image, 0, VK_ACCESS_SHADER_WRITE_BIT,
+                                      VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+@@ -141,13 +135,18 @@ void CopyImageToImage(vk::CommandBuffer cmdbuf, VkImage source, VkImage destinat
+ 
+ } // anonymous namespace
+ 
+-struct FlowPushConstants {
+-    float inv_render_w;
+-    float inv_render_h;
+-    float render_w;
+-    float render_h;
+-    float search_radius;
+-    float block_size;
++struct DownsamplePushConstants {
++    s32 destination_width;
++    s32 destination_height;
++    s32 is_color;
++};
++
++struct SearchPushConstants {
++    s32 width;
++    s32 height;
++    s32 radius;
++    s32 has_coarse;
++    s32 subpixel;
+ };
+ 
+ struct InterpPushConstants {
+@@ -159,14 +158,96 @@ struct InterpPushConstants {
+     float flow_scale;
+ };
+ 
++namespace {
++
++/// Full search radius at the coarsest level, in its pixels (32 frame pixels each).
++constexpr s32 COARSE_SEARCH_RADIUS = 6;
++
++vk::DescriptorSetLayout CreateComputeSetLayout(const Device& device, u32 samplers) {
++    std::vector<VkDescriptorSetLayoutBinding> bindings;
++    for (u32 binding = 0; binding <= samplers; ++binding) {
++        bindings.push_back(VkDescriptorSetLayoutBinding{
++            .binding = binding,
++            .descriptorType = binding < samplers ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
++                                                 : VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
++            .descriptorCount = 1,
++            .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
++            .pImmutableSamplers = nullptr,
++        });
++    }
++    return device.GetLogical().CreateDescriptorSetLayout(VkDescriptorSetLayoutCreateInfo{
++        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
++        .pNext = nullptr,
++        .flags = 0,
++        .bindingCount = static_cast<u32>(bindings.size()),
++        .pBindings = bindings.data(),
++    });
++}
++
++vk::PipelineLayout CreateComputePipelineLayout(const Device& device,
++                                               const vk::DescriptorSetLayout& set_layout,
++                                               u32 push_size) {
++    const VkPushConstantRange range{
++        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
++        .offset = 0,
++        .size = push_size,
++    };
++    return device.GetLogical().CreatePipelineLayout(VkPipelineLayoutCreateInfo{
++        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
++        .pNext = nullptr,
++        .flags = 0,
++        .setLayoutCount = 1,
++        .pSetLayouts = set_layout.address(),
++        .pushConstantRangeCount = 1,
++        .pPushConstantRanges = &range,
++    });
++}
++
++vk::Pipeline CreateComputePipeline(const Device& device, const vk::PipelineLayout& layout,
++                                   const vk::ShaderModule& shader) {
++    return device.GetLogical().CreateComputePipeline(VkComputePipelineCreateInfo{
++        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
++        .pNext = nullptr,
++        .flags = 0,
++        .stage{
++            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
++            .pNext = nullptr,
++            .flags = 0,
++            .stage = VK_SHADER_STAGE_COMPUTE_BIT,
++            .module = *shader,
++            .pName = "main",
++            .pSpecializationInfo = nullptr,
++        },
++        .layout = *layout,
++        .basePipelineHandle = VK_NULL_HANDLE,
++        .basePipelineIndex = 0,
++    });
++}
++
++void ComputeToComputeBarrier(vk::CommandBuffer cmdbuf) {
++    static constexpr VkMemoryBarrier barrier{
++        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
++        .pNext = nullptr,
++        .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
++        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
++    };
++    cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
++                           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, barrier);
++}
++
++u32 GroupCount(u32 size) {
++    return (size + 15) / 16;
++}
++
++} // Anonymous namespace
++
+ OpticalFlowFrameGen::OpticalFlowFrameGen(const Device& device, MemoryAllocator& memory_allocator,
+                                          VkExtent2D extent, VkFormat format)
+-    : m_allocator{memory_allocator}, m_extent{extent},
+-      m_flow_extent{(std::max)(1u, extent.width / 2), (std::max)(1u, extent.height / 2)},
+-      m_format{format} {
++    : m_allocator{memory_allocator}, m_extent{extent}, m_format{format} {
+     CreateResources(device);
+     CreateShaders(device);
+     CreatePipelines(device);
++    WriteFlowDescriptors(device);
+     m_initialized = true;
+ }
+ 
+@@ -181,6 +262,8 @@ void OpticalFlowFrameGen::CreateResources(const Device& device) {
+     // Current-frame copy for interpolation shader
+     m_current_image = m_allocator.CreateImage(VkImageCreateInfo{
+         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
++        .pNext = nullptr,
++        .flags = 0,
+         .imageType = VK_IMAGE_TYPE_2D,
+         .format = m_format,
+         .extent = {m_extent.width, m_extent.height, 1},
+@@ -191,111 +274,156 @@ void OpticalFlowFrameGen::CreateResources(const Device& device) {
+         .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                  VK_IMAGE_USAGE_SAMPLED_BIT,
+         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
++        .queueFamilyIndexCount = 0,
++        .pQueueFamilyIndices = nullptr,
+         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+     });
+     m_current_view = CreateWrappedImageView(device, m_current_image, m_format);
+ 
+-    // Half-resolution motion vector image
+-    m_motion_image = CreateWrappedImage(m_allocator, m_flow_extent, VK_FORMAT_R16G16_SFLOAT);
+-    m_motion_view = CreateWrappedImageView(device, m_motion_image, VK_FORMAT_R16G16_SFLOAT);
++    VkExtent2D level_extent = m_extent;
++    for (FlowLevel& level : m_levels) {
++        level_extent = {(std::max)(1u, (level_extent.width + 1) / 2),
++                        (std::max)(1u, (level_extent.height + 1) / 2)};
++        level.extent = level_extent;
++        for (size_t parity = 0; parity < 2; ++parity) {
++            level.luma[parity] =
++                CreateWrappedImage(m_allocator, level_extent, VK_FORMAT_R16_SFLOAT);
++            level.luma_view[parity] =
++                CreateWrappedImageView(device, level.luma[parity], VK_FORMAT_R16_SFLOAT);
++        }
++        level.motion = CreateWrappedImage(m_allocator, level_extent, VK_FORMAT_R16G16_SFLOAT);
++        level.motion_view = CreateWrappedImageView(device, level.motion, VK_FORMAT_R16G16_SFLOAT);
++    }
+ 
++    constexpr u32 SETS = 2 * 2 * FLOW_LEVELS;
+     const std::array pool_sizes{
+-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2},
+-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1},
++        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2 * 4 * FLOW_LEVELS},
++        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, SETS},
+     };
+     m_desc_pool = device.GetLogical().CreateDescriptorPool(VkDescriptorPoolCreateInfo{
+         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+-        .maxSets = 1,
++        .pNext = nullptr,
++        .flags = 0,
++        .maxSets = SETS,
+         .poolSizeCount = static_cast<u32>(pool_sizes.size()),
+         .pPoolSizes = pool_sizes.data(),
+     });
+ }
+ 
+ void OpticalFlowFrameGen::CreateShaders(const Device& device) {
+-    m_flow_shader = BuildShader(device, FRAME_GEN_OPTICAL_FLOW_COMP_SPV);
++    m_downsample_shader = BuildShader(device, FRAME_GEN_LUMA_DOWNSAMPLE_COMP_SPV);
++    m_search_shader = BuildShader(device, FRAME_GEN_FLOW_SEARCH_COMP_SPV);
+     m_interp_shader = BuildShader(device, FRAME_GEN_INTERPOLATION_COMP_SPV);
+ }
+ 
+ void OpticalFlowFrameGen::CreatePipelines(const Device& device) {
+-    // ── Optical Flow Pipeline ──────────────────────────────────────────
+-    const std::array flow_bindings{
+-        VkDescriptorSetLayoutBinding{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+-        VkDescriptorSetLayoutBinding{1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+-        VkDescriptorSetLayoutBinding{2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+-    };
+-
+-    m_flow_desc_layout = device.GetLogical().CreateDescriptorSetLayout(VkDescriptorSetLayoutCreateInfo{
+-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+-        .bindingCount = static_cast<u32>(flow_bindings.size()),
+-        .pBindings = flow_bindings.data(),
+-    });
+-
+-    const VkPushConstantRange flow_push_range{
+-        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+-        .offset = 0,
+-        .size = sizeof(FlowPushConstants),
+-    };
+-
+-    m_flow_pipe_layout = device.GetLogical().CreatePipelineLayout(VkPipelineLayoutCreateInfo{
+-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+-        .setLayoutCount = 1,
+-        .pSetLayouts = m_flow_desc_layout.address(),
+-        .pushConstantRangeCount = 1,
+-        .pPushConstantRanges = &flow_push_range,
+-    });
+-
+-    m_flow_pipeline = device.GetLogical().CreateComputePipeline(VkComputePipelineCreateInfo{
+-        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+-        .stage = {
+-            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+-            .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+-            .module = *m_flow_shader,
+-            .pName = "main",
+-        },
+-        .layout = *m_flow_pipe_layout,
+-    });
++    m_downsample_desc_layout = CreateComputeSetLayout(device, 1);
++    m_downsample_pipe_layout = CreateComputePipelineLayout(device, m_downsample_desc_layout,
++                                                           sizeof(DownsamplePushConstants));
++    m_downsample_pipeline =
++        CreateComputePipeline(device, m_downsample_pipe_layout, m_downsample_shader);
++
++    m_search_desc_layout = CreateComputeSetLayout(device, 3);
++    m_search_pipe_layout = CreateComputePipelineLayout(device, m_search_desc_layout,
++                                                       sizeof(SearchPushConstants));
++    m_search_pipeline = CreateComputePipeline(device, m_search_pipe_layout, m_search_shader);
++
++    m_interp_desc_layout = CreateComputeSetLayout(device, 3);
++    m_interp_pipe_layout = CreateComputePipelineLayout(device, m_interp_desc_layout,
++                                                       sizeof(InterpPushConstants));
++    m_interp_pipeline = CreateComputePipeline(device, m_interp_pipe_layout, m_interp_shader);
++
++    std::vector<VkDescriptorSetLayout> downsample_layouts(2 * FLOW_LEVELS,
++                                                          *m_downsample_desc_layout);
++    std::vector<VkDescriptorSetLayout> search_layouts(2 * FLOW_LEVELS, *m_search_desc_layout);
++    m_downsample_desc_sets = CreateWrappedDescriptorSets(m_desc_pool, downsample_layouts);
++    m_search_desc_sets = CreateWrappedDescriptorSets(m_desc_pool, search_layouts);
++}
+ 
+-    // ── Frame Interpolation Pipeline ───────────────────────────────────
+-    const std::array interp_bindings{
+-        VkDescriptorSetLayoutBinding{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+-        VkDescriptorSetLayoutBinding{1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+-        VkDescriptorSetLayoutBinding{2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+-        VkDescriptorSetLayoutBinding{3, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
++void OpticalFlowFrameGen::WriteFlowDescriptors(const Device& device) {
++    std::vector<VkDescriptorImageInfo> image_infos;
++    image_infos.reserve(2 * 2 * 4 * FLOW_LEVELS);
++    std::vector<VkWriteDescriptorSet> updates;
++    const auto storage = [&](VkImageView view, VkDescriptorSet set, u32 binding) {
++        image_infos.push_back(VkDescriptorImageInfo{
++            .sampler = VK_NULL_HANDLE,
++            .imageView = view,
++            .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
++        });
++        updates.push_back(VkWriteDescriptorSet{
++            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
++            .pNext = nullptr,
++            .dstSet = set,
++            .dstBinding = binding,
++            .dstArrayElement = 0,
++            .descriptorCount = 1,
++            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
++            .pImageInfo = &image_infos.back(),
++            .pBufferInfo = nullptr,
++            .pTexelBufferView = nullptr,
++        });
+     };
+-
+-    m_interp_desc_layout = device.GetLogical().CreateDescriptorSetLayout(VkDescriptorSetLayoutCreateInfo{
+-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+-        .bindingCount = static_cast<u32>(interp_bindings.size()),
+-        .pBindings = interp_bindings.data(),
+-    });
+-
+-    const VkPushConstantRange interp_push_range{
+-        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+-        .offset = 0,
+-        .size = sizeof(InterpPushConstants),
++    const auto sampled = [&](VkImageView view, VkDescriptorSet set, u32 binding) {
++        updates.push_back(
++            CreateWriteDescriptorSet(image_infos, *m_linear_sampler, view, set, binding));
+     };
++    for (u32 parity = 0; parity < 2; ++parity) {
++        for (size_t level = 0; level < FLOW_LEVELS; ++level) {
++            const FlowLevel& here = m_levels[level];
++            const VkDescriptorSet downsample = m_downsample_desc_sets[parity * FLOW_LEVELS + level];
++            sampled(level == 0 ? *m_current_view : *m_levels[level - 1].luma_view[parity],
++                    downsample, 0);
++            storage(*here.luma_view[parity], downsample, 1);
++
++            const VkDescriptorSet search = m_search_desc_sets[parity * FLOW_LEVELS + level];
++            sampled(*here.luma_view[parity], search, 0);
++            sampled(*here.luma_view[parity ^ 1], search, 1);
++            // The coarsest level has no coarser motion; it binds the finest, which it never reads.
++            sampled(level + 1 < FLOW_LEVELS ? *m_levels[level + 1].motion_view
++                                            : *m_levels[0].motion_view,
++                    search, 2);
++            storage(*here.motion_view, search, 3);
++        }
++    }
++    device.GetLogical().UpdateDescriptorSets(updates, {});
++}
+ 
+-    m_interp_pipe_layout = device.GetLogical().CreatePipelineLayout(VkPipelineLayoutCreateInfo{
+-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+-        .setLayoutCount = 1,
+-        .pSetLayouts = m_interp_desc_layout.address(),
+-        .pushConstantRangeCount = 1,
+-        .pPushConstantRanges = &interp_push_range,
+-    });
+-
+-    m_interp_pipeline = device.GetLogical().CreateComputePipeline(VkComputePipelineCreateInfo{
+-        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+-        .stage = {
+-            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+-            .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+-            .module = *m_interp_shader,
+-            .pName = "main",
+-        },
+-        .layout = *m_interp_pipe_layout,
+-    });
+-
+-    // Allocate descriptor sets
+-    m_flow_desc_sets = CreateWrappedDescriptorSets(m_desc_pool, {*m_flow_desc_layout});
++void OpticalFlowFrameGen::RecordFlow(vk::CommandBuffer cmdbuf, u32 parity, bool search) const {
++    ComputeToComputeBarrier(cmdbuf);
++    cmdbuf.BindPipeline(VK_PIPELINE_BIND_POINT_COMPUTE, *m_downsample_pipeline);
++    for (size_t level = 0; level < FLOW_LEVELS; ++level) {
++        const VkExtent2D extent = m_levels[level].extent;
++        cmdbuf.BindDescriptorSets(VK_PIPELINE_BIND_POINT_COMPUTE, *m_downsample_pipe_layout, 0,
++                                  m_downsample_desc_sets[parity * FLOW_LEVELS + level], {});
++        cmdbuf.PushConstants(*m_downsample_pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT,
++                             DownsamplePushConstants{
++                                 .destination_width = static_cast<s32>(extent.width),
++                                 .destination_height = static_cast<s32>(extent.height),
++                                 .is_color = level == 0 ? 1 : 0,
++                             });
++        cmdbuf.Dispatch(GroupCount(extent.width), GroupCount(extent.height), 1);
++        ComputeToComputeBarrier(cmdbuf);
++    }
++    if (!search) {
++        return;
++    }
++    cmdbuf.BindPipeline(VK_PIPELINE_BIND_POINT_COMPUTE, *m_search_pipeline);
++    for (size_t level = FLOW_LEVELS; level-- > 0;) {
++        const VkExtent2D extent = m_levels[level].extent;
++        const bool coarsest = level + 1 == FLOW_LEVELS;
++        cmdbuf.BindDescriptorSets(VK_PIPELINE_BIND_POINT_COMPUTE, *m_search_pipe_layout, 0,
++                                  m_search_desc_sets[parity * FLOW_LEVELS + level], {});
++        cmdbuf.PushConstants(*m_search_pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT,
++                             SearchPushConstants{
++                                 .width = static_cast<s32>(extent.width),
++                                 .height = static_cast<s32>(extent.height),
++                                 .radius = coarsest ? COARSE_SEARCH_RADIUS : 1,
++                                 .has_coarse = coarsest ? 0 : 1,
++                                 .subpixel = level == 0 ? 1 : 0,
++                             });
++        cmdbuf.Dispatch(GroupCount(extent.width), GroupCount(extent.height), 1);
++        ComputeToComputeBarrier(cmdbuf);
++    }
+ }
+ 
+ void OpticalFlowFrameGen::Process(const Device& device, Scheduler& scheduler, VkImage current_frame,
+@@ -304,78 +432,40 @@ void OpticalFlowFrameGen::Process(const Device& device, Scheduler& scheduler, Vk
+         m_has_history = false;
+         m_flow_valid = false;
+     }
++    const u32 parity = m_parity;
++    m_parity ^= 1;
+     if (!m_has_history) {
+-        // First frame: populate history and current-frame copy via batched dual-copy
+-        scheduler.Record([this, current_frame](vk::CommandBuffer cmdbuf) {
++        // First frame: populate history, the current-frame copy and this frame's luma pyramid.
++        scheduler.Record([this, current_frame, parity](vk::CommandBuffer cmdbuf) {
+             CopyImageToTwo(cmdbuf, current_frame, *m_history_image, *m_current_image, m_extent);
+-            DiscardForComputeWrite(cmdbuf, *m_motion_image);
++            std::vector<VkImageMemoryBarrier> barriers;
++            for (const FlowLevel& level : m_levels) {
++                barriers.push_back(MakeBarrier(*level.luma[0], 0, VK_ACCESS_SHADER_WRITE_BIT,
++                                               VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL));
++                barriers.push_back(MakeBarrier(*level.luma[1], 0, VK_ACCESS_SHADER_WRITE_BIT,
++                                               VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL));
++                barriers.push_back(MakeBarrier(*level.motion, 0, VK_ACCESS_SHADER_WRITE_BIT,
++                                               VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL));
++            }
++            cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
++                                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, {}, {}, barriers);
++            RecordFlow(cmdbuf, parity, false);
+         });
+         m_has_history = true;
+         m_last_frame_count = frame_count;
+         return;
+     }
+ 
+-    // ── Duplicate-frame detection ──────────────────────────────────────
+     if (frame_count == m_last_frame_count) {
++        m_parity ^= 1;
+         return;
+     }
+     m_last_frame_count = frame_count;
+ 
+-    // ── Descriptor caching ─────────────────────────────────────────────
+-    if (!m_flow_descriptors_initialized) {
+-        std::vector<VkDescriptorImageInfo> image_infos;
+-        image_infos.reserve(4);
+-        std::vector<VkWriteDescriptorSet> updates{
+-            CreateWriteDescriptorSet(image_infos, *m_linear_sampler, *m_current_view, m_flow_desc_sets[0], 0),
+-            CreateWriteDescriptorSet(image_infos, *m_linear_sampler, *m_history_view, m_flow_desc_sets[0], 1),
+-        };
+-
+-        const VkDescriptorImageInfo motion_store_info{
+-            .imageView = *m_motion_view,
+-            .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+-        };
+-        updates.push_back(VkWriteDescriptorSet{
+-            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+-            .dstSet = m_flow_desc_sets[0],
+-            .dstBinding = 2,
+-            .descriptorCount = 1,
+-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+-            .pImageInfo = &motion_store_info,
+-        });
+-        device.GetLogical().UpdateDescriptorSets(updates, {});
+-        m_flow_descriptors_initialized = true;
+-    }
+-
+-    // Dispatch Optical Flow at half resolution
+-    const u32 flow_w = m_flow_extent.width;
+-    const u32 flow_h = m_flow_extent.height;
+-    const FlowPushConstants constants{
+-        .inv_render_w = 1.0f / static_cast<float>(flow_w),
+-        .inv_render_h = 1.0f / static_cast<float>(flow_h),
+-        .render_w = static_cast<float>(flow_w),
+-        .render_h = static_cast<float>(flow_h),
+-        .search_radius = 2.0f,
+-        .block_size = 2.0f,
+-    };
+-
+-    scheduler.Record([this, constants, current_frame, flow_w, flow_h](vk::CommandBuffer cmdbuf) {
++    scheduler.Record([this, current_frame, parity](vk::CommandBuffer cmdbuf) {
+         CopyImageToImage(cmdbuf, *m_current_image, *m_history_image, m_extent);
+         CopyImageToImage(cmdbuf, current_frame, *m_current_image, m_extent);
+-
+-        const auto barrier = MakeBarrier(*m_motion_image,
+-                                         VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+-                                         VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL,
+-                                         VK_IMAGE_LAYOUT_GENERAL);
+-        cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+-                               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, {}, {}, barrier);
+-
+-        cmdbuf.BindPipeline(VK_PIPELINE_BIND_POINT_COMPUTE, *m_flow_pipeline);
+-        cmdbuf.BindDescriptorSets(VK_PIPELINE_BIND_POINT_COMPUTE, *m_flow_pipe_layout, 0,
+-                                  m_flow_desc_sets[0], {});
+-        cmdbuf.PushConstants(*m_flow_pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, constants);
+-        cmdbuf.Dispatch((flow_w + 15) / 16, (flow_h + 15) / 16, 1);
+-
+-        BarrierComputeWriteToRead(cmdbuf, *m_motion_image);
++        RecordFlow(cmdbuf, parity, true);
+     });
+ 
+     m_flow_valid = true;
+@@ -400,7 +490,7 @@ void OpticalFlowFrameGen::Generate(const Device& device, Scheduler& scheduler, V
+     std::vector<VkWriteDescriptorSet> updates{
+         CreateWriteDescriptorSet(image_infos, *m_linear_sampler, *m_current_view, set, 0),
+         CreateWriteDescriptorSet(image_infos, *m_linear_sampler, *m_history_view, set, 1),
+-        CreateWriteDescriptorSet(image_infos, *m_linear_sampler, *m_motion_view, set, 2),
++        CreateWriteDescriptorSet(image_infos, *m_linear_sampler, *m_levels[0].motion_view, set, 2),
+     };
+ 
+     const VkDescriptorImageInfo dest_info{
+diff --git a/src/video_core/renderer_vulkan/present/optical_flow_frame_gen.h b/src/video_core/renderer_vulkan/present/optical_flow_frame_gen.h
+index 4da1c0de1..29c716601 100644
+--- a/src/video_core/renderer_vulkan/present/optical_flow_frame_gen.h
++++ b/src/video_core/renderer_vulkan/present/optical_flow_frame_gen.h
+@@ -17,17 +17,9 @@ namespace Vulkan {
+ class Device;
+ class Scheduler;
+ 
+-/// Lichii Optical Flow Frame Generation pipeline.
+-/// Uses compute-based optical flow and bilateral frame interpolation
+-/// to synthesize intermediate frames without requiring engine motion vectors.
+-///
+-/// Optimizations:
+-///  - Quarter-resolution optical flow (16× fewer compute invocations)
+-///  - Shared-memory tile caching in both shaders
+-///  - Early-out for static pixels (skip diamond search)
+-///  - Duplicate-frame detection (skip optical flow entirely)
+-///  - Precise pipeline barriers instead of full-pipeline TransitionImageLayout
+-///  - Descriptor-write caching (only update when image views change)
++/// Frame generation without engine motion vectors: coarse-to-fine block matching on a luma
++/// pyramid finds per-pixel motion between the last two frames (at half resolution, tracking camera
++/// pans up to 192 pixels per frame), and bilateral interpolation warps both frames along it.
+ class OpticalFlowFrameGen {
+ public:
+     explicit OpticalFlowFrameGen(const Device& device, MemoryAllocator& memory_allocator,
+@@ -48,26 +40,48 @@ private:
+     void CreateResources(const Device& device);
+     void CreateShaders(const Device& device);
+     void CreatePipelines(const Device& device);
++    void WriteFlowDescriptors(const Device& device);
++    void RecordFlow(vk::CommandBuffer cmdbuf, u32 parity, bool search) const;
++
++    static constexpr size_t FLOW_LEVELS = 5;
++
++    /// One pyramid level: luma of the two most recent frames (indexed by parity) and the motion
++    /// found at this level, in this level's pixels.
++    struct FlowLevel {
++        VkExtent2D extent{};
++        std::array<vk::Image, 2> luma;
++        std::array<vk::ImageView, 2> luma_view;
++        vk::Image motion;
++        vk::ImageView motion_view;
++    };
+ 
+     MemoryAllocator& m_allocator;
+     VkExtent2D m_extent;
+-    VkExtent2D m_flow_extent;   // half-res for optical flow
+     VkFormat m_format;
+ 
+     vk::Sampler m_linear_sampler;
+-    vk::ShaderModule m_flow_shader;
++    vk::ShaderModule m_downsample_shader;
++    vk::ShaderModule m_search_shader;
+     vk::ShaderModule m_interp_shader;
+ 
+-    vk::DescriptorSetLayout m_flow_desc_layout;
+-    vk::PipelineLayout m_flow_pipe_layout;
+-    vk::Pipeline m_flow_pipeline;
++    vk::DescriptorSetLayout m_downsample_desc_layout;
++    vk::PipelineLayout m_downsample_pipe_layout;
++    vk::Pipeline m_downsample_pipeline;
++
++    vk::DescriptorSetLayout m_search_desc_layout;
++    vk::PipelineLayout m_search_pipe_layout;
++    vk::Pipeline m_search_pipeline;
+ 
+     vk::DescriptorSetLayout m_interp_desc_layout;
+     vk::PipelineLayout m_interp_pipe_layout;
+     vk::Pipeline m_interp_pipeline;
+ 
+     vk::DescriptorPool m_desc_pool;
+-    vk::DescriptorSets m_flow_desc_sets;
++    /// Indexed by parity * FLOW_LEVELS + level.
++    vk::DescriptorSets m_downsample_desc_sets;
++    vk::DescriptorSets m_search_desc_sets;
++    std::array<FlowLevel, FLOW_LEVELS> m_levels;
++    u32 m_parity{};
+     std::optional<DescriptorPool> m_interp_pool;
+     DescriptorAllocator m_interp_allocator;
+ 
+@@ -75,9 +89,6 @@ private:
+     vk::Image m_history_image;
+     vk::ImageView m_history_view;
+ 
+-    vk::Image m_motion_image;
+-    vk::ImageView m_motion_view;
+-
+     // Store the last current-frame view for descriptor caching
+     vk::Image m_current_image;
+     vk::ImageView m_current_view;
+@@ -88,8 +99,6 @@ private:
+     // Duplicate-frame detection: skip optical flow when the frame hasn't changed
+     u64 m_last_frame_count{};
+     bool m_flow_valid{};
+-
+-    bool m_flow_descriptors_initialized{};
+ };
+ 
+ } // namespace Vulkan
+-- 
+2.43.0
+

@@ -2444,7 +2444,7 @@ async function gameConfig(key, startSection = 'general') {
   const g = gameByKey(key); if (!g) return;
   let view;
   try { view = await api(`/api/games/${key}/settings`); } catch (e) { alertDlg('Could not load game settings', e.message); return; }
-  const withContent = v => { if (g.titleId && g.kind !== 'homebrew' && !v.sections.some(x => x.v === 'updates')) v.sections = [...v.sections, { v: 'fps', l: 'Frame Rate' }, { v: 'updates', l: 'Game Updates' }, { v: 'mods', l: 'Mods' }]; return v; };
+  const withContent = v => { if (g.titleId && g.kind !== 'homebrew' && !v.sections.some(x => x.v === 'updates')) v.sections = [...v.sections, { v: 'fps', l: 'Frame Rate & Performance' }, { v: 'updates', l: 'Game Updates' }, { v: 'mods', l: 'Mods' }]; return v; };
   withContent(view);
   let section = startSection;
   // search within this game's settings (and "only this game's own settings")
@@ -5500,4 +5500,10 @@ async function fpsPanel(box, g, redraw) {
     box.append(h('p', { class: 'note' }, 'Applies the next time the game starts. Game default returns to the original behaviour.'));
   }
   if (v.warning) box.append(h('p', { class: 'note' }, v.warning));
+  if (v.fullResolution != null) {
+    box.append(h('h2', {}, 'Resolution'));
+    box.append(rowToggle('Full resolution (Max Resolution patch)', v.fullResolution, async on => {
+      try { await api(`/api/games/${encodeURIComponent(g.key)}/mods/toggle`, { body: { name: 'Max Resolution (built-in)', on } }); toast(on ? 'Full resolution on' : 'The game\u2019s own dynamic resolution', I.check); redraw(); } catch (e) { alertDlg('Not changed', e.message); }
+    }, 'On (the engine\u2019s default): the 3D always renders at full scale, the sharpest picture and the heaviest work for the graphics. Off: the game lowers its 3D resolution itself when the graphics fall behind (down to 480p), as on the console; on a Steam Deck where the graphics are the limit this can raise the frame rate at the cost of a softer picture. Applies the next time the game starts. The performance strip shows whether the graphics are the limit (GPU near 100%).'));
+  }
 }
