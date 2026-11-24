@@ -128,6 +128,7 @@ func (e *Emulator) startShaderJob(kind string, g *Game, fn func(j *ShaderJob, st
 		s.mu.Unlock()
 		emit()
 	}
+	c := *j // the caller's copy, taken before the job can change it (a race in 0.8-0.9.2)
 	go func() {
 		err := fn(j, step)
 		s.mu.Lock()
@@ -143,7 +144,6 @@ func (e *Emulator) startShaderJob(kind string, g *Game, fn func(j *ShaderJob, st
 		}
 		emit()
 	}()
-	c := *j
 	return &c, nil
 }
 
