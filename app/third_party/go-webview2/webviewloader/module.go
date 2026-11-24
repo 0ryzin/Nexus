@@ -2,6 +2,7 @@ package webviewloader
 
 import (
 	"fmt"
+	"runtime"
 	"sync"
 	"unsafe"
 
@@ -125,6 +126,12 @@ func CreateCoreWebView2EnvironmentWithOptions(browserExecutableFolder, userDataF
 			uint64(environmentOptions),
 			uint64(environmentCompletedHandle),
 		)
+		// NEXUS: winloader's Call is not a syscall, so Go does not keep the
+		// strings alive while it runs. Without this the garbage collector can
+		// reuse userDataFolder mid-call and WebView2 creates a folder whose name
+		// is unrelated text read as UTF-16 (seen next to NEXUS.exe, 24 Nov).
+		runtime.KeepAlive(browserExecutableFolder)
+		runtime.KeepAlive(userDataFolder)
 		return uintptr(res), nil
 	}
 	res, _, _ := nativeCreate.Call(
@@ -133,6 +140,8 @@ func CreateCoreWebView2EnvironmentWithOptions(browserExecutableFolder, userDataF
 		environmentOptions,
 		environmentCompletedHandle,
 	)
+	runtime.KeepAlive(browserExecutableFolder)
+	runtime.KeepAlive(userDataFolder)
 	return res, nil
 }
 

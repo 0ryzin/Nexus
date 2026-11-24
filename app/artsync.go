@@ -79,15 +79,16 @@ func (a *App) customArtFile(key, kind string) string {
 // uploadCustomArt sends every custom picture that the account does not have yet (before the
 // library items are built, so they can name it). Errors are returned; what was sent is kept.
 func (a *App) uploadCustomArt(remote saveRemote) error {
+	// The lock is held only to read and record what the account has, never while a picture
+	// is being sent: Status, the account page and Home read the same record (24 Nov, 0.9.3).
+	type job struct {
+		id, path, hash, gist string
+		data                 []byte
+	}
+	var jobs []job
 	artSyncMu.Lock()
-	defer artSyncMu.Unlock()
 	st := a.loadArtSync()
-	changed := false
-	defer func() {
-		if changed {
-			_ = writeJSONAtomic(a.artSyncPath(), st)
-		}
-	}()
+	artSyncMu.Unlock()
 	entries, _ := os.ReadDir(a.Library.GP.root)
 	for _, e := range entries {
 		if !e.IsDir() || !tidKeyRe.MatchString(e.Name()) {
@@ -99,28 +100,43 @@ func (a *App) uploadCustomArt(remote saveRemote) error {
 			if p == "" {
 				continue
 			}
-			data, err := os.ReadFile(p)
-			if err != nil || len(data) == 0 || len(data) > maxArtSync {
+			h, size, ok := artFileHash(p)
+			if !ok || size == 0 || size > maxArtSync {
 				continue
 			}
-			sum := sha256.Sum256(data)
-			h := hex.EncodeToString(sum[:])
 			id := strings.ToUpper(e.Name()) + "/" + kind
 			if k := st.Known[id]; k.SHA256 == h && k.Raw != "" {
 				continue // the account has this picture already
 			}
-			gist, raw, err := remote.putBlob(st.Known[id].Gist, "NEXUS artwork: "+id, data)
-			if err != nil {
-				return err
-			}
-			set := int64(0)
-			if fi, err := os.Stat(p); err == nil {
-				set = fi.ModTime().Unix()
-			}
-			st.Known[id] = artRef{SHA256: h, Ext: strings.ToLower(filepath.Ext(p)), Size: int64(len(data)), Gist: gist, Raw: raw, Set: set}
-			changed = true
-			a.Log.Printf("account: artwork %s sent (%d KB)", id, len(data)>>10)
+			jobs = append(jobs, job{id: id, path: p, hash: h, gist: st.Known[id].Gist})
 		}
+	}
+	if len(jobs) > 0 {
+		a.Log.Printf("account: sending %d picture(s)", len(jobs))
+	}
+	for _, j := range jobs {
+		data, err := os.ReadFile(j.path)
+		if err != nil || len(data) == 0 {
+			continue
+		}
+		sum := sha256.Sum256(data)
+		h := hex.EncodeToString(sum[:])
+		started := time.Now()
+		gist, raw, err := remote.putBlob(j.gist, "NEXUS artwork: "+j.id, data)
+		if err != nil {
+			a.Log.Printf("account: artwork %s not sent after %s: %v", j.id, time.Since(started).Round(time.Millisecond), err)
+			return err
+		}
+		set := int64(0)
+		if fi, err := os.Stat(j.path); err == nil {
+			set = fi.ModTime().Unix()
+		}
+		artSyncMu.Lock()
+		cur := a.loadArtSync() // recorded one at a time, so what was sent is kept if a later one fails
+		cur.Known[j.id] = artRef{SHA256: h, Ext: strings.ToLower(filepath.Ext(j.path)), Size: int64(len(data)), Gist: gist, Raw: raw, Set: set}
+		_ = writeJSONAtomic(a.artSyncPath(), cur)
+		artSyncMu.Unlock()
+		a.Log.Printf("account: artwork %s sent (%d KB in %s)", j.id, len(data)>>10, time.Since(started).Round(time.Millisecond))
 	}
 	return nil
 }
@@ -141,11 +157,8 @@ func (a *App) artRefsFor(tid string) map[string]artRef {
 		if k.Raw == "" {
 			continue
 		}
-		if data, err := os.ReadFile(p); err == nil {
-			sum := sha256.Sum256(data)
-			if hex.EncodeToString(sum[:]) == k.SHA256 {
-				out[kind] = k
-			}
+		if h, _, ok := artFileHash(p); ok && h == k.SHA256 {
+			out[kind] = k
 		}
 	}
 	if len(out) == 0 {
@@ -258,4 +271,44 @@ func libraryArtRefs(data []byte) map[string]artRef {
 		return nil
 	}
 	return x.Art
+}
+
+// artFileHash: a picture's SHA-256, remembered by path, size and modification time so the
+// account status does not read every picture again each time it is asked.
+var artHashCache = struct {
+	sync.Mutex
+	m map[string]artHashEntry
+}{m: map[string]artHashEntry{}}
+
+type artHashEntry struct {
+	size  int64
+	mtime int64
+	hash  string
+}
+
+func artFileHash(p string) (hash string, size int64, ok bool) {
+	fi, err := os.Stat(p)
+	if err != nil || fi.IsDir() {
+		return "", 0, false
+	}
+	size, mt := fi.Size(), fi.ModTime().UnixNano()
+	artHashCache.Lock()
+	e, hit := artHashCache.m[p]
+	artHashCache.Unlock()
+	if hit && e.size == size && e.mtime == mt {
+		return e.hash, size, true
+	}
+	if size > maxArtSync {
+		return "", size, true // too large to synchronise: not read
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return "", 0, false
+	}
+	sum := sha256.Sum256(data)
+	h := hex.EncodeToString(sum[:])
+	artHashCache.Lock()
+	artHashCache.m[p] = artHashEntry{size: int64(len(data)), mtime: mt, hash: h}
+	artHashCache.Unlock()
+	return h, int64(len(data)), true
 }

@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync/atomic"
 	"unsafe"
 
@@ -86,7 +87,11 @@ func (e *Chromium) Embed(hwnd uintptr) bool {
 		dataPath = filepath.Join(os.Getenv("AppData"), currentExeName)
 	}
 
-	res, err := createCoreWebView2EnvironmentWithOptions(nil, windows.StringToUTF16Ptr(dataPath), 0, e.envCompleted)
+	// NEXUS: keep the path alive until WebView2 has finished starting; it may read it
+	// after the call returns. See webviewloader.CreateCoreWebView2EnvironmentWithOptions.
+	dataPathW := windows.StringToUTF16Ptr(dataPath)
+	defer runtime.KeepAlive(dataPathW)
+	res, err := createCoreWebView2EnvironmentWithOptions(nil, dataPathW, 0, e.envCompleted)
 	if err != nil {
 		log.Printf("Error calling Webview2Loader: %v", err)
 		return false

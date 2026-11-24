@@ -58,6 +58,7 @@ jobs:
           NEXUS_HARDWARE= timeout 300 python3 tools/uitest/resets_osk.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
           NEXUS_HARDWARE= timeout 300 python3 tools/uitest/oot_menu.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
           NEXUS_HARDWARE= timeout 300 python3 tools/uitest/controller_sweep.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
+          NEXUS_HARDWARE= timeout 300 python3 tools/uitest/controller_robust.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
           NEXUS_HARDWARE= timeout 300 python3 tools/uitest/profile_delete.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
           NEXUS_HARDWARE= timeout 300 python3 tools/uitest/home_sections.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"
           NEXUS_HARDWARE= timeout 300 python3 tools/uitest/mii_creator.py "$RUNNER_TEMP/nexus-ui" "$RUNNER_TEMP/uifix"

@@ -442,7 +442,43 @@ const PadInfo = {
 const Pad = {
   prev: {}, held: {}, repeatAt: {}, connected: [], rejoin: new Set(),
   mapping() { return (S.profile?.controls?.mapping) || { confirm: 0, back: 1, options: 3, search: 2, prevTab: 4, nextTab: 5, menu: 9, home: 16, view: 8 }; },
+  // A mistake while handling one press must never stop the menus reading the controller: the
+  // next poll was scheduled at the end, so one exception left every button dead until restart.
   poll() {
+    let pads = [];
+    try { pads = this.pollOnce(); }
+    catch (e) { this.failed = (this.failed || 0) + 1; if (this.failed <= 3) api('/api/app/log', { body: { level: 'error', message: `ui: controller input: ${e?.message || e} ${String(e?.stack || '').split('\n')[1] || ''}` } }).catch(() => { }); }
+    this.schedule(pads.length > 0);
+  },
+  // what each controller reports, written to the log once (and its first presses), so a
+  // controller whose buttons do nothing can be diagnosed from nexus.log
+  diag(p) {
+    this.seen = this.seen || new Set();
+    if (this.seen.has(p.id)) return; this.seen.add(p.id); this.diagLeft = 16;
+    api('/api/app/log', { body: { level: 'info', message: `ui: controller "${p.id}" mapping=${p.mapping || 'none'} buttons=${p.buttons.length} axes=${p.axes.length}` } }).catch(() => { });
+  },
+  diagPress(p, prevRaw) {
+    if (!(this.diagLeft > 0)) return null;
+    const raw = p.buttons.map(x => !!(x && (x.pressed || x.value > .6))).concat(p.axes.map(v => Math.abs(v) > .6 && Math.abs(v) <= 1.01 ? Math.sign(v) : 0));
+    if (prevRaw) {
+      const ch = [];
+      raw.forEach((v, i) => { if (v && v !== prevRaw[i]) ch.push(i < p.buttons.length ? 'button ' + i : 'axis ' + (i - p.buttons.length) + (v > 0 ? '+' : '-')); });
+      if (ch.length) { this.diagLeft--; api('/api/app/log', { body: { level: 'info', message: `ui: controller input ${ch.join(', ')} (screen ${S.screen || '?'}, focus ${Nav.cur ? 'yes' : 'none'})` } }).catch(() => { }); }
+    }
+    return raw;
+  },
+  // The D-pad as a hat (one axis, -1 up and clockwise in steps of 2/7; 3.28 or so when
+  // centred): controllers without the standard mapping report it this way, not as buttons 12-15.
+  hat(p) {
+    if (p.mapping === 'standard') return null;
+    for (const i of [9, 10]) {
+      const v = p.axes[i]; if (v == null || Math.abs(v) > 1.01) continue;
+      const pos = Math.round((v + 1) * 3.5); // 0 up, 1 up-right, 2 right, 3 down-right, 4 down, 5 down-left, 6 left, 7 up-left
+      return { up: [7, 0, 1].includes(pos), right: [1, 2, 3].includes(pos), down: [3, 4, 5].includes(pos), left: [5, 6, 7].includes(pos) };
+    }
+    return null;
+  },
+  pollOnce() {
     const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
     const ids = pads.map(p => p.index + ':' + p.id).join('|');
     if (ids !== this.connected.join('|')) {
@@ -469,8 +505,10 @@ const Pad = {
     for (const p of use) {
       const b = i => !!(p.buttons[i] && (p.buttons[i].pressed || p.buttons[i].value > .6));
       const ax = p.axes[0] || 0, ay = p.axes[1] || 0;
+      this.diag(p); this.rawPrev = this.rawPrev || {}; this.rawPrev[p.index] = this.diagPress(p, this.rawPrev[p.index]);
+      const hat = this.hat(p) || {};
       const dirs = {
-        up: b(12) || ay < -.6, down: b(13) || ay > .6, left: b(14) || ax < -.6, right: b(15) || ax > .6,
+        up: b(12) || !!hat.up || ay < -.6, down: b(13) || !!hat.down || ay > .6, left: b(14) || !!hat.left || ax < -.6, right: b(15) || !!hat.right || ax > .6,
       };
       const acts = {};
       for (const [a, idx] of Object.entries(map)) acts[a] = b(idx);
@@ -508,7 +546,7 @@ const Pad = {
       this.prev[key] = state;
       Controllers.liveUpdate(p);
     }
-    this.schedule(pads.length > 0);
+    return pads;
   },
   // While a controller is in use (input in the last 1.5 s): every frame, for smooth repeat and
   // navigation. Connected but idle: 30 times a second on a timer, which keeps the first press

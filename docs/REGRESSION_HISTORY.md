@@ -3,7 +3,39 @@
 Each entry: problem · diagnosis · cause · files · fix · test · how to recognise it again.
 Newest first.
 
-## 0.9.2 (in development)
+## 0.9.3 (in development)
+
+### Account page blank and Home account indicator missing (Windows, 0.8.1–0.9.2, 24 Nov)
+- **Diagnosis:** Tom's `nexus.log` (24 Nov) shows the background synchronisation starting and
+  never finishing before NEXUS was closed (27 s and 68 s runs; an earlier one took 1 min 13 s),
+  and no interface errors. `Account.Status` counted unsent changes by reading every item, which
+  waited for `artSyncMu`, held by `uploadCustomArt` for the whole of each picture upload, and
+  read and hashed every custom picture each time.
+- **Fix:** the count is worked out in the background (`accountpending.go`, at most 150 ms wait,
+  then the last count); picture hashes are cached by path, size and time; the lock is not held
+  while a picture is sent.
+- **Files:** `account.go`, `accountpending.go`, `artsync.go`.
+- **Tests:** `TestStatusFastWhileArtUploads` (about 2 s before, 1 ms after),
+  `TestStatusFastWhileGitHubHangs`. Not yet seen on the user's PC.
+
+### Chinese-named folder next to NEXUS.exe (Windows, 0.8.x–0.9.2)
+- **Diagnosis:** the name in Tom's screenshot, read as UTF-16 code units, is the ASCII text
+  `…sers\tmill\AppData\Roaming…`: WebView2 was given a damaged data-folder path.
+- **Cause (likely):** the loader call (`webviewloader`, not a syscall) did not keep the UTF-16
+  path alive, so its memory could be reused mid-call.
+- **Fix:** `runtime.KeepAlive` on the strings; the folder also given through
+  `WEBVIEW2_USER_DATA_FOLDER`; `removeMisnamedWebViewFolders` removes such folders at start
+  (all non-ASCII name that decodes to a path, holding only `EBWebView`).
+- **Tests:** `TestMisnamedWebViewFolder`. Needs a Windows run to confirm the folder no longer appears.
+
+### Controller input in menus (D-pad reported dead on Windows, 0.8.1–0.9.2)
+- **Not yet reproduced.** The log shows the controller detected and no interface errors.
+- **Hardening:** `Pad.poll` scheduled the next poll at its end, so one exception stopped all
+  controller input until restart; now caught and logged. Non-standard controllers' hat D-pad
+  is read. The log records each controller (id, mapping, buttons, axes) and its first 16 presses.
+- **Tests:** `tools/uitest/controller_robust.py`.
+
+## 0.9.2
 
 ### Custom game artwork never reached the Steam Deck (PC and Deck both on 0.8.1, 24 Nov)
 - **Cause (reproduced in a test):** a game's pictures travelled inside its library item (title,

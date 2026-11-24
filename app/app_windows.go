@@ -398,6 +398,12 @@ func runUI(a *App, url string) {
 	settings := a.Settings.Get()
 	// Allow the boot sound to play without a click, and keep the UI smooth.
 	os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--autoplay-policy=no-user-gesture-required --disable-features=msSmartScreenProtection")
+	// The data folder is also given through WebView2's own variable, so a damaged path in
+	// the loader call can never send it elsewhere (see removeMisnamedWebViewFolders).
+	if a.Paths.WebView != "" {
+		os.Setenv("WEBVIEW2_USER_DATA_FOLDER", a.Paths.WebView)
+	}
+	go removeMisnamedWebViewFolders(a)
 	u := &winUI{app: a, fullscreen: false}
 	theUI = u
 	a.UI = u

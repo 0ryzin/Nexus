@@ -144,6 +144,7 @@ type sessionResult struct {
 
 // Account is the NEXUS Account subsystem.
 type Account struct {
+	pend  pendingCache // Status's count of local changes, worked out in the background
 	app   *App
 	dir   string
 	mu    sync.Mutex
@@ -391,7 +392,7 @@ func (ac *Account) Status() AccountStatus {
 	signed, on := ac.st.SignedIn, ac.st.SyncOn
 	ac.mu.Unlock()
 	if signed && on {
-		pending = len(ac.pendingKeys())
+		pending = ac.pendingCount()
 	}
 	ac.mu.Lock()
 	defer ac.mu.Unlock()

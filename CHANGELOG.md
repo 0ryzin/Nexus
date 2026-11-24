@@ -12,6 +12,23 @@ The project is in preview. Releases are numbered from **0.0.0**; the first inten
 - Ocarina of Time stuck loading: investigated (see docs/COMPATIBILITY.md); not reproduced, not yet fixed.
 - Knowledge base: CLAUDE.md, docs/DEVELOPMENT_NOTES.md, COMPATIBILITY.md, REGRESSION_HISTORY.md, research/LICHII.md, research/FRITCHII.md, benchmark method in PERFORMANCE.md.
 
+## 0.9.3 — in development (not released)
+
+- **Account page and Home account indicator no longer go blank.** They waited for the count of
+  unsent changes, which waited behind a running synchronisation (a slow one runs past a minute;
+  on 24 Nov the PC's never finished before NEXUS was closed). The count is now worked out in the
+  background; pictures are no longer read and hashed on every status request, and no lock is
+  held while a picture is sent.
+- **Odd Chinese-named folder next to NEXUS.exe (Windows):** it was NEXUS's own WebView2 data path
+  passed to Windows damaged (the name decodes to `…sers\tmill\AppData\Roaming…`). The path is
+  now kept alive for the whole call and also given through WebView2's own setting; the folder,
+  which held only the interface's browser cache, is removed at start (only a folder whose name
+  decodes to a path and that holds nothing but WebView2's cache).
+- **Controller input in menus is sturdier:** an error while handling one press can no longer stop
+  the menus reading the controller until restart; controllers that report the D-pad as a hat
+  axis (no standard mapping) navigate; the log records each controller and its first presses.
+  The D-pad report on Tom's PC is not yet reproduced.
+
 ## 0.9.2 — test build (not released)
 
 - **Game artwork sync fixed:** a game's custom pictures are now their own account item, merged
