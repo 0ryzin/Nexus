@@ -55,6 +55,33 @@ This matters most while a game runs in the background behind NEXUS Home.
 3. **The running-game dot and the recording indicator** pulsed with `box-shadow`. They now use `opacity`.
 4. **The loading bar** moved with `left`, which forces a layout on every frame while a game is loading, exactly when the CPU is busy compiling shaders. It now moves with `transform`.
 
+## 0.9.3 against 0.9.2, measured (24 Nov; Linux, headless Chrome, stand-in engine)
+
+Same machine, same fixture, builds 08c3bea (0.9.2) and 0.9.3 (d0549ef's source). Compare builds
+with these numbers; they are not Windows or Steam Deck numbers.
+
+**Startup** (`tools/perf/startup_timings.py`, median of 5, ms from process start):
+
+| | server | interface ready | library | Home interactive | account |
+|---|---|---|---|---|---|
+| 0.9.2, animation off | 14 | 120 | 133 | 190 | 1 |
+| 0.9.3, animation off | 15 | 113 | 118 | 194 | 1 |
+| 0.9.2, animation on | 14 | 115 | 120 | 4475 | 1 |
+| 0.9.3, animation on | 14 | 127 | 131 | 4507 | 2 |
+
+No change beyond run-to-run noise.
+
+**Idle cost** (`tools/perf/idle_baseline.py`, 10 s per screen; page main-thread busy % of a core,
+script ms/s): Home 0.15 % / 0.59 → 0.15 % / 0.57; Home with a controller 0.56 % / 3.60 →
+0.60 % / 3.74; Library with a controller 0.89 % / 3.48 → 0.79 % / 3.39; Settings with a
+controller 0.47 % / 2.84 → 0.47 % / 3.21; game in front 0.08 % / 0.50 → 0.08 % / 0.48. Server
+CPU 0-0.5 %, memory 21-22 MB in both. The sturdier controller handling (error-proof polling, hat
+D-pad, logging of the first presses) costs nothing measurable.
+
+**Account status while pictures upload** (`TestStatusFastWhileArtUploads`: three pictures,
+0.7 s per upload request): slowest `Account.Status` 1.964 s in 0.9.2, 1 ms in 0.9.3. This is the
+request the account page and the Home account indicator wait for.
+
 ## Ocarina of Time loading, measured from the user's logs (17 Nov 2026)
 
 Source: the engine log (`eden_log.txt`) and `nexus.log` of two real sessions on the user's PC.
